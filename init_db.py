@@ -111,7 +111,8 @@ def create_tables():
         
         # --- その他・割引 (赤/ピンク系: #ff8a80) ---
         ("袋", 10, "その他", "#ffffff", 1, 1, ""),
-        ("セット割引", -50, "割引", "#ff8a80", 99, 1, "") # 表示順を後ろに
+        ("セット割引", -50, "割引", "#ff8a80", 99, 1, ""), # 表示順を後ろに
+        ("ポイント割引", -100, "割引", "#ff8a80", 100, 1, "")
     ]
     cursor.executemany("""
         INSERT INTO products (name, price, category, color, display_order, is_active, note) 
