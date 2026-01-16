@@ -127,12 +127,14 @@ class CartWidget(QWidget):
         minus_btn.setStyleSheet("color: blue; font-weight: bold;")
         # ★重要: クリック時に元のデータ行(data_index)を渡す
         minus_btn.clicked.connect(lambda _, idx=data_index: self.item_decrease.emit(idx))
+        minus_btn.setFocusPolicy(Qt.NoFocus)
         self.table.setCellWidget(view_row, 4, minus_btn)
 
         # 5: 削除ボタン [×]
         del_btn = QPushButton("×")
         del_btn.setStyleSheet("color: red; font-weight: bold;")
         del_btn.clicked.connect(lambda _, idx=data_index: self.item_removed.emit(idx))
+        del_btn.setFocusPolicy(Qt.NoFocus)
         self.table.setCellWidget(view_row, 5, del_btn)
 
     def _on_cell_changed(self, row, column):

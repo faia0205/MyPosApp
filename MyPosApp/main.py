@@ -91,19 +91,38 @@ class POSMainWindow(QMainWindow):
 
     def _load_products_into_tabs(self):
         products = self.repo.fetch_active_products()
+        
+        # 1. 商品をカテゴリごとに分類
         categorized = {}
+        category_totals = {} # ★追加: カテゴリごとの「重要度」計算用
+
         for p in products:
             cat = p['category'] or "その他"
-            if cat not in categorized: categorized[cat] = []
+            if cat not in categorized: 
+                categorized[cat] = []
+                category_totals[cat] = 0 # 初期化
+            
             categorized[cat].append(p)
             
-        for cat_name, items in categorized.items():
+            # 重要度の計算: ここではシンプルに「商品単価の合計」が高い順にします
+            # （「割引」はマイナスなので自然と一番後ろになります）
+            category_totals[cat] += p['price']
+
+        # 2. カテゴリ（キー）を並び替え
+        # sorted関数を使って、category_totalsの値が大きい順に並べます
+        sorted_categories = sorted(categorized.keys(), key=lambda x: category_totals[x], reverse=True)
+
+        # 3. 並び替えた順にタブを作成
+        for cat_name in sorted_categories:
+            items = categorized[cat_name]
+            
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
             container = QWidget()
             grid = QGridLayout(container)
             grid.setSpacing(10)
             
+            col_max = 3
             for i, p in enumerate(items):
                 label = f"{p['name']}\n¥{p['price']}"
                 if p['price'] < 0: label = f"{p['name']}\n{p['price']}"
@@ -111,8 +130,11 @@ class POSMainWindow(QMainWindow):
                 btn = QPushButton(label)
                 btn.setFixedSize(130, 90)
                 btn.setStyleSheet(self.style_gen.create_button_style(p['color']))
+                # 商品ボタンもフォーカス枠が残らないように修正
+                btn.setFocusPolicy(Qt.NoFocus) 
+                
                 btn.clicked.connect(lambda _, x=p: self.cart_manager.add_product(x))
-                grid.addWidget(btn, i // 3, i % 3)
+                grid.addWidget(btn, i // col_max, i % col_max)
             
             grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
             scroll.setWidget(container)

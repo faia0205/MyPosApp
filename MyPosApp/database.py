@@ -39,10 +39,15 @@ class Repository:
         """客層プリセットを取得"""
         conn = self.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, label, attributes FROM customer_presets WHERE is_active=1 ORDER BY display_order")
+        cursor.execute("""
+            SELECT id, label, attributes, color 
+            FROM customer_presets 
+            WHERE is_active=1 
+            ORDER BY display_order
+        """)
         rows = cursor.fetchall()
         conn.close()
-        return [{"id": r[0], "label": r[1], "attributes": r[2]} for r in rows]
+        return [{"id": r[0], "label": r[1], "attributes": r[2], "color": r[3]} for r in rows]
 
     def get_total_expenses(self):
         """経費合計を取得"""
