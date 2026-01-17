@@ -28,7 +28,11 @@ class TransactionRepository(BaseRepository):
         
         try:
             # 1. ヘッダー
-            cursor.execute("INSERT INTO transactions (total_amount, status) VALUES (?, 'completed')", (total_amount,))
+            cursor.execute("""
+                INSERT INTO transactions (total_amount, customer_label, status) 
+                VALUES (?, ?, 'completed')
+            """, (total_amount, customer_label))
+            
             transaction_id = cursor.lastrowid
             
             # 2. 商品明細 (cart_itemsはProductオブジェクトの辞書表現か、辞書そのものか要確認。

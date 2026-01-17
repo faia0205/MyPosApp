@@ -76,3 +76,39 @@ class AnalyticsRepository(BaseRepository):
         rows = cursor.fetchall()
         conn.close()
         return [{"name": r[0], "qty": r[1], "total": r[2]} for r in rows]
+    
+    def get_payment_summary(self) -> Dict[str, int]:
+        """決済方法ごとの売上合計"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT payment_method, SUM(amount) 
+            FROM transaction_payments 
+            GROUP BY payment_method
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return {r[0]: r[1] for r in rows}
+
+    def get_raw_data_for_analysis(self) -> List[Dict[str, Any]]:
+        """分析用に結合データを取得 (DataFrame化用)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 時間(H), 客層, 商品名, 個数, 小計 を一気に取得
+        cursor.execute("""
+            SELECT 
+                strftime('%H', t.timestamp) as hour,
+                t.customer_label,
+                i.product_name,
+                i.quantity,
+                i.subtotal
+            FROM transactions t
+            JOIN transaction_items i ON t.id = i.transaction_id
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"hour": int(r[0]), "customer": r[1], "product": r[2], "qty": r[3], "sales": r[4]}
+            for r in rows
+        ]

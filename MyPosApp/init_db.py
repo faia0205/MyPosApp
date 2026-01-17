@@ -70,6 +70,7 @@ def create_tables():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         total_amount INTEGER NOT NULL,
+        customer_label TEXT, 
         status TEXT DEFAULT 'completed'
     )
     """)
@@ -93,6 +94,16 @@ def create_tables():
         payment_method TEXT,
         amount INTEGER,
         FOREIGN KEY(transaction_id) REFERENCES transactions(id)
+    )
+    """)
+
+    # 6. 操作ログ
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS operation_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        level TEXT,   -- info, warning, error
+        message TEXT
     )
     """)
 
