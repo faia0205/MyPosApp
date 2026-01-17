@@ -15,7 +15,7 @@ from app.models.customer import Customer
 from app.utils.style import StyleGenerator
 from app.views.components.custom_buttons import ProductButton, CustomerButton
 from app.views.dialogs.payment_dialog import PaymentDialog
-
+from app.views.admin_window import AdminWindow
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -53,6 +53,15 @@ class MainWindow(QMainWindow):
             lbl.setStyleSheet("border: none; color: white;") # 枠線なし、白文字
             header_layout.addWidget(lbl)
             self.lbl_stats[key] = lbl
+
+        # 管理ボタンをヘッダー右端に
+        header_layout.addStretch() # 左詰めにするための余白
+        btn_admin = QPushButton("管理・分析")
+        btn_admin.setFixedSize(100, 30)
+        btn_admin.setStyleSheet("background-color: #607d8b; color: white; border: none; font-weight: bold;")
+        btn_admin.setFocusPolicy(Qt.NoFocus)
+        btn_admin.clicked.connect(self._open_admin_window)
+        header_layout.addWidget(btn_admin)
             
         main_layout.addWidget(self.header_frame)
 
@@ -359,3 +368,8 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             val = price_input.value()
             if val > 0: self.cart_service.add_manual_item(val, name_input.text() or "手入力")
+    
+    def _open_admin_window(self) -> None:
+        """管理画面を開く"""
+        admin = AdminWindow(self)
+        admin.exec() # モーダルウィンドウとして開く
