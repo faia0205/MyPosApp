@@ -49,6 +49,16 @@ class Repository:
         conn.close()
         return [{"id": r[0], "label": r[1], "attributes": r[2], "color": r[3]} for r in rows]
 
+    def fetch_payment_methods(self):
+        """有効な決済方法を取得"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # id, name, is_cash (1=現金, 0=その他)
+        cursor.execute("SELECT id, name, is_cash FROM payment_methods WHERE is_active=1")
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "name": r[1], "is_cash": bool(r[2])} for r in rows]
+    
     def get_total_expenses(self):
         """経費合計を取得"""
         conn = self.get_connection()

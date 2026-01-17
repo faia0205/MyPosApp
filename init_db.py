@@ -46,7 +46,7 @@ def create_tables():
     )
     """)
 
-    # 4. 経費テーブル (新規追加)
+    # 4. 経費テーブル
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS expenses (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

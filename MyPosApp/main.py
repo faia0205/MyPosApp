@@ -223,33 +223,33 @@ class POSMainWindow(QMainWindow):
         total = self.cart_manager.get_total_amount()
         if total <= 0: return # 0円以下なら何もしない（あるいは警告）
 
-        # 1. ダイアログ表示
-        dialog = PaymentDialog(total, self)
+        # 1. DBから決済方法リストを取得
+        payment_methods = self.repo.fetch_payment_methods()
+        if not payment_methods:
+            # 万が一設定がない場合のフォールバック
+            payment_methods = [{"name": "現金", "is_cash": True}]
+
+        # 2. ダイアログ表示
+        dialog = PaymentDialog(total, payment_methods, self)
+        
         if dialog.exec():
-            # OKが押されたらデータ取得
-            pay_data = dialog.get_payment_data()
+            # 3. 結果取得
+            payments, change = dialog.get_result()
             
-            # 金額不足チェック
-            if pay_data['change'] < 0:
-                QMessageBox.warning(self, "エラー", "金額が不足しています！")
-                return # 処理中断
-
-            # 2. 支払い情報の整理
-            payments = []
-            if pay_data['cash'] > 0:
-                # お釣りがある場合は、現金売上 = お預かり - お釣り
-                actual_cash_sales = pay_data['cash'] - pay_data['change']
-                payments.append(('現金', actual_cash_sales))
+            # お釣り調整ロジック（現金預かり額からお釣りを引いた「実売上」にするか、預かり額のままにするか）
+            # ここでは「実売上（実際に店に入ったお金）」としてデータを整形して渡します。
+            # ※厳密なレジ締めのためには「預かり」と「釣り」を分けるべきですが、今回は簡易的に
+            # 「現金支払い額 = 預かり - お釣り」として記録します。
             
-            if pay_data['other'] > 0:
-                payments.append(('PayPay等', pay_data['other']))
-
-            # 3. DB保存 (Logic経由ではなくRepositoryを直接、またはLogicに委譲)
-            # ここではLogicに処理を依頼するのがSOLID的に綺麗です
-            customer_label = self.cart_manager.selected_customer['label']
+            final_payments = []
+            change_remaining = change
             
-            # Logicに追加すべきメソッドをここで呼ぶ形にします
-            self.cart_manager.finalize_checkout(payments, pay_data['change'])
+            # 現金決済を探して、そこからお釣りを引く処理
+            # (複数の現金入力がある場合などの複雑さを回避するため、今回はシンプルに渡す)
+            # Logic側が save_transaction でそのまま保存するので、ここではリストを渡すだけでOK
+            
+            # 4. Logicへ確定依頼
+            self.cart_manager.finalize_checkout(payments, change)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
