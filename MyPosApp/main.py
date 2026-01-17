@@ -9,7 +9,7 @@ from PySide6.QtGui import QFont
 from database import Repository
 from logic import CartManager
 from style import StyleGenerator
-from ui_parts import HeaderWidget, CartWidget, ProductTabWidget
+from ui_parts import HeaderWidget, CartWidget, ProductTabWidget, PaymentDialog
 
 class POSMainWindow(QMainWindow):
     def __init__(self):
@@ -70,7 +70,7 @@ class POSMainWindow(QMainWindow):
         self.checkout_btn.setEnabled(False)
         self.checkout_btn.setStyleSheet(self.style_gen.create_button_style("#ff5722"))
         # Logicの会計処理を呼ぶ
-        self.checkout_btn.clicked.connect(self.cart_manager.process_checkout)
+        self.checkout_btn.clicked.connect(self._process_checkout_flow)
         self.right_layout.addWidget(self.checkout_btn)
 
         body_layout.addWidget(right_panel, stretch=2)
@@ -168,22 +168,22 @@ class POSMainWindow(QMainWindow):
             self.cart_manager.get_total_amount()
         )
 
-    def _on_checkout_completed(self, customer_name, total):
-        """会計完了後のUIリセット"""
-        QMessageBox.information(self, "完了", f"¥{total:,} の会計完了\n客層: {customer_name}")
+    def _on_checkout_completed(self, customer_name, change):
+        """会計完了通知の処理"""
+        # お釣りを表示
+        QMessageBox.information(self, "完了", f"お釣り: ¥{change:,}\n会計が完了しました。")
         
-        # 客層ボタンの選択解除 (Exclusiveを一時的に切る必要がある)
+        # 客層ボタンのリセット
         self.customer_group.setExclusive(False)
         for btn in self.customer_group.buttons():
             btn.setChecked(False)
         self.customer_group.setExclusive(True)
         
-        # 会計ボタンの無効化
+        # ボタン無効化
         self.checkout_btn.setEnabled(False)
         self.checkout_btn.setText("会 計")
         self.checkout_btn.setStyleSheet(self.style_gen.create_button_style("#ff5722"))
         
-        # 情報ボックス
         self.cart_widget.update_message("次の会計をお願いします", "info")
 
     def _open_manual_input(self):
@@ -211,6 +211,45 @@ class POSMainWindow(QMainWindow):
             price = price_input.value()
             if price > 0:
                 self.cart_manager.add_manual_item(price, name)
+    
+    def _process_checkout_flow(self):
+        """
+        会計ボタンが押されたときのフロー
+        1. 決済ダイアログ表示
+        2. 入力内容の検証（不足がないか）
+        3. DB保存
+        4. 画面リセット
+        """
+        total = self.cart_manager.get_total_amount()
+        if total <= 0: return # 0円以下なら何もしない（あるいは警告）
+
+        # 1. ダイアログ表示
+        dialog = PaymentDialog(total, self)
+        if dialog.exec():
+            # OKが押されたらデータ取得
+            pay_data = dialog.get_payment_data()
+            
+            # 金額不足チェック
+            if pay_data['change'] < 0:
+                QMessageBox.warning(self, "エラー", "金額が不足しています！")
+                return # 処理中断
+
+            # 2. 支払い情報の整理
+            payments = []
+            if pay_data['cash'] > 0:
+                # お釣りがある場合は、現金売上 = お預かり - お釣り
+                actual_cash_sales = pay_data['cash'] - pay_data['change']
+                payments.append(('現金', actual_cash_sales))
+            
+            if pay_data['other'] > 0:
+                payments.append(('PayPay等', pay_data['other']))
+
+            # 3. DB保存 (Logic経由ではなくRepositoryを直接、またはLogicに委譲)
+            # ここではLogicに処理を依頼するのがSOLID的に綺麗です
+            customer_label = self.cart_manager.selected_customer['label']
+            
+            # Logicに追加すべきメソッドをここで呼ぶ形にします
+            self.cart_manager.finalize_checkout(payments, pay_data['change'])
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

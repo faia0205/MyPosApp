@@ -57,3 +57,53 @@ class Repository:
         res = cursor.fetchone()
         conn.close()
         return res[0] if res[0] else 0
+
+    def save_transaction(self, total_amount, customer_label, cart_items, payments):
+        """
+        取引データを保存する（トランザクション処理付き）
+        payments: [('現金', 1000), ('PayPay', 500)] のようなリスト
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 1. 取引ヘッダー保存
+            cursor.execute("""
+                INSERT INTO transactions (total_amount, status) 
+                VALUES (?, 'completed')
+            """, (total_amount,))
+            
+            transaction_id = cursor.lastrowid # 今保存したIDを取得
+            
+            # 2. 客層情報の記録（今回は簡易的にnoteや別テーブル、あるいはJSONで保存も可）
+            # ここではシンプルにするため transaction_payments に 'Customer:男性' のようなタグで残すか、
+            # あるいは transactions テーブルに customer_column を追加するのが本来は良いです。
+            # 今回は既存の transactions テーブル構造に合わせて進めます。
+
+            # 3. 商品明細の保存
+            for item in cart_items:
+                # 手入力商品はIDがないのでNULLまたは0で処理
+                prod_id = item.get('id')
+                cursor.execute("""
+                    INSERT INTO transaction_items (transaction_id, product_name, unit_price, quantity, subtotal)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (transaction_id, item['name'], item['price'], item['qty'], item['price'] * item['qty']))
+
+            # 4. 決済情報の保存
+            for method, amount in payments:
+                if amount > 0:
+                    cursor.execute("""
+                        INSERT INTO transaction_payments (transaction_id, payment_method, amount)
+                        VALUES (?, ?, ?)
+                    """, (transaction_id, method, amount))
+
+            conn.commit()
+            print(f"Transaction {transaction_id} saved successfully.")
+            return transaction_id
+
+        except Exception as e:
+            conn.rollback()
+            print(f"Error saving transaction: {e}")
+            raise e
+        finally:
+            conn.close()

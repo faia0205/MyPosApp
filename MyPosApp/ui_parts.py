@@ -1,5 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
-                               QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QFrame, QTabWidget)
+                               QLabel, QTableWidget, QTableWidgetItem, QHeaderView, 
+                               QFrame, QTabWidget, QDialog, QLineEdit, QDialogButtonBox,
+                               QGridLayout)
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont, QColor
 
@@ -172,3 +174,84 @@ class ProductTabWidget(QTabWidget):
 
     def add_category_tab(self, category_name, widget):
         self.addTab(widget, category_name)
+
+class PaymentDialog(QDialog):
+    """決済画面：現金とその他決済（PayPay等）の金額を入力"""
+    def __init__(self, total_amount, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("お会計")
+        self.setFixedSize(400, 350)
+        self.total_amount = total_amount
+        
+        layout = QVBoxLayout(self)
+
+        # 合計金額表示
+        lbl_total = QLabel(f"合計: ¥{total_amount:,}")
+        lbl_total.setStyleSheet("font-size: 32px; font-weight: bold; color: #d32f2f;")
+        lbl_total.setAlignment(Qt.AlignCenter)
+        layout.addWidget(lbl_total)
+
+        # 入力フォームエリア
+        form_layout = QGridLayout()
+        
+        # PayPay入力
+        form_layout.addWidget(QLabel("PayPay等:"), 0, 0)
+        self.input_other = QLineEdit("0")
+        self.input_other.setStyleSheet("font-size: 20px;")
+        self.input_other.setAlignment(Qt.AlignRight)
+        form_layout.addWidget(self.input_other, 0, 1)
+
+        # 現金入力
+        form_layout.addWidget(QLabel("現金お預り:"), 1, 0)
+        self.input_cash = QLineEdit("0")
+        self.input_cash.setStyleSheet("font-size: 20px;")
+        self.input_cash.setAlignment(Qt.AlignRight)
+        self.input_cash.setFocus() # 初期フォーカス
+        form_layout.addWidget(self.input_cash, 1, 1)
+
+        layout.addLayout(form_layout)
+
+        # お釣り表示エリア
+        self.lbl_change = QLabel("お釣り: ¥0")
+        self.lbl_change.setStyleSheet("font-size: 24px; font-weight: bold; color: blue;")
+        self.lbl_change.setAlignment(Qt.AlignRight)
+        layout.addWidget(self.lbl_change)
+
+        # ボタン
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        # イベント接続: 入力があるたびにお釣りを計算
+        self.input_cash.textChanged.connect(self._calculate_change)
+        self.input_other.textChanged.connect(self._calculate_change)
+
+    def _calculate_change(self):
+        try:
+            cash = int(self.input_cash.text() or 0)
+            other = int(self.input_other.text() or 0)
+            
+            paid_total = cash + other
+            change = paid_total - self.total_amount
+            
+            if change >= 0:
+                self.lbl_change.setText(f"お釣り: ¥{change:,}")
+                self.lbl_change.setStyleSheet("font-size: 24px; font-weight: bold; color: blue;")
+            else:
+                short = abs(change)
+                self.lbl_change.setText(f"不足: ¥{short:,}")
+                self.lbl_change.setStyleSheet("font-size: 24px; font-weight: bold; color: red;")
+                
+            return cash, other, change
+        except ValueError:
+            return 0, 0, -self.total_amount
+
+    def get_payment_data(self):
+        """入力された決済情報を返す"""
+        cash, other, change = self._calculate_change()
+        return {
+            'cash': cash,
+            'other': other,
+            'change': change
+        }

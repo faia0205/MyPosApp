@@ -67,23 +67,27 @@ class CartManager(QObject):
         if 0 <= row < len(self.cart_items):
             del self.cart_items[row]
             self._recalculate()
-
-    def process_checkout(self):
-        """★追加: 会計処理を実行し、データをリセットする"""
-        if not self.cart_items: return
-
+    
+    def finalize_checkout(self, payments, change):
+        """
+        決済確定処理
+        payments: [('現金', 500), ('PayPay', 200)]
+        """
         total = self.get_total_amount()
-        customer_label = self.selected_customer['label'] if self.selected_customer else "未選択"
-
-        # TODO: ここで self.repo.save_transaction(...) を呼ぶ
-
-        # 状態リセット
+        customer_label = self.selected_customer['label']
+        
+        # ★DB保存
+        self.repo.save_transaction(total, customer_label, self.cart_items, payments)
+        
+        # 内部状態更新
+        self.total_sales_today += total
+        
+        # リセット
         self.cart_items = []
         self.selected_customer = None
-        self.total_sales_today += total # 今日の売上加算
         
-        # 完了通知
-        self.checkout_completed.emit(customer_label, total)
+        # 完了通知 (お釣り情報も含める)
+        self.checkout_completed.emit(customer_label, change)
         self._recalculate()
 
     def get_total_amount(self):
