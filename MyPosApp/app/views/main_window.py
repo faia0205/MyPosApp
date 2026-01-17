@@ -330,14 +330,21 @@ class MainWindow(QMainWindow):
             self.cart_service.finalize_checkout(payments, change)
 
     def _on_checkout_completed(self, customer_name: str, change: int) -> None:
-        # (変更なし)
-        QMessageBox.information(self, "完了", f"お釣り: ¥{change:,}\n会計完了")
+        """会計完了後の処理"""
+        # ★修正: customer_name をメッセージに含めるようにしました
+        msg = f"【客層: {customer_name}】\nお釣り: ¥{change:,}\n\n会計が完了しました。"
+        QMessageBox.information(self, "完了", msg)
+        
+        # 客層ボタンのリセット
         self.cust_group.setExclusive(False)
         for btn in self.cust_group.buttons(): btn.setChecked(False)
         self.cust_group.setExclusive(True)
+        
         self.btn_checkout.setEnabled(False)
         self.btn_checkout.setText("会 計")
-        self.cart_service.reset_message() # リセット
+        
+        # 情報ウィンドウのリセット
+        self.cart_service.reset_message()
 
     def _open_manual_input(self) -> None:
         # (変更なし)

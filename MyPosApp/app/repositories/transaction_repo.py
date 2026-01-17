@@ -3,7 +3,7 @@ from app.repositories.base_repo import BaseRepository
 
 class TransactionRepository(BaseRepository):
     
-    def fetch_payment_methods(self):
+    def fetch_payment_methods(self) -> list[dict]:
         """決済方法リストを取得 (辞書型で返すが、将来的にはクラス化も可)"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -21,7 +21,7 @@ class TransactionRepository(BaseRepository):
         conn.close()
         return res[0] if res[0] else 0
 
-    def save_transaction(self, total_amount, customer_label, cart_items, payments):
+    def save_transaction(self, total_amount: int, customer_label: str, cart_items: list[dict], payments: list[tuple[str, int]]) -> int:
         """取引保存 (トランザクション処理)"""
         conn = self.get_connection()
         cursor = conn.cursor()

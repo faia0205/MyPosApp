@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt
 from app.views.components.custom_buttons import StyledButton
 
 class PaymentDialog(QDialog):
-    def __init__(self, total_amount, payment_methods, parent=None):
+    def __init__(self, total_amount: int, payment_methods: list[dict], parent=None):
         super().__init__(parent)
         self.setWindowTitle("決済選択")
         self.resize(700, 500)
@@ -16,7 +16,7 @@ class PaymentDialog(QDialog):
         self._init_ui()
         self._update_ui()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
 
         # ヘッダー (請求額・残り)
@@ -74,13 +74,13 @@ class PaymentDialog(QDialog):
         self.btn_finish.clicked.connect(self.accept)
         layout.addWidget(self.btn_finish)
 
-    def _create_line(self):
+    def _create_line(self) -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
         line.setFrameShadow(QFrame.Sunken)
         return line
 
-    def _add_payment(self, method):
+    def _add_payment(self, method : dict) -> None:
         remaining = self.total_amount - sum(p['amount'] for p in self.current_payments)
         if remaining <= 0: return
 
@@ -89,12 +89,12 @@ class PaymentDialog(QDialog):
             self.current_payments.append({"name": method['name'], "amount": val})
             self._update_ui()
 
-    def _undo_payment(self):
+    def _undo_payment(self) -> None:
         if self.current_payments:
             self.current_payments.pop()
             self._update_ui()
 
-    def _update_ui(self):
+    def _update_ui(self) -> None:
         paid = sum(p['amount'] for p in self.current_payments)
         remaining = self.total_amount - paid
         
@@ -119,7 +119,7 @@ class PaymentDialog(QDialog):
             self.btn_finish.setStyleSheet("background-color: #ff5722; color: white; font-size: 24px; font-weight: bold; border-radius: 8px;")
             self.btn_finish.setFocus()
 
-    def get_result(self):
+    def get_result(self) -> tuple[list[tuple[str, int]], int]:
         paid = sum(p['amount'] for p in self.current_payments)
         change = paid - self.total_amount
         # タプルのリストに変換して返す

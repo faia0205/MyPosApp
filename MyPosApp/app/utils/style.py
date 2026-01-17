@@ -46,7 +46,7 @@ class StyleGenerator:
         """
 
     @staticmethod
-    def _darken_color(hex_color, factor):
+    def _darken_color(hex_color: str, factor: float) -> str:
         if not hex_color.startswith('#') or len(hex_color) != 7: return hex_color
         try:
             r, g, b = (int(hex_color[i:i+2], 16) for i in (1, 3, 5))
@@ -55,7 +55,7 @@ class StyleGenerator:
         except: return hex_color
 
     @staticmethod
-    def _get_text_color(bg_color):
+    def _get_text_color(bg_color: str) -> str:
         if not bg_color.startswith('#') or len(bg_color) != 7: return "#000000"
         try:
             r, g, b = (int(bg_color[i:i+2], 16) for i in (1, 3, 5))

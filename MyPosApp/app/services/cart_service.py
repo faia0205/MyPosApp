@@ -150,5 +150,5 @@ class CartService(QObject):
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
 
-    def reset_message(self):
+    def reset_message(self) -> None:
         self._notify_message("次の会計をお願いします", "info")
