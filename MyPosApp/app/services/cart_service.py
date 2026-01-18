@@ -1,9 +1,11 @@
 from typing import List, Dict, Any, Optional, Tuple
 from PySide6.QtCore import QObject, Signal
 from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.product_repo import ProductRepository  # ★追加
 from app.models.product import Product
 from app.models.customer import Customer
-from app.repositories.user_repo import UserRepository
+
 class CartService(QObject):
     # シグナル定義
     cart_updated = Signal()
@@ -13,26 +15,33 @@ class CartService(QObject):
     user_changed = Signal(str)
 
     def __init__(self) -> None:
-            super().__init__()
-            self.repo: TransactionRepository = TransactionRepository()
-            self.user_repo = UserRepository()
-            
-            self.cart_items: List[Dict[str, Any]] = []     
-            self.selected_customer: Optional[Customer] = None 
-            self.current_user_name = "未設定"
+        super().__init__()
+        self.repo: TransactionRepository = TransactionRepository()
+        self.user_repo = UserRepository()
+        self.prod_repo = ProductRepository() # ★追加: 商品情報を取得するため
+        
+        self.cart_items: List[Dict[str, Any]] = []     
+        self.selected_customer: Optional[Customer] = None 
+        self.current_user_name = "未設定"
 
-            self.current_expenses: int = self.repo.get_total_expenses()
+        self.current_expenses: int = self.repo.get_total_expenses()
+        self.total_sales_today: int = self.repo.get_total_sales_today()
+        
+        # ★修正: 商品の平均単価を計算して目標値にする
+        self.avg_price_target = self._calculate_avg_price()
+
+    def _calculate_avg_price(self) -> int:
+        """登録されている商品(プラス価格のみ)の平均単価を計算"""
+        products = self.prod_repo.fetch_active_products()
+        
+        # 0円より高い商品の価格リストを作る（割引などのマイナスは除外）
+        valid_prices = [p.price for p in products if p.price > 0]
+        
+        if not valid_prices:
+            return 500 # 商品がない場合のデフォルト値
             
-            # ★修正: 0 ではなく、DBから現在の合計値を読み込む
-            self.total_sales_today: int = self.repo.get_total_sales_today()
-            
-            self.avg_price_target: int = 500
-    
-    def set_current_user(self, name: str):
-            """レジ担当者をセット"""
-            self.current_user_name = name
-            self.user_changed.emit(name)
-            self._notify_message(f"担当者: {name} さんでログインしました", "info")
+        # 平均を計算 (整数に丸める)
+        return int(sum(valid_prices) / len(valid_prices))
 
     def add_product(self, product: Product) -> None:
         for item in self.cart_items:
@@ -73,7 +82,6 @@ class CartService(QObject):
         self._recalculate()
 
     def update_item_qty(self, index: int, new_qty: int) -> None:
-        """個数を変更する（★メッセージ追加）"""
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             old_qty = item['qty']
@@ -82,23 +90,18 @@ class CartService(QObject):
                 self.remove_item(index)
             else:
                 item['qty'] = new_qty
-                # 変更内容を通知
                 self._notify_message(f"【変更】 {item['name']}: {old_qty}個 → {new_qty}個", "info")
                 self._recalculate()
 
     def update_item_price(self, index: int, new_price: int) -> None:
-        """単価を変更する（★メッセージ追加）"""
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             old_price = item['price']
-            
             item['price'] = new_price
-            # 変更内容を通知
             self._notify_message(f"【変更】 {item['name']}: ¥{old_price:,} → ¥{new_price:,}", "info")
             self._recalculate()
 
     def decrease_item_qty(self, index: int) -> None:
-        """個数を1減らす"""
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             if item['qty'] > 1:
@@ -120,6 +123,11 @@ class CartService(QObject):
     def get_total_amount(self) -> int:
         return sum(item['price'] * item['qty'] for item in self.cart_items)
 
+    def set_current_user(self, name: str):
+        self.current_user_name = name
+        self.user_changed.emit(name)
+        self._notify_message(f"担当者: {name} さんでログインしました", "info")
+
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
         if not self.cart_items or not self.selected_customer:
             return
@@ -128,13 +136,7 @@ class CartService(QObject):
         customer_label = self.selected_customer.label
 
         try:
-            self.repo.save_transaction(
-                    total, 
-                    customer_label, 
-                    self.current_user_name, 
-                    self.cart_items, 
-                    payments
-            )
+            self.repo.save_transaction(total, customer_label, self.current_user_name, self.cart_items, payments)
             self.total_sales_today += total
             
             self.cart_items = []
@@ -155,6 +157,7 @@ class CartService(QObject):
         is_red = False
         if estimated_profit < 0:
             is_red = True
+            # 計算した平均単価を使用
             needed = (abs(estimated_profit) // self.avg_price_target) + 1
             msg = f"あと {needed} 個"
 
@@ -170,5 +173,5 @@ class CartService(QObject):
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
 
-    def reset_message(self) -> None:
+    def reset_message(self):
         self._notify_message("次の会計をお願いします", "info")
