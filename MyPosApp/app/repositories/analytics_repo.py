@@ -63,6 +63,27 @@ class AnalyticsRepository(BaseRepository):
         conn.close()
         return {r[0]: r[1] for r in rows}
 
+    def get_cashier_payment_data(self):
+        """担当者ごとの決済内訳分析用データ"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 担当者名、決済方法、金額 を取得
+        cursor.execute("""
+            SELECT 
+                t.cashier_name,
+                p.payment_method,
+                p.amount
+            FROM transactions t
+            JOIN transaction_payments p ON t.id = p.transaction_id
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {"cashier": r[0], "method": r[1], "amount": r[2]}
+            for r in rows
+        ]
+
     def get_raw_data_for_analysis(self):
         """分析用生データ"""
         conn = self.get_connection()

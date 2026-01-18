@@ -22,12 +22,12 @@ class AnalysisTab(QWidget):
         self.table_time_prod = QTableWidget()
         self.table_cust_prod = QTableWidget()
         self.table_time_cust = QTableWidget()
-        self.table_cashier_sales = QTableWidget() # ★追加: レジ係ごとの売上
+        self.table_cashier_payment = QTableWidget() # レジ係ごとの売上
         
         self.inner_tabs.addTab(self.table_time_prod, "時間 × 商品")
         self.inner_tabs.addTab(self.table_cust_prod, "客層 × 商品")
         self.inner_tabs.addTab(self.table_time_cust, "時間 × 客層 (客数)")
-        self.inner_tabs.addTab(self.table_cashier_sales, "担当 × 売上") # ★追加
+        self.inner_tabs.addTab(self.table_cashier_payment, "担当 × 決済内訳")
         
         layout.addWidget(self.inner_tabs)
 
@@ -37,7 +37,7 @@ class AnalysisTab(QWidget):
             self._fill_pivot_table(self.table_time_prod, pivots['time_prod'])
             self._fill_pivot_table(self.table_cust_prod, pivots['cust_prod'])
             self._fill_pivot_table(self.table_time_cust, pivots['time_cust'])
-            self._fill_pivot_table(self.table_cashier_sales, pivots['cashier_sales'])
+            self._fill_pivot_table(self.table_cashier_payment, pivots['cashier_payment'])
 
     def _fill_pivot_table(self, table_widget, df):
         if df.empty: return

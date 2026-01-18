@@ -65,26 +65,57 @@ class AnalyticsService:
 
     # --- Pivot Table (クロス集計) ---
     def get_pivot_data(self):
+        """各種分析用のDataFrameを作成して返す"""
+        
+        # -------------------------------------------------------
+        # 1. 商品・客層・時間の分析 (既存のデータを使用)
+        # -------------------------------------------------------
         raw_data = self.ana_repo.get_raw_data_for_analysis()
-        if not raw_data:
-            return None
         
-        df = pd.DataFrame(raw_data)
+        # データがなければ空で初期化
+        pivots = {}
         
-        # JST変換
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Tokyo')
-        df['hour'] = df['timestamp'].dt.hour
+        if raw_data:
+            df = pd.DataFrame(raw_data)
+            
+            # JST変換
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Tokyo')
+            df['hour'] = df['timestamp'].dt.hour
+            
+            # 既存のピボットテーブル作成
+            pivots["time_prod"] = df.pivot_table(index='product', columns='hour', values='qty', aggfunc='sum', fill_value=0)
+            pivots["cust_prod"] = df.pivot_table(index='product', columns='customer', values='qty', aggfunc='sum', fill_value=0)
+            pivots["time_cust"] = df.pivot_table(index='customer', columns='hour', values='id', aggfunc='nunique', fill_value=0)
+        else:
+            # データがない場合の空DataFrame
+            pivots["time_prod"] = pd.DataFrame()
+            pivots["cust_prod"] = pd.DataFrame()
+            pivots["time_cust"] = pd.DataFrame()
+
+        # -------------------------------------------------------
+        # 2. 担当者 × 決済方法の分析 (★ここを修正・追加)
+        # -------------------------------------------------------
+        # 商品データとは別に、決済専用データを取得します
+        raw_cashier = self.ana_repo.get_cashier_payment_data()
         
-        # ★修正: time_cust (時間x客層) は「IDのユニーク数(客数)」をカウントする
-        # 'nunique' は重複しないデータの個数を数える機能です
-        
-        pivots = {
-            "time_prod": df.pivot_table(index='product', columns='hour', values='qty', aggfunc='sum', fill_value=0),
-            "cust_prod": df.pivot_table(index='product', columns='customer', values='qty', aggfunc='sum', fill_value=0),
-            "time_cust": df.pivot_table(index='customer', columns='hour', values='id', aggfunc='nunique', fill_value=0),
-            "cashier_sales": df.pivot_table(index='cashier', values='sales', aggfunc='sum', fill_value=0)
-        }
+        if raw_cashier:
+            df_cashier = pd.DataFrame(raw_cashier)
+            
+            # index=担当者, columns=決済方法, values=金額
+            # margins=True にすると、右端と下端に「合計」列が自動追加されます
+            pivots["cashier_payment"] = df_cashier.pivot_table(
+                index='cashier', 
+                columns='method', 
+                values='amount', 
+                aggfunc='sum', 
+                fill_value=0,
+                margins=True,       # ★ 合計行・列を追加
+                margins_name='合計' # ★ 合計のラベル名
+            )
+        else:
+            pivots["cashier_payment"] = pd.DataFrame()
+
         return pivots
 
     def get_default_filename(self) -> str:
@@ -119,6 +150,7 @@ class AnalyticsService:
                     pivots['cust_prod'].to_excel(writer, sheet_name='客層x商品(個数)')
                     # シート名を変更
                     pivots['time_cust'].to_excel(writer, sheet_name='時間x客層(客数)')
+                    pivots['cashier_payment'].to_excel(writer, sheet_name='担当者x決済(売上)')
             
             return True, "出力しました"
         except Exception as e:

@@ -185,6 +185,15 @@ class CartService(QObject):
 
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
+    
+    def is_discount_target(self, product_id: int) -> bool:
+        """指定された商品IDが、いずれかの割引ルールの対象か判定"""
+        if product_id is None: return False
+        
+        for rule in self.discount_rules:
+            if product_id in rule['target_ids']:
+                return True
+        return False
 
     def reset_message(self):
         self._notify_message("次の会計をお願いします", "info")

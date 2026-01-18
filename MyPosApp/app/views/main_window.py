@@ -270,69 +270,115 @@ class MainWindow(QMainWindow):
         self.btn_checkout.setText(f"会計\n({customer.label})")
 
     def _render_cart(self) -> None:
-        # 1. 商品テーブル
+        """カートと割引テーブルの描画（完全版）"""
+        
+        # ---------------------------------------------------------
+        # 1. カート内商品テーブル (Main Cart)
+        # ---------------------------------------------------------
         raw_items = self.cart_service.cart_items
+        
+        # 表示順をソート: 
+        # (1) 手入力のマイナス商品(値引)は下に
+        # (2) それ以外は価格が高い順など（お好みで調整可。現状は価格順）
         indices = list(range(len(raw_items)))
         indices.sort(key=lambda i: (
-            raw_items[i]['price'] < 0,
-            -raw_items[i]['price']
+            raw_items[i]['price'] < 0, # True(1)が後ろに来る -> マイナス価格は下へ
+            -raw_items[i]['price']     # 価格の降順
         ))
         
+        # 編集時（itemChanged）に行番号から元データを探すために保存
         self.current_indices_map = indices
 
-        self.cart_table.blockSignals(True)
+        self.cart_table.blockSignals(True) # 描画中のイベント発火を防ぐ
         self.cart_table.setRowCount(len(indices))
+
+        # 内部ヘルパー: セルアイテム作成
+        def create_item(text, color, editable=False):
+            it = QTableWidgetItem(str(text))
+            it.setForeground(color)
+            if not editable:
+                it.setFlags(it.flags() ^ Qt.ItemIsEditable)
+            return it
 
         for view_row, data_index in enumerate(indices):
             item = raw_items[data_index]
             
-            # 色設定: 割引は明るい赤(ピンク寄り)、通常は白 (ダーク背景なので)
-            text_color = QColor("#ff8a80") if item['price'] < 0 else QColor("white")
-            # ★修正: 背景色の強制指定を削除 (スタイルシートに任せる)
-            # ただし、QTableWidgetItemを作るときに背景を指定しないことでスタイルシートが効く
-
-            def create_item(text, editable=False):
-                it = QTableWidgetItem(str(text))
-                it.setForeground(text_color)
-                # it.setBackground(...) ←これを削除！
-                if not editable:
-                    it.setFlags(it.flags() ^ Qt.ItemIsEditable)
-                return it
-
-            self.cart_table.setItem(view_row, 0, create_item(item['name'], editable=False))
-            self.cart_table.setItem(view_row, 1, create_item(item['qty'], editable=True))
-            self.cart_table.setItem(view_row, 2, create_item(item['price'], editable=True))
+            # --- A. 表示名と色の決定 ---
+            display_name = item['name']
+            text_color = QColor("white")
             
+            # ロジック: 割引対象なら「★」をつけ、黄色っぽくする
+            # ※手入力のマイナス価格(price < 0)の場合は、ピンク色を優先する
+            if item['price'] < 0:
+                text_color = QColor("#ff8a80") # ピンク (手動値引きなど)
+            
+            elif self.cart_service.is_discount_target(item['id']):
+                # ★ 自動割引の対象商品 ★
+                display_name = "★ " + display_name
+                text_color = QColor("#ffeb3b") # 黄色 (注目させる)
+            
+            # --- B. セルへのセット ---
+            # 0: 商品名
+            self.cart_table.setItem(view_row, 0, create_item(display_name, text_color, editable=False))
+            
+            # 1: 数量 (編集可能)
+            self.cart_table.setItem(view_row, 1, create_item(item['qty'], text_color, editable=True))
+            
+            # 2: 単価 (編集可能)
+            self.cart_table.setItem(view_row, 2, create_item(item['price'], text_color, editable=True))
+            
+            # 3: 小計
             sub = item['price'] * item['qty']
-            self.cart_table.setItem(view_row, 3, create_item(f"¥{sub:,}", editable=False))
+            self.cart_table.setItem(view_row, 3, create_item(f"¥{sub:,}", text_color, editable=False))
             
-            # ボタンのデザインもダーク系に
+            # --- C. ボタン設置 ---
+            # 4: 減らすボタン
             btn_decr = QPushButton("-")
             btn_decr.setStyleSheet("color: #90caf9; font-weight: bold; background-color: #424242; border: 1px solid #666;")
             btn_decr.setFocusPolicy(Qt.NoFocus)
+            # data_index を渡すことで、ソートされていても正しいデータを操作できる
             btn_decr.clicked.connect(lambda _, idx=data_index: self.cart_service.decrease_item_qty(idx))
             self.cart_table.setCellWidget(view_row, 4, btn_decr)
 
+            # 5: 削除ボタン
             btn_del = QPushButton("×")
             btn_del.setStyleSheet("color: #ef9a9a; font-weight: bold; background-color: #424242; border: 1px solid #666;")
             btn_del.setFocusPolicy(Qt.NoFocus)
             btn_del.clicked.connect(lambda _, idx=data_index: self.cart_service.remove_item(idx))
             self.cart_table.setCellWidget(view_row, 5, btn_del)
 
-        # 2. 割引テーブル
+        self.cart_table.blockSignals(False) # 信号ブロック解除
+
+        # ---------------------------------------------------------
+        # 2. 自動割引テーブル (Discount Table)
+        # ---------------------------------------------------------
         discounts = self.cart_service.applied_discounts
         self.discount_table.setRowCount(len(discounts))
         
-        # 割引があるなら表示、なければ隠すなどの制御も可能ですが、今回は常時表示
+        # 割引テーブル用のアイテム作成（編集不可・色は固定）
+        def create_disc_item(text):
+            it = QTableWidgetItem(str(text))
+            it.setForeground(QColor("#ff8a80")) # 割引はピンク統一
+            it.setFlags(it.flags() ^ Qt.ItemIsEditable) # 編集不可
+            return it
+
         for i, d in enumerate(discounts):
             sub = d['amount'] * d['qty']
-            self.discount_table.setItem(i, 0, QTableWidgetItem(d['name']))
-            self.discount_table.setItem(i, 1, QTableWidgetItem(f"{d['qty']}回"))
-            self.discount_table.setItem(i, 2, QTableWidgetItem(f"¥{sub:,}"))
+            
+            # 0: 割引名
+            self.discount_table.setItem(i, 0, create_disc_item(d['name']))
+            
+            # 1: 回数
+            self.discount_table.setItem(i, 1, create_disc_item(f"{d['qty']}回"))
+            
+            # 2: 値引額小計
+            self.discount_table.setItem(i, 2, create_disc_item(f"¥{sub:,}"))
         
-        self.cart_table.blockSignals(False)
-        self.lbl_total.setText(f"合計: ¥{self.cart_service.get_total_amount():,}")
-
+        # ---------------------------------------------------------
+        # 3. 合計金額更新
+        # ---------------------------------------------------------
+        total = self.cart_service.get_total_amount()
+        self.lbl_total.setText(f"合計: ¥{total:,}")
     def _on_cart_cell_changed(self, row: int, col: int) -> None:
         """入力バリデーション付きの変更処理"""
         if row >= len(self.current_indices_map): return
