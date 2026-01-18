@@ -8,6 +8,7 @@ from app.models.product import Product
 from app.models.customer import Customer
 # ★新規インポート
 from app.logic.calculator import PriceCalculator
+from app.repositories.log_repo import LogRepository
 
 class CartService(QObject):
     # シグナル定義
@@ -23,7 +24,7 @@ class CartService(QObject):
         self.user_repo = UserRepository()
         self.prod_repo = ProductRepository()
         self.disc_repo = DiscountRepository()
-        
+        self.log_repo = LogRepository()
         # ★計算ロジッククラスのインスタンス化
         self.calculator = PriceCalculator()
         
@@ -184,7 +185,19 @@ class CartService(QObject):
             print(f"Checkout Error: {e}")
 
     def _notify_message(self, text: str, msg_type: str) -> None:
+        """メッセージ通知 + ログ保存を行う"""
+        
+        # 1. 画面への通知 (スナックバーや履歴ウィンドウ用)
         self.message_updated.emit(text, msg_type)
+        
+        # 2. ★追加: データベースへの操作ログ保存
+        # msg_type (info, warning, error) をそのままログレベルとして保存します
+        try:
+            # log_repo が初期化されていない場合のガード（念のため）
+            if hasattr(self, 'log_repo'):
+                self.log_repo.add_log(msg_type, text)
+        except Exception as e:
+            print(f"Log Error: {e}")
     
     def is_discount_target(self, product_id: int) -> bool:
         """指定された商品IDが、いずれかの割引ルールの対象か判定"""
