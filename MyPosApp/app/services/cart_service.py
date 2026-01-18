@@ -3,22 +3,36 @@ from PySide6.QtCore import QObject, Signal
 from app.repositories.transaction_repo import TransactionRepository
 from app.models.product import Product
 from app.models.customer import Customer
-
+from app.repositories.user_repo import UserRepository
 class CartService(QObject):
     # シグナル定義
     cart_updated = Signal()
     message_updated = Signal(str, str)
     stats_updated = Signal(int, int, int, str, bool)
     checkout_completed = Signal(str, int)
+    user_changed = Signal(str)
 
     def __init__(self) -> None:
-        super().__init__()
-        self.repo: TransactionRepository = TransactionRepository()
-        self.cart_items: List[Dict[str, Any]] = []     
-        self.selected_customer: Optional[Customer] = None 
-        self.current_expenses: int = self.repo.get_total_expenses()
-        self.total_sales_today: int = 0
-        self.avg_price_target: int = 500 
+            super().__init__()
+            self.repo: TransactionRepository = TransactionRepository()
+            self.user_repo = UserRepository()
+            
+            self.cart_items: List[Dict[str, Any]] = []     
+            self.selected_customer: Optional[Customer] = None 
+            self.current_user_name = "未設定"
+
+            self.current_expenses: int = self.repo.get_total_expenses()
+            
+            # ★修正: 0 ではなく、DBから現在の合計値を読み込む
+            self.total_sales_today: int = self.repo.get_total_sales_today()
+            
+            self.avg_price_target: int = 500
+    
+    def set_current_user(self, name: str):
+            """レジ担当者をセット"""
+            self.current_user_name = name
+            self.user_changed.emit(name)
+            self._notify_message(f"担当者: {name} さんでログインしました", "info")
 
     def add_product(self, product: Product) -> None:
         for item in self.cart_items:
@@ -114,7 +128,13 @@ class CartService(QObject):
         customer_label = self.selected_customer.label
 
         try:
-            self.repo.save_transaction(total, customer_label, self.cart_items, payments)
+            self.repo.save_transaction(
+                    total, 
+                    customer_label, 
+                    self.current_user_name, 
+                    self.cart_items, 
+                    payments
+            )
             self.total_sales_today += total
             
             self.cart_items = []

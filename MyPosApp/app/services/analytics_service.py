@@ -20,6 +20,13 @@ class AnalyticsService:
             return dt_jst.strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             return utc_str
+    
+    def get_expense_list(self):
+            """経費一覧を取得 (JST変換付き)"""
+            raw_list = self.trans_repo.fetch_expense_list()
+            for ex in raw_list:
+                ex['time'] = self._to_jst_str(ex['timestamp'])
+            return raw_list
 
     def get_dashboard_summary(self) -> Dict[str, Any]:
         stats = self.ana_repo.get_dashboard_stats()

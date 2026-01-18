@@ -89,9 +89,9 @@ class AdminWindow(QDialog):
 
         bottom = QHBoxLayout()
         
-        # 決済内訳
+        # 左: 決済内訳
         left = QVBoxLayout()
-        left.addWidget(QLabel("【決済方法別売上】"))
+        left.addWidget(QLabel("【決済方法別】"))
         self.table_payment = QTableWidget()
         self.table_payment.setColumnCount(2)
         self.table_payment.setHorizontalHeaderLabels(["方法", "金額"])
@@ -99,16 +99,23 @@ class AdminWindow(QDialog):
         left.addWidget(self.table_payment)
         bottom.addLayout(left)
 
-        # 経費
+        # ★修正: 右側を経費リストに変更
         right = QVBoxLayout()
-        right.addWidget(QLabel("【経費合計】"))
-        self.lbl_expenses = QLabel("¥0")
-        self.lbl_expenses.setStyleSheet("font-size: 36px; color: #ef5350; font-weight: bold;")
-        self.lbl_expenses.setAlignment(Qt.AlignCenter)
+        right.addWidget(QLabel("【経費一覧】"))
+        
+        self.table_expenses = QTableWidget()
+        self.table_expenses.setColumnCount(3)
+        self.table_expenses.setHorizontalHeaderLabels(["日時", "用途", "金額"])
+        self.table_expenses.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        right.addWidget(self.table_expenses)
+        
+        # 合計表示も下に残す
+        self.lbl_expenses = QLabel("合計: ¥0")
+        self.lbl_expenses.setStyleSheet("font-size: 18px; color: #ef5350; font-weight: bold; margin-top: 5px;")
+        self.lbl_expenses.setAlignment(Qt.AlignRight)
         right.addWidget(self.lbl_expenses)
-        right.addStretch()
+        
         bottom.addLayout(right)
-
         layout.addLayout(bottom)
 
     # --- 2. 詳細分析 (ネストタブ実装) ---
@@ -218,6 +225,14 @@ class AdminWindow(QDialog):
             if log['level']=='error': lvl.setForeground(QColor("#ff5252"))
             self.table_logs.setItem(i, 1, lvl)
             self.table_logs.setItem(i, 2, QTableWidgetItem(log['msg']))
+        
+        # 経費リストのロード
+        exp_list = self.service.get_expense_list()
+        self.table_expenses.setRowCount(len(exp_list))
+        for i, ex in enumerate(exp_list):
+            self.table_expenses.setItem(i, 0, QTableWidgetItem(str(ex['time'])))
+            self.table_expenses.setItem(i, 1, QTableWidgetItem(ex['title']))
+            self.table_expenses.setItem(i, 2, QTableWidgetItem(f"¥{ex['amount']:,}"))
 
     def _fill_pivot_table(self, table_widget, df):
         """DataFrameをQTableWidgetに流し込むヘルパー"""

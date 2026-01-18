@@ -16,6 +16,8 @@ from app.utils.style import StyleGenerator
 from app.views.components.custom_buttons import ProductButton, CustomerButton
 from app.views.dialogs.payment_dialog import PaymentDialog
 from app.views.admin_window import AdminWindow
+from app.views.dialogs.login_dialog import LoginDialog
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -36,26 +38,55 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._load_data()
 
+        # (show()の後に出すと画面が表示されてからダイアログが出るので、
+        #  本来は main.py で制御するのが綺麗ですが、簡易的にここで処理します)
+        # ただし __init__ 内で exec() するとメイン画面が出る前にダイアログだけで止まるのでOK
+        self._show_login_dialog()
+
     def _init_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
         main_layout = QVBoxLayout(central)
 
-        # --- ヘッダー ---
+        # --- A. ヘッダー ---
         self.header_frame = QFrame()
         self.header_frame.setStyleSheet("background-color: #333; color: white; border-radius: 5px; padding: 5px;")
         header_layout = QHBoxLayout(self.header_frame)
         
+        # 統計ラベル
         self.lbl_stats: Dict[str, QLabel] = {}
         for key in ["総売上", "経費計", "現在利益", "黒字まで"]:
             lbl = QLabel(f"{key}: ---")
             lbl.setFont(QFont("Meiryo", 12, QFont.Bold))
-            lbl.setStyleSheet("border: none; color: white;") # 枠線なし、白文字
+            lbl.setStyleSheet("border: none; color: white;")
             header_layout.addWidget(lbl)
             self.lbl_stats[key] = lbl
-
-        # 管理ボタンをヘッダー右端に
-        header_layout.addStretch() # 左詰めにするための余白
+        
+        header_layout.addStretch() # 余白
+        
+        # ★修正: 担当者表示をボタンに変更
+        self.btn_cashier = QPushButton("担当: ---")
+        self.btn_cashier.setFont(QFont("Meiryo", 10, QFont.Bold))
+        # フラットなボタンデザイン（マウスホバーで少し明るくなる）
+        self.btn_cashier.setStyleSheet("""
+            QPushButton {
+                color: #bbb; 
+                background-color: transparent; 
+                border: 1px solid #555; 
+                border-radius: 4px;
+                padding: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+                color: white;
+            }
+        """)
+        self.btn_cashier.setCursor(Qt.PointingHandCursor) # マウスカーソルを指の形に
+        self.btn_cashier.setFocusPolicy(Qt.NoFocus)
+        self.btn_cashier.clicked.connect(self._show_login_dialog) # クリックで再ログイン
+        header_layout.addWidget(self.btn_cashier)
+        
+        # 管理ボタン
         btn_admin = QPushButton("管理・分析")
         btn_admin.setFixedSize(100, 30)
         btn_admin.setStyleSheet("background-color: #607d8b; color: white; border: none; font-weight: bold;")
@@ -373,3 +404,33 @@ class MainWindow(QMainWindow):
         """管理画面を開く"""
         admin = AdminWindow(self)
         admin.exec() # モーダルウィンドウとして開く
+    
+    def _show_login_dialog(self):
+        """ログインダイアログ表示"""
+        dialog = LoginDialog(self)
+        
+        # ★修正: キャンセルされたら変更しないようにロジック調整
+        if dialog.exec():
+            # ログイン成功時
+            user_name = dialog.selected_user_name
+            self.cart_service.set_current_user(user_name)
+            self.btn_cashier.setText(f"担当: {user_name}")
+            
+            # アイコンや色を変えて「ログイン中」感を出す
+            self.btn_cashier.setStyleSheet("""
+                QPushButton {
+                    color: #e0f7fa; 
+                    background-color: #006064; 
+                    border: 1px solid #0097a7; 
+                    border-radius: 4px;
+                    padding: 5px 10px;
+                }
+                QPushButton:hover {
+                    background-color: #00838f;
+                }
+            """)
+        else:
+            # キャンセル時は何もしない（未設定のままか、前の人のまま）
+            # ただし、初回起動時（まだ誰もいない時）だけは「未設定」にする必要があるなら
+            if self.cart_service.current_user_name == "未設定":
+                 self.btn_cashier.setText("担当: 未設定")

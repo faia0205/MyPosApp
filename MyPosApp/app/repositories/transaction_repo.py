@@ -20,8 +20,32 @@ class TransactionRepository(BaseRepository):
         res = cursor.fetchone()
         conn.close()
         return res[0] if res[0] else 0
+    
+    def fetch_expense_list(self):
+        """経費の明細リストを取得"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        # 時間は後でPython側でJST変換するのでそのまま取得
+        cursor.execute("SELECT id, title, amount, created_at FROM expenses ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [{"id": r[0], "title": r[1], "amount": r[2], "timestamp": r[3]} for r in rows]
 
-    def save_transaction(self, total_amount: int, customer_label: str, cart_items: list[dict], payments: list[tuple[str, int]]) -> int:
+    def get_total_sales_today(self) -> int:
+        """今日の売上合計を取得 (再起動時の復元用)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # 本来は日付で絞り込むべきですが、イベント期間中は全データ＝売上とみなしてシンプルに実装します
+        # もし日付を厳密に分けたい場合は WHERE date(...) を追加します
+        cursor.execute("SELECT SUM(total_amount) FROM transactions")
+        row = cursor.fetchone()
+        
+        conn.close()
+        # データがない(None)場合は0を返す
+        return row[0] if row[0] is not None else 0
+    
+    def save_transaction(self, total_amount: int, customer_label: str, cashier_name: str, cart_items: list[dict], payments: list[tuple[str, int]]) -> int:
         """取引保存 (トランザクション処理)"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -29,9 +53,9 @@ class TransactionRepository(BaseRepository):
         try:
             # 1. ヘッダー
             cursor.execute("""
-                INSERT INTO transactions (total_amount, customer_label, status) 
-                VALUES (?, ?, 'completed')
-            """, (total_amount, customer_label))
+                INSERT INTO transactions (total_amount, customer_label, cashier_name, status) 
+                VALUES (?, ?, ?, 'completed')
+            """, (total_amount, customer_label, cashier_name))
             
             transaction_id = cursor.lastrowid
             

@@ -70,7 +70,8 @@ def create_tables():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         total_amount INTEGER NOT NULL,
-        customer_label TEXT, 
+        customer_label TEXT,
+        cashier_name TEXT,  -- ★新規: レジ担当者名
         status TEXT DEFAULT 'completed'
     )
     """)
@@ -104,6 +105,16 @@ def create_tables():
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         level TEXT,   -- info, warning, error
         message TEXT
+    )
+    """)
+
+    # 7. ユーザー（レジ担当者）マスタ
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,       -- 表示名 (例: 山田)
+        user_code TEXT UNIQUE,    -- ログイン用ID (例: 001)
+        is_active INTEGER DEFAULT 1
     )
     """)
 
@@ -150,6 +161,14 @@ def create_tables():
 
         # 経費
         cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", ("準備金", 15000))
+
+        # ユーザー初期データ
+        users = [
+            ("店長", "admin"),
+            ("スタッフA", "001"),
+            ("スタッフB", "002")
+        ]
+        cursor.executemany("INSERT INTO users (name, user_code) VALUES (?, ?)", users)
         
         conn.commit()
     
