@@ -1,14 +1,31 @@
 import sqlite3
 import os
 import sys
+import json
 
 # appパッケージを読み込めるようにパスを通す
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import DB_PATH, DATA_DIR
 
+# マスタデータのJSONパス
+MASTER_DATA_PATH = os.path.join(DATA_DIR, 'master_data.json')
+
+def load_master_data():
+    """JSONファイルからマスタデータを読み込む"""
+    if not os.path.exists(MASTER_DATA_PATH):
+        print(f"Warning: {MASTER_DATA_PATH} not found. Skipping data insertion.")
+        return None
+    
+    try:
+        with open(MASTER_DATA_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON: {e}")
+        return None
+
 def create_tables():
-    """テーブル作成と初期データ投入"""
+    """テーブル作成とJSONからの初期データ投入"""
     
     # dataフォルダがなければ作る
     if not os.path.exists(DATA_DIR):
@@ -17,6 +34,8 @@ def create_tables():
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+
+    # --- テーブル定義 (変更なし) ---
 
     # 1. 商品マスタ
     cursor.execute("""
@@ -71,7 +90,7 @@ def create_tables():
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         total_amount INTEGER NOT NULL,
         customer_label TEXT,
-        cashier_name TEXT,  -- ★新規: レジ担当者名
+        cashier_name TEXT,
         status TEXT DEFAULT 'completed'
     )
     """)
@@ -103,7 +122,7 @@ def create_tables():
     CREATE TABLE IF NOT EXISTS operation_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        level TEXT,   -- info, warning, error
+        level TEXT,
         message TEXT
     )
     """)
@@ -112,8 +131,9 @@ def create_tables():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,       -- 表示名 (例: 山田)
-        user_code TEXT UNIQUE,    -- ログイン用ID (例: 001)
+        name TEXT NOT NULL,
+        user_code TEXT UNIQUE,
+        role TEXT DEFAULT 'staff',
         is_active INTEGER DEFAULT 1
     )
     """)
@@ -122,9 +142,9 @@ def create_tables():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS discount_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,         -- ルール名 (例: セット割)
-        required_qty INTEGER NOT NULL, -- 何個ごとに (例: 2)
-        discount_amount INTEGER NOT NULL, -- 割引額 (例: -50)
+        name TEXT NOT NULL,
+        required_qty INTEGER NOT NULL,
+        discount_amount INTEGER NOT NULL,
         is_active INTEGER DEFAULT 1
     )
     """)
@@ -139,74 +159,92 @@ def create_tables():
     )
     """)
 
-    # --- データ投入 (存在しない場合のみ) ---
+    # --- データ投入処理 ---
+    
+    # 既存データがあるかチェック（二重登録防止のため、productsテーブルが空のときのみ実行）
     cursor.execute("SELECT count(*) FROM products")
     if cursor.fetchone()[0] == 0:
-        print("Inserting initial data...")
+        data = load_master_data()
         
-        # 商品
-        products = [
-            # --- フード (オレンジ系: #ffcc80) ---
-            ("焼きそば", 500, "フード", "#ffcc80", 1, "大盛り対応可"),
-            ("たこ焼き", 500, "フード", "#ffcc80", 2, ""),
-            ("唐揚げ", 400, "フード", "#ffcc80", 3, ""),
-            ("フランクフルト", 300, "フード", "#ffcc80", 4, ""),
+        if data:
+            print("Inserting initial data from JSON...")
 
-            # --- ドリンク (水色系: #80d8ff) ---
-            ("生ビール", 600, "ドリンク", "#80d8ff", 1, "年齢確認必須"),
-            ("ハイボール", 500, "ドリンク", "#80d8ff", 2, "年齢確認必須"),
-            ("ウーロン茶", 150, "ドリンク", "#80d8ff", 3, ""),
-            ("コーラ", 150, "ドリンク", "#80d8ff", 4, ""),
+            # 1. Products
+            products_data = []
+            for p in data.get("products", []):
+                products_data.append((
+                    p["name"], p["price"], p["category"], p["color"], 
+                    p["display_order"], int(p.get("is_active", True)), p.get("note", "")
+                ))
+            cursor.executemany("""
+                INSERT INTO products (name, price, category, color, display_order, is_active, note) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, products_data)
 
-            # --- その他・割引 (赤/ピンク系: #ff8a80) ---
-            ("袋", 10, "その他", "#ffffff", 1, ""),
-            ("セット割引", -50, "割引", "#ff8a80", 99, ""), # 表示順を後ろに
-            ("ポイント割引", -100, "割引", "#ff8a80", 100, "")
-        ]
-        cursor.executemany("INSERT INTO products (name, price, category, color, display_order, note) VALUES (?, ?, ?, ?, ?, ?)", products)
+            # 2. Payment Methods
+            payments_data = []
+            for pm in data.get("payment_methods", []):
+                payments_data.append((
+                    pm["name"], int(pm["is_cash"]), int(pm.get("is_active", True))
+                ))
+            cursor.executemany("INSERT INTO payment_methods (name, is_cash, is_active) VALUES (?, ?, ?)", payments_data)
 
-        # 決済方法
-        payments = [("現金", 1), ("PayPay", 0), ("クレジット", 0)]
-        cursor.executemany("INSERT INTO payment_methods (name, is_cash) VALUES (?, ?)", payments)
+            # 3. Customer Presets
+            presets_data = []
+            for cp in data.get("customer_presets", []):
+                # 属性は辞書からJSON文字列へ変換して保存
+                attr_str = json.dumps(cp["attributes"], ensure_ascii=False)
+                presets_data.append((
+                    cp["label"], attr_str, cp["color"], cp["display_order"]
+                ))
+            cursor.executemany("INSERT INTO customer_presets (label, attributes, color, display_order) VALUES (?, ?, ?, ?)", presets_data)
 
-        # 客層
-        customers = [
-            ("男1", '{"sex": "male", "count": 1}', "#bbdefb", 1),
-            ("女1", '{"sex": "female", "count": 1}', "#f8bbd0", 2),
-            ("男複数", '{"sex": "male", "count": "many"}', "#90caf9", 3),
-            ("女複数", '{"sex": "female", "count": "many"}', "#f48fb1", 4),
-            ("家族連れ", '{"type": "family"}', "#a5d6a7", 5),
-            ("男女グループ", '{"type": "group"}', "#a5d6a7", 6)
-        ]
-        cursor.executemany("INSERT INTO customer_presets (label, attributes, color, display_order) VALUES (?, ?, ?, ?)", customers)
+            # 4. Users
+            users_data = []
+            for u in data.get("users", []):
+                users_data.append((
+                    u["name"],
+                    u["user_code"],
+                    u.get("role", "staff"), # roleがなければ staff にする
+                    int(u.get("is_active", True))
+                ))
+            
+            cursor.executemany("""
+                INSERT INTO users (name, user_code, role, is_active) 
+                VALUES (?, ?, ?, ?)
+            """, users_data)
 
-        # 経費
-        cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", ("準備金", 15000))
+            # 5. Initial Expenses
+            for exp in data.get("initial_expenses", []):
+                cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (exp["title"], exp["amount"]))
 
-        # ユーザー初期データ
-        users = [
-            ("店長", "admin"),
-            ("スタッフA", "001"),
-            ("スタッフB", "002")
-        ]
-        cursor.executemany("INSERT INTO users (name, user_code) VALUES (?, ?)", users)
-        
-        cursor.execute("INSERT INTO discount_rules (name, required_qty, discount_amount) VALUES (?, ?, ?)", 
-                       ("フードセット割", 2, -50))
-        rule_id = cursor.lastrowid
-        
-        # 対象商品紐付け (ID:1=焼きそば, ID:2=たこ焼き, ID:3=唐揚げ)
-        # ※実際のIDはauto_incrementなのでズレる可能性がありますが、初期状態なら1,2,3のはずです
-        targets = [(rule_id, 1), (rule_id, 2), (rule_id, 3)]
-        cursor.executemany("INSERT INTO discount_targets (rule_id, product_id) VALUES (?, ?)", targets)
-        
-        conn.commit()
+            # 6. Discount Rules & Targets (Complex Logic)
+            for rule in data.get("discount_rules", []):
+                # ルール親の挿入
+                cursor.execute("""
+                    INSERT INTO discount_rules (name, required_qty, discount_amount) 
+                    VALUES (?, ?, ?)
+                """, (rule["name"], rule["required_qty"], rule["discount_amount"]))
+                
+                new_rule_id = cursor.lastrowid
+                target_names = rule.get("target_product_names", [])
+
+                if target_names:
+                    # 名前からIDを引いて紐付け (一度に解決するIN句を使用)
+                    placeholders = ','.join('?' * len(target_names))
+                    cursor.execute(f"SELECT id FROM products WHERE name IN ({placeholders})", target_names)
+                    product_ids = [row[0] for row in cursor.fetchall()]
+                    
+                    target_data = [(new_rule_id, pid) for pid in product_ids]
+                    cursor.executemany("INSERT INTO discount_targets (rule_id, product_id) VALUES (?, ?)", target_data)
+
+            conn.commit()
+            print("Data insertion completed.")
+        else:
+            print("No data inserted (JSON missing or invalid).")
     
     conn.close()
     print(f"Database initialized at: {DB_PATH}")
 
 if __name__ == "__main__":
     create_tables()
-
-
-    
