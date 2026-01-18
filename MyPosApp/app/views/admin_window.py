@@ -8,20 +8,11 @@ from PySide6.QtGui import QFont, QColor
 from app.services.analytics_service import AnalyticsService
 
 class AdminWindow(QDialog):
-    """
-    管理者・分析画面
-    - ダッシュボード（売上・経費・客単価・決済内訳）
-    - 詳細分析（クロス集計の説明）
-    - 伝票管理（一覧・詳細）
-    - 操作ログ
-    - Excelエクスポート
-    """
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("管理・分析ダッシュボード")
         self.resize(1100, 750)
         
-        # ダークテーマ適用
         self.setStyleSheet("""
             QDialog { background-color: #2b2b2b; color: white; }
             QTabWidget::pane { border: 1px solid #444; }
@@ -41,12 +32,11 @@ class AdminWindow(QDialog):
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
-        # --- 上部ツールバー ---
+        # ツールバー
         toolbar = QHBoxLayout()
         title = QLabel("売上分析レポート")
         title.setFont(QFont("Meiryo", 18, QFont.Bold))
         toolbar.addWidget(title)
-        
         toolbar.addStretch()
         
         btn_refresh = QPushButton("再読み込み")
@@ -60,261 +50,224 @@ class AdminWindow(QDialog):
         btn_export.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
         btn_export.clicked.connect(self._export_excel)
         toolbar.addWidget(btn_export)
-
         layout.addLayout(toolbar)
 
-        # --- メインタブ ---
+        # メインタブ
         self.tabs = QTabWidget()
         
-        # タブ1: ダッシュボード
         self.tab_dashboard = QWidget()
         self._init_tab_dashboard()
         self.tabs.addTab(self.tab_dashboard, "ダッシュボード")
 
-        # タブ2: 詳細分析 (案内)
         self.tab_analysis = QWidget()
         self._init_tab_analysis()
-        self.tabs.addTab(self.tab_analysis, "詳細分析")
+        self.tabs.addTab(self.tab_analysis, "詳細分析(クロス集計)")
 
-        # タブ3: 伝票一覧 (既存機能)
         self.tab_transactions = QWidget()
         self._init_tab_transactions()
         self.tabs.addTab(self.tab_transactions, "伝票一覧")
 
-        # タブ4: 操作ログ
         self.tab_logs = QWidget()
         self._init_tab_logs()
         self.tabs.addTab(self.tab_logs, "操作ログ")
 
         layout.addWidget(self.tabs)
 
-    # ----------------------------------------------------------------
-    # タブ1: ダッシュボード初期化
-    # ----------------------------------------------------------------
+    # --- 1. ダッシュボード ---
     def _init_tab_dashboard(self):
         layout = QVBoxLayout(self.tab_dashboard)
         
-        # 上段: 財務カード (売上、利益、客単価)
-        cards_layout = QHBoxLayout()
+        # カード
+        cards = QHBoxLayout()
         self.lbl_sales = self._create_card("総売上", "#0288d1")
         self.lbl_profit = self._create_card("純利益", "#2e7d32")
         self.lbl_avg = self._create_card("客単価", "#f9a825")
-        
-        cards_layout.addWidget(self.lbl_sales)
-        cards_layout.addWidget(self.lbl_profit)
-        cards_layout.addWidget(self.lbl_avg)
-        layout.addLayout(cards_layout)
+        cards.addWidget(self.lbl_sales)
+        cards.addWidget(self.lbl_profit)
+        cards.addWidget(self.lbl_avg)
+        layout.addLayout(cards)
 
-        # 下段: 決済内訳 と 経費
-        bottom_layout = QHBoxLayout()
+        bottom = QHBoxLayout()
         
-        # 左: 決済方法別テーブル
-        left_box = QVBoxLayout()
-        left_box.addWidget(QLabel("【決済方法別売上】"))
+        # 決済内訳
+        left = QVBoxLayout()
+        left.addWidget(QLabel("【決済方法別売上】"))
         self.table_payment = QTableWidget()
         self.table_payment.setColumnCount(2)
         self.table_payment.setHorizontalHeaderLabels(["方法", "金額"])
         self.table_payment.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        left_box.addWidget(self.table_payment)
-        bottom_layout.addLayout(left_box)
+        left.addWidget(self.table_payment)
+        bottom.addLayout(left)
 
-        # 右: 経費合計表示
-        right_box = QVBoxLayout()
-        right_box.addWidget(QLabel("【経費合計】"))
+        # 経費
+        right = QVBoxLayout()
+        right.addWidget(QLabel("【経費合計】"))
         self.lbl_expenses = QLabel("¥0")
         self.lbl_expenses.setStyleSheet("font-size: 36px; color: #ef5350; font-weight: bold;")
         self.lbl_expenses.setAlignment(Qt.AlignCenter)
-        right_box.addWidget(self.lbl_expenses)
-        right_box.addStretch()
-        bottom_layout.addLayout(right_box)
+        right.addWidget(self.lbl_expenses)
+        right.addStretch()
+        bottom.addLayout(right)
 
-        layout.addLayout(bottom_layout)
+        layout.addLayout(bottom)
 
-    def _create_card(self, title, color_code):
-        lbl = QLabel(f"{title}\n¥0")
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setFont(QFont("Meiryo", 14, QFont.Bold))
-        lbl.setStyleSheet(f"background-color: {color_code}; border-radius: 8px; padding: 10px;")
-        return lbl
-
-    # ----------------------------------------------------------------
-    # タブ2: 詳細分析初期化
-    # ----------------------------------------------------------------
+    # --- 2. 詳細分析 (ネストタブ実装) ---
     def _init_tab_analysis(self):
         layout = QVBoxLayout(self.tab_analysis)
-        layout.addWidget(QLabel("【詳細クロス集計】", font=QFont("Meiryo", 14, QFont.Bold)))
         
-        info_text = (
-            "画面上での複雑な分析機能は現在準備中です。\n"
-            "右上の「Excel出力」ボタンを押すと、以下の高度な分析シートが自動作成されます。\n\n"
-            "📊 出力される分析シート:\n"
-            "  1. 時間帯 × 商品 (どの時間に何が売れたか)\n"
-            "  2. 客層 × 商品 (誰が何を買ったか)\n"
-            "  3. 時間帯 × 客層 (いつ誰が来たか)\n"
-        )
-        info_label = QLabel(info_text)
-        info_label.setStyleSheet("font-size: 16px; line-height: 1.5; padding: 20px; background-color: #333; border: 1px solid #555; border-radius: 5px;")
-        info_label.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        # ネストしたタブを作成
+        self.inner_tabs = QTabWidget()
+        self.inner_tabs.setStyleSheet("QTabWidget::pane { border: none; } QTabBar::tab { background: #555; } QTabBar::tab:selected { background: #00897b; }")
         
-        layout.addWidget(info_label)
-        layout.addStretch()
+        # 3つのテーブルを用意
+        self.table_time_prod = QTableWidget()
+        self.table_cust_prod = QTableWidget()
+        self.table_time_cust = QTableWidget()
+        
+        self.inner_tabs.addTab(self.table_time_prod, "時間 × 商品")
+        self.inner_tabs.addTab(self.table_cust_prod, "客層 × 商品")
+        self.inner_tabs.addTab(self.table_time_cust, "時間 × 客層(客数)")
+        
+        layout.addWidget(self.inner_tabs)
 
-    # ----------------------------------------------------------------
-    # タブ3: 伝票一覧初期化 (★ここは消さずに残します)
-    # ----------------------------------------------------------------
+    # --- 3. 伝票一覧 ---
     def _init_tab_transactions(self):
         layout = QHBoxLayout(self.tab_transactions)
-        
         splitter = QSplitter(Qt.Horizontal)
         
-        # 左: 一覧リスト
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0,0,0,0)
-        left_layout.addWidget(QLabel("伝票リスト (クリックで詳細)"))
+        left = QWidget()
+        l_lay = QVBoxLayout(left)
+        l_lay.setContentsMargins(0,0,0,0)
+        l_lay.addWidget(QLabel("伝票リスト"))
         
         self.table_tx = QTableWidget()
-        self.table_tx.setColumnCount(5)
-        self.table_tx.setHorizontalHeaderLabels(["ID", "時間", "合計", "点数", "決済"])
+        self.table_tx.setColumnCount(6) # +客層
+        self.table_tx.setHorizontalHeaderLabels(["ID", "時間", "合計", "点数", "決済", "客層"])
         self.table_tx.setSelectionBehavior(QTableWidget.SelectRows)
         self.table_tx.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table_tx.cellClicked.connect(self._on_tx_clicked)
-        
-        h = self.table_tx.horizontalHeader()
-        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        h.setSectionResizeMode(1, QHeaderView.Stretch)
-        
-        left_layout.addWidget(self.table_tx)
-        splitter.addWidget(left_widget)
+        self.table_tx.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        l_lay.addWidget(self.table_tx)
+        splitter.addWidget(left)
 
-        # 右: 詳細レシート
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0,0,0,0)
-        right_layout.addWidget(QLabel("伝票詳細"))
-        
+        right = QWidget()
+        r_lay = QVBoxLayout(right)
+        r_lay.setContentsMargins(0,0,0,0)
+        r_lay.addWidget(QLabel("伝票詳細"))
         self.text_detail = QTextEdit()
         self.text_detail.setReadOnly(True)
-        self.text_detail.setPlaceholderText("左のリストから伝票を選択してください")
-        
-        right_layout.addWidget(self.text_detail)
-        splitter.addWidget(right_widget)
+        r_lay.addWidget(self.text_detail)
+        splitter.addWidget(right)
         
         splitter.setStretchFactor(0, 6)
         splitter.setStretchFactor(1, 4)
-
         layout.addWidget(splitter)
 
-    # ----------------------------------------------------------------
-    # タブ4: 操作ログ初期化
-    # ----------------------------------------------------------------
+    # --- 4. ログ ---
     def _init_tab_logs(self):
         layout = QVBoxLayout(self.tab_logs)
-        layout.addWidget(QLabel("システム操作ログ"))
-        
         self.table_logs = QTableWidget()
         self.table_logs.setColumnCount(3)
         self.table_logs.setHorizontalHeaderLabels(["日時", "レベル", "内容"])
         h = self.table_logs.horizontalHeader()
-        h.setSectionResizeMode(0, QHeaderView.ResizeToContents) # 日時
-        h.setSectionResizeMode(1, QHeaderView.ResizeToContents) # レベル
-        h.setSectionResizeMode(2, QHeaderView.Stretch)          # 内容
-        
+        h.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(2, QHeaderView.Stretch)
         layout.addWidget(self.table_logs)
 
-    # ----------------------------------------------------------------
-    # データ読み込み処理
-    # ----------------------------------------------------------------
+    # --- データ読み込み ---
     def _load_data(self):
-        """全データをサービスから取得して表示更新"""
-        
-        # 1. ダッシュボード情報の更新
+        # 1. ダッシュボード
         summary = self.service.get_dashboard_summary()
         self.lbl_sales.setText(f"総売上\n¥{summary['sales']:,}")
         self.lbl_profit.setText(f"純利益\n¥{summary['profit']:,}")
         self.lbl_avg.setText(f"客単価\n¥{summary['avg_spend']:,}")
         self.lbl_expenses.setText(f"¥{summary['expenses']:,}")
 
-        # 決済内訳テーブル
         pays = summary['payments']
         self.table_payment.setRowCount(len(pays))
-        for i, (method, amount) in enumerate(pays.items()):
-            self.table_payment.setItem(i, 0, QTableWidgetItem(method))
-            self.table_payment.setItem(i, 1, QTableWidgetItem(f"¥{amount:,}"))
+        for i, (m, amt) in enumerate(pays.items()):
+            self.table_payment.setItem(i, 0, QTableWidgetItem(m))
+            self.table_payment.setItem(i, 1, QTableWidgetItem(f"¥{amt:,}"))
 
-        # 2. 伝票一覧の更新
+        # 2. 詳細分析 (Pivot表示)
+        pivots = self.service.get_pivot_data()
+        if pivots:
+            self._fill_pivot_table(self.table_time_prod, pivots['time_prod'])
+            self._fill_pivot_table(self.table_cust_prod, pivots['cust_prod'])
+            self._fill_pivot_table(self.table_time_cust, pivots['time_cust'])
+
+        # 3. 伝票一覧
         tx_list = self.service.get_transaction_list()
         self.table_tx.setRowCount(len(tx_list))
         for i, tx in enumerate(tx_list):
             id_item = QTableWidgetItem(str(tx['id']))
-            id_item.setData(Qt.UserRole, tx['id']) # IDを隠しデータとして保持
-            
+            id_item.setData(Qt.UserRole, tx['id'])
             self.table_tx.setItem(i, 0, id_item)
-            self.table_tx.setItem(i, 1, QTableWidgetItem(str(tx['time'])))
+            self.table_tx.setItem(i, 1, QTableWidgetItem(str(tx['time']))) # JST
             self.table_tx.setItem(i, 2, QTableWidgetItem(f"¥{tx['total']:,}"))
             self.table_tx.setItem(i, 3, QTableWidgetItem(f"{tx['items']}点"))
             self.table_tx.setItem(i, 4, QTableWidgetItem(str(tx['payment'])))
+            self.table_tx.setItem(i, 5, QTableWidgetItem(str(tx.get('customer', ''))))
 
-        # 3. ログの更新
+        # 4. ログ
         logs = self.service.get_logs()
         self.table_logs.setRowCount(len(logs))
         for i, log in enumerate(logs):
-            self.table_logs.setItem(i, 0, QTableWidgetItem(str(log['time'])))
-            
-            # レベルごとに色分け
-            level_item = QTableWidgetItem(log['level'])
-            if log['level'] == 'warning':
-                level_item.setForeground(QColor("#ff9800"))
-            elif log['level'] == 'error':
-                level_item.setForeground(QColor("#f44336"))
-            else:
-                level_item.setForeground(QColor("#4caf50"))
-            
-            self.table_logs.setItem(i, 1, level_item)
+            self.table_logs.setItem(i, 0, QTableWidgetItem(str(log['time']))) # JST
+            lvl = QTableWidgetItem(log['level'])
+            if log['level']=='error': lvl.setForeground(QColor("#ff5252"))
+            self.table_logs.setItem(i, 1, lvl)
             self.table_logs.setItem(i, 2, QTableWidgetItem(log['msg']))
 
-    # ----------------------------------------------------------------
-    # イベントハンドラ
-    # ----------------------------------------------------------------
+    def _fill_pivot_table(self, table_widget, df):
+        """DataFrameをQTableWidgetに流し込むヘルパー"""
+        if df.empty: return
+        
+        # ヘッダー設定
+        table_widget.setRowCount(len(df.index))
+        table_widget.setColumnCount(len(df.columns))
+        table_widget.setHorizontalHeaderLabels([str(c) for c in df.columns])
+        table_widget.setVerticalHeaderLabels([str(i) for i in df.index])
+        
+        for r in range(len(df.index)):
+            for c in range(len(df.columns)):
+                # ilocで位置指定アクセス
+                val = df.iloc[r, c]
+                item = QTableWidgetItem(str(val))
+                item.setTextAlignment(Qt.AlignCenter)
+                if val == 0:
+                    item.setForeground(QColor("#777")) # 0は薄く
+                table_widget.setItem(r, c, item)
+
     def _on_tx_clicked(self, row, col):
-        """伝票一覧がクリックされたら詳細を表示"""
         item = self.table_tx.item(row, 0)
         tx_id = item.data(Qt.UserRole)
-        
         details = self.service.get_transaction_details(tx_id)
         
-        # レシート風テキスト生成
         txt = f"=== 伝票 #{details['id']} ===\n"
         txt += f"日時: {details['time']}\n"
-        txt += "-"*35 + "\n"
-        
+        txt += "-"*30 + "\n"
         for p in details['items']:
-            txt += f"{p['name']} x{p['qty']}\n"
-            txt += f"    @¥{p['price']:,} = ¥{p['sub']:,}\n"
-            
-        txt += "-"*35 + "\n"
+            txt += f"{p['name']} x{p['qty']}  ¥{p['sub']:,}\n"
+        txt += "-"*30 + "\n"
         txt += f"合計: ¥{details['total']:,}\n"
-        txt += "-"*35 + "\n"
         txt += "[決済]\n"
         for pay in details['payments']:
             txt += f"  {pay['method']}: ¥{pay['amount']:,}\n"
-            
         self.text_detail.setText(txt)
 
+    def _create_card(self, title, color):
+        lbl = QLabel(f"{title}\n¥0")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setFont(QFont("Meiryo", 14, QFont.Bold))
+        lbl.setStyleSheet(f"background-color: {color}; border-radius: 8px; padding: 10px;")
+        return lbl
+
     def _export_excel(self):
-        """Excel出力処理"""
-        default_name = self.service.get_default_filename()
-        
-        file_name, _ = QFileDialog.getSaveFileName(
-            self, "Excel出力", default_name, "Excel Files (*.xlsx)"
-        )
-        
-        if file_name:
-            if not file_name.endswith('.xlsx'):
-                file_name += '.xlsx'
-                
-            success, msg = self.service.export_to_excel(file_name)
-            if success:
-                QMessageBox.information(self, "完了", msg)
-            else:
-                QMessageBox.warning(self, "エラー", f"出力失敗: {msg}")
+        default = self.service.get_default_filename()
+        fname, _ = QFileDialog.getSaveFileName(self, "Excel出力", default, "Excel Files (*.xlsx)")
+        if fname:
+            if not fname.endswith('.xlsx'): fname += '.xlsx'
+            ok, msg = self.service.export_to_excel(fname)
+            if ok: QMessageBox.information(self, "完了", msg)
+            else: QMessageBox.warning(self, "エラー", msg)
