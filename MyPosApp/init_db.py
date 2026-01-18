@@ -118,6 +118,27 @@ def create_tables():
     )
     """)
 
+    # 8. 割引ルール (親)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS discount_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,         -- ルール名 (例: セット割)
+        required_qty INTEGER NOT NULL, -- 何個ごとに (例: 2)
+        discount_amount INTEGER NOT NULL, -- 割引額 (例: -50)
+        is_active INTEGER DEFAULT 1
+    )
+    """)
+
+    # 9. 割引対象商品 (子: 中間テーブル)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS discount_targets (
+        rule_id INTEGER,
+        product_id INTEGER,
+        FOREIGN KEY(rule_id) REFERENCES discount_rules(id),
+        FOREIGN KEY(product_id) REFERENCES products(id)
+    )
+    """)
+
     # --- データ投入 (存在しない場合のみ) ---
     cursor.execute("SELECT count(*) FROM products")
     if cursor.fetchone()[0] == 0:
@@ -169,6 +190,15 @@ def create_tables():
             ("スタッフB", "002")
         ]
         cursor.executemany("INSERT INTO users (name, user_code) VALUES (?, ?)", users)
+        
+        cursor.execute("INSERT INTO discount_rules (name, required_qty, discount_amount) VALUES (?, ?, ?)", 
+                       ("フードセット割", 2, -50))
+        rule_id = cursor.lastrowid
+        
+        # 対象商品紐付け (ID:1=焼きそば, ID:2=たこ焼き, ID:3=唐揚げ)
+        # ※実際のIDはauto_incrementなのでズレる可能性がありますが、初期状態なら1,2,3のはずです
+        targets = [(rule_id, 1), (rule_id, 2), (rule_id, 3)]
+        cursor.executemany("INSERT INTO discount_targets (rule_id, product_id) VALUES (?, ?)", targets)
         
         conn.commit()
     

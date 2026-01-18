@@ -262,11 +262,37 @@ class AdminWindow(QDialog):
         txt = f"=== 伝票 #{details['id']} ===\n"
         txt += f"担当: {details.get('cashier', '不明')}\n"
         txt += f"日時: {details['time']}\n"
-        txt += "-"*30 + "\n"
-        for p in details['items']:
+        txt += "="*30 + "\n"
+        
+        # 商品と割引を分離
+        products = []
+        discounts = []
+        for item in details['items']:
+            if item['price'] < 0:
+                discounts.append(item)
+            else:
+                products.append(item)
+                
+        # 商品ゾーン
+        subtotal_prod = 0
+        txt += "【購入商品】\n"
+        for p in products:
             txt += f"{p['name']} x{p['qty']}  ¥{p['sub']:,}\n"
+            subtotal_prod += p['sub']
+        txt += f"  >> 商品小計: ¥{subtotal_prod:,}\n"
         txt += "-"*30 + "\n"
-        txt += f"合計: ¥{details['total']:,}\n"
+        
+        # 割引ゾーン
+        if discounts:
+            subtotal_disc = 0
+            txt += "【適用割引】\n"
+            for d in discounts:
+                txt += f"{d['name']} x{d['qty']}  ¥{d['sub']:,}\n"
+                subtotal_disc += d['sub']
+            txt += f"  >> 割引合計: ¥{subtotal_disc:,}\n"
+            txt += "-"*30 + "\n"
+            
+        txt += f"支払合計: ¥{details['total']:,}\n"
         txt += "[決済]\n"
         for pay in details['payments']:
             txt += f"  {pay['method']}: ¥{pay['amount']:,}\n"

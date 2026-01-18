@@ -5,6 +5,7 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.product_repo import ProductRepository  # ★追加
 from app.models.product import Product
 from app.models.customer import Customer
+from app.repositories.discount_repo import DiscountRepository
 
 class CartService(QObject):
     # シグナル定義
@@ -19,13 +20,17 @@ class CartService(QObject):
         self.repo: TransactionRepository = TransactionRepository()
         self.user_repo = UserRepository()
         self.prod_repo = ProductRepository() # ★追加: 商品情報を取得するため
+        self.disc_repo = DiscountRepository() # ★追加
         
+        self.cart_items: List[Dict[str, Any]] = []     
+        self.applied_discounts: List[Dict[str, Any]] = [] # ★新規: 自動計算された割引リスト
         self.cart_items: List[Dict[str, Any]] = []     
         self.selected_customer: Optional[Customer] = None 
         self.current_user_name = "未設定"
 
         self.current_expenses: int = self.repo.get_total_expenses()
         self.total_sales_today: int = self.repo.get_total_sales_today()
+        self.discount_rules: List[Dict[str, Any]] = self.disc_repo.fetch_rules_with_targets()
         
         # ★修正: 商品の平均単価を計算して目標値にする
         self.avg_price_target = self._calculate_avg_price()
@@ -121,7 +126,10 @@ class CartService(QObject):
         self.selected_customer = customer
 
     def get_total_amount(self) -> int:
-        return sum(item['price'] * item['qty'] for item in self.cart_items)
+        """商品合計 + 割引合計"""
+        prod_total = sum(item['price'] * item['qty'] for item in self.cart_items)
+        disc_total = sum(d['amount'] * d['qty'] for d in self.applied_discounts)
+        return prod_total + disc_total
 
     def set_current_user(self, name: str):
         self.current_user_name = name
@@ -135,14 +143,33 @@ class CartService(QObject):
         total = self.get_total_amount()
         customer_label = self.selected_customer.label
 
+        # 保存用リストの作成（商品＋割引）
+        final_items = self.cart_items.copy()
+        for d in self.applied_discounts:
+            final_items.append({
+                'name': d['name'],
+                'price': d['amount'],
+                'qty': d['qty'],
+                'subtotal': d['amount'] * d['qty']
+            })
+
         try:
-            self.repo.save_transaction(total, customer_label, self.current_user_name, self.cart_items, payments)
+            # DB保存
+            self.repo.save_transaction(
+                total, customer_label, self.current_user_name, 
+                final_items, payments
+            )
             self.total_sales_today += total
             
+            # --- ★ここからリセット処理 ---
             self.cart_items = []
+            self.applied_discounts = []  # ★追加: 明示的にリセット
             self.selected_customer = None
             
+            # 完了シグナル
             self.checkout_completed.emit(customer_label, change)
+            
+            # 再計算（画面の合計などを0に戻す）
             self._recalculate()
             
         except Exception as e:
@@ -150,6 +177,30 @@ class CartService(QObject):
             print(f"Checkout Error: {e}")
 
     def _recalculate(self) -> None:
+        """再計算ロジック (割引計算を追加)"""
+        
+        # 1. 割引の自動計算
+        self.applied_discounts = []
+        
+        for rule in self.discount_rules:
+            # カート内の対象商品の合計個数を数える
+            target_count = 0
+            for item in self.cart_items:
+                # 手入力商品(ID=None)は対象外
+                if item['id'] is not None and item['id'] in rule['target_ids']:
+                    target_count += item['qty']
+            
+            # 適用回数 = 合計個数 // 必要個数
+            apply_times = target_count // rule['req']
+            
+            if apply_times > 0:
+                self.applied_discounts.append({
+                    'name': rule['name'],
+                    'amount': rule['amt'], # マイナス値
+                    'qty': apply_times
+                })
+
+        # 2. 以下、既存の利益計算など
         current_cart_total = self.get_total_amount()
         estimated_profit = (self.total_sales_today + current_cart_total) - self.current_expenses
         

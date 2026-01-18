@@ -151,7 +151,24 @@ class MainWindow(QMainWindow):
         
         self.cart_table.cellChanged.connect(self._on_cart_cell_changed)
         
-        cart_layout.addWidget(self.cart_table)
+        cart_layout.addWidget(self.cart_table, stretch=2)
+
+        # 割引テーブル (小さめ)
+        self.lbl_discount_title = QLabel("適用割引")
+        self.lbl_discount_title.setStyleSheet("font-weight: bold; color: #ff8a80; margin-top: 5px;")
+        cart_layout.addWidget(self.lbl_discount_title)
+
+        self.discount_table = QTableWidget()
+        self.discount_table.setColumnCount(3) # 名前, 回数, 小計
+        self.discount_table.setHorizontalHeaderLabels(["割引名", "回数", "値引額"])
+        self.discount_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.discount_table.verticalHeader().setVisible(False)
+        self.discount_table.setFixedHeight(100) # 高さを固定
+        self.discount_table.setStyleSheet("""
+            QTableWidget { background-color: #424242; color: #ff8a80; border: 1px solid #d32f2f; }
+            QHeaderView::section { background-color: #5d4037; color: white; }
+        """)
+        cart_layout.addWidget(self.discount_table, stretch=1)
 
         self.lbl_total = QLabel("合計: ¥0")
         self.lbl_total.setStyleSheet("font-size: 24px; font-weight: bold; background-color: #212121; color: #00e676; padding: 10px; border-radius: 4px;")
@@ -253,6 +270,7 @@ class MainWindow(QMainWindow):
         self.btn_checkout.setText(f"会計\n({customer.label})")
 
     def _render_cart(self) -> None:
+        # 1. 商品テーブル
         raw_items = self.cart_service.cart_items
         indices = list(range(len(raw_items)))
         indices.sort(key=lambda i: (
@@ -301,6 +319,17 @@ class MainWindow(QMainWindow):
             btn_del.clicked.connect(lambda _, idx=data_index: self.cart_service.remove_item(idx))
             self.cart_table.setCellWidget(view_row, 5, btn_del)
 
+        # 2. 割引テーブル
+        discounts = self.cart_service.applied_discounts
+        self.discount_table.setRowCount(len(discounts))
+        
+        # 割引があるなら表示、なければ隠すなどの制御も可能ですが、今回は常時表示
+        for i, d in enumerate(discounts):
+            sub = d['amount'] * d['qty']
+            self.discount_table.setItem(i, 0, QTableWidgetItem(d['name']))
+            self.discount_table.setItem(i, 1, QTableWidgetItem(f"{d['qty']}回"))
+            self.discount_table.setItem(i, 2, QTableWidgetItem(f"¥{sub:,}"))
+        
         self.cart_table.blockSignals(False)
         self.lbl_total.setText(f"合計: ¥{self.cart_service.get_total_amount():,}")
 
