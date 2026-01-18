@@ -2,10 +2,12 @@ from typing import List, Dict, Any, Optional, Tuple
 from PySide6.QtCore import QObject, Signal
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.user_repo import UserRepository
-from app.repositories.product_repo import ProductRepository  # ★追加
+from app.repositories.product_repo import ProductRepository
+from app.repositories.discount_repo import DiscountRepository
 from app.models.product import Product
 from app.models.customer import Customer
-from app.repositories.discount_repo import DiscountRepository
+# ★新規インポート
+from app.logic.calculator import PriceCalculator
 
 class CartService(QObject):
     # シグナル定義
@@ -17,37 +19,35 @@ class CartService(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self.repo: TransactionRepository = TransactionRepository()
+        self.repo = TransactionRepository()
         self.user_repo = UserRepository()
-        self.prod_repo = ProductRepository() # ★追加: 商品情報を取得するため
-        self.disc_repo = DiscountRepository() # ★追加
+        self.prod_repo = ProductRepository()
+        self.disc_repo = DiscountRepository()
+        
+        # ★計算ロジッククラスのインスタンス化
+        self.calculator = PriceCalculator()
         
         self.cart_items: List[Dict[str, Any]] = []     
-        self.applied_discounts: List[Dict[str, Any]] = [] # ★新規: 自動計算された割引リスト
-        self.cart_items: List[Dict[str, Any]] = []     
+        self.applied_discounts: List[Dict[str, Any]] = []
         self.selected_customer: Optional[Customer] = None 
         self.current_user_name = "未設定"
 
         self.current_expenses: int = self.repo.get_total_expenses()
         self.total_sales_today: int = self.repo.get_total_sales_today()
-        self.discount_rules: List[Dict[str, Any]] = self.disc_repo.fetch_rules_with_targets()
         
-        # ★修正: 商品の平均単価を計算して目標値にする
+        # 平均単価の計算も本来はLogicに移せますが、Repo依存があるので一旦ここで計算
         self.avg_price_target = self._calculate_avg_price()
+        
+        # ルール読み込み
+        self.discount_rules = self.disc_repo.fetch_rules_with_targets()
 
     def _calculate_avg_price(self) -> int:
-        """登録されている商品(プラス価格のみ)の平均単価を計算"""
         products = self.prod_repo.fetch_active_products()
-        
-        # 0円より高い商品の価格リストを作る（割引などのマイナスは除外）
         valid_prices = [p.price for p in products if p.price > 0]
-        
-        if not valid_prices:
-            return 500 # 商品がない場合のデフォルト値
-            
-        # 平均を計算 (整数に丸める)
+        if not valid_prices: return 500
         return int(sum(valid_prices) / len(valid_prices))
 
+    # --- 商品追加・削除系 (変更なし) ---
     def add_product(self, product: Product) -> None:
         for item in self.cart_items:
             if item.get('id') == product.id and not item.get('is_manual'):
@@ -55,33 +55,14 @@ class CartService(QObject):
                 self._notify_message(f"【追加】 {product.name} (+1)", "info")
                 self._recalculate()
                 return
-
-        new_item: Dict[str, Any] = {
-            'id': product.id,
-            'name': product.name,
-            'price': product.price,
-            'qty': 1,
-            'is_manual': False,
-            'note': product.note
-        }
+        new_item = {'id': product.id, 'name': product.name, 'price': product.price, 'qty': 1, 'is_manual': False, 'note': product.note}
         self.cart_items.append(new_item)
-        
-        if product.note:
-            self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
-        else:
-            self._notify_message(f"【追加】 {product.name}", "info")
-            
+        if product.note: self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
+        else: self._notify_message(f"【追加】 {product.name}", "info")
         self._recalculate()
 
     def add_manual_item(self, price: int, name: str) -> None:
-        new_item: Dict[str, Any] = {
-            'id': None,
-            'name': name,
-            'price': price,
-            'qty': 1,
-            'is_manual': True,
-            'note': "手入力"
-        }
+        new_item = {'id': None, 'name': name, 'price': price, 'qty': 1, 'is_manual': True, 'note': "手入力"}
         self.cart_items.append(new_item)
         self._notify_message(f"【手入力】 {name}: ¥{price:,}", "info")
         self._recalculate()
@@ -90,9 +71,7 @@ class CartService(QObject):
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             old_qty = item['qty']
-            
-            if new_qty <= 0:
-                self.remove_item(index)
+            if new_qty <= 0: self.remove_item(index)
             else:
                 item['qty'] = new_qty
                 self._notify_message(f"【変更】 {item['name']}: {old_qty}個 → {new_qty}個", "info")
@@ -113,8 +92,7 @@ class CartService(QObject):
                 item['qty'] -= 1
                 self._notify_message(f"【減少】 {item['name']} (-1)", "info")
                 self._recalculate()
-            else:
-                self.remove_item(index)
+            else: self.remove_item(index)
 
     def remove_item(self, index: int) -> None:
         if 0 <= index < len(self.cart_items):
@@ -125,16 +103,49 @@ class CartService(QObject):
     def set_customer(self, customer: Customer) -> None:
         self.selected_customer = customer
 
-    def get_total_amount(self) -> int:
-        """商品合計 + 割引合計"""
-        prod_total = sum(item['price'] * item['qty'] for item in self.cart_items)
-        disc_total = sum(d['amount'] * d['qty'] for d in self.applied_discounts)
-        return prod_total + disc_total
-
     def set_current_user(self, name: str):
         self.current_user_name = name
         self.user_changed.emit(name)
         self._notify_message(f"担当者: {name} さんでログインしました", "info")
+
+    # --- 計算・会計系 (修正) ---
+
+    def get_total_amount(self) -> int:
+        """計算機に委譲"""
+        return self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
+
+    def _recalculate(self) -> None:
+        """状態更新とシグナル発行 (計算機を使用)"""
+        
+        # 1. 割引計算 (Logicに委譲)
+        self.applied_discounts = self.calculator.process_discounts(
+            self.cart_items, 
+            self.discount_rules
+        )
+
+        # 2. 合計金額計算 (Logicに委譲)
+        grand_total = self.calculator.calculate_grand_total(
+            self.cart_items, 
+            self.applied_discounts
+        )
+        
+        # 3. 利益予測 (Logicに委譲)
+        est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
+            grand_total,
+            self.total_sales_today,
+            self.current_expenses,
+            self.avg_price_target
+        )
+
+        # シグナル発行
+        self.cart_updated.emit()
+        self.stats_updated.emit(
+            self.total_sales_today + grand_total,
+            self.current_expenses,
+            est_profit,
+            msg,
+            is_red
+        )
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
         if not self.cart_items or not self.selected_customer:
@@ -143,7 +154,7 @@ class CartService(QObject):
         total = self.get_total_amount()
         customer_label = self.selected_customer.label
 
-        # 保存用リストの作成（商品＋割引）
+        # 保存用リスト作成 (商品 + 割引)
         final_items = self.cart_items.copy()
         for d in self.applied_discounts:
             final_items.append({
@@ -154,72 +165,23 @@ class CartService(QObject):
             })
 
         try:
-            # DB保存
             self.repo.save_transaction(
                 total, customer_label, self.current_user_name, 
                 final_items, payments
             )
             self.total_sales_today += total
             
-            # --- ★ここからリセット処理 ---
+            # リセット
             self.cart_items = []
-            self.applied_discounts = []  # ★追加: 明示的にリセット
+            self.applied_discounts = []
             self.selected_customer = None
             
-            # 完了シグナル
             self.checkout_completed.emit(customer_label, change)
-            
-            # 再計算（画面の合計などを0に戻す）
             self._recalculate()
             
         except Exception as e:
             self._notify_message(f"エラー: 保存に失敗しました {str(e)}", "warning")
             print(f"Checkout Error: {e}")
-
-    def _recalculate(self) -> None:
-        """再計算ロジック (割引計算を追加)"""
-        
-        # 1. 割引の自動計算
-        self.applied_discounts = []
-        
-        for rule in self.discount_rules:
-            # カート内の対象商品の合計個数を数える
-            target_count = 0
-            for item in self.cart_items:
-                # 手入力商品(ID=None)は対象外
-                if item['id'] is not None and item['id'] in rule['target_ids']:
-                    target_count += item['qty']
-            
-            # 適用回数 = 合計個数 // 必要個数
-            apply_times = target_count // rule['req']
-            
-            if apply_times > 0:
-                self.applied_discounts.append({
-                    'name': rule['name'],
-                    'amount': rule['amt'], # マイナス値
-                    'qty': apply_times
-                })
-
-        # 2. 以下、既存の利益計算など
-        current_cart_total = self.get_total_amount()
-        estimated_profit = (self.total_sales_today + current_cart_total) - self.current_expenses
-        
-        msg = "黒字達成!"
-        is_red = False
-        if estimated_profit < 0:
-            is_red = True
-            # 計算した平均単価を使用
-            needed = (abs(estimated_profit) // self.avg_price_target) + 1
-            msg = f"あと {needed} 個"
-
-        self.cart_updated.emit()
-        self.stats_updated.emit(
-            self.total_sales_today + current_cart_total,
-            self.current_expenses,
-            estimated_profit,
-            msg,
-            is_red
-        )
 
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
