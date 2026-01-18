@@ -260,6 +260,7 @@ class AdminWindow(QDialog):
         details = self.service.get_transaction_details(tx_id)
         
         txt = f"=== 伝票 #{details['id']} ===\n"
+        txt += f"担当: {details.get('cashier', '不明')}\n"
         txt += f"日時: {details['time']}\n"
         txt += "-"*30 + "\n"
         for p in details['items']:

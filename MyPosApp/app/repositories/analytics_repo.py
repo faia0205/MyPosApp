@@ -38,7 +38,7 @@ class AnalyticsRepository(BaseRepository):
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, timestamp, total_amount FROM transactions WHERE id=?", (transaction_id,))
+        cursor.execute("SELECT id, timestamp, total_amount, cashier_name FROM transactions WHERE id=?", (transaction_id,))
         head = cursor.fetchone()
         
         cursor.execute("SELECT product_name, unit_price, quantity, subtotal FROM transaction_items WHERE transaction_id=?", (transaction_id,))
@@ -49,7 +49,7 @@ class AnalyticsRepository(BaseRepository):
         conn.close()
         
         return {
-            "id": head[0], "timestamp": head[1], "total": head[2],
+            "id": head[0], "timestamp": head[1], "total": head[2], "cashier": head[3],
             "items": [{"name": r[0], "price": r[1], "qty": r[2], "sub": r[3]} for r in items],
             "payments": [{"method": r[0], "amount": r[1]} for r in payments]
         }
@@ -74,6 +74,7 @@ class AnalyticsRepository(BaseRepository):
                 t.id,
                 t.timestamp,
                 t.customer_label,
+                t.cashier_name,
                 i.product_name,
                 i.quantity,
                 i.subtotal
@@ -84,6 +85,6 @@ class AnalyticsRepository(BaseRepository):
         conn.close()
         return [
             # 戻り値の辞書に 'id' を追加
-            {"id": r[0], "timestamp": r[1], "customer": r[2], "product": r[3], "qty": r[4], "sales": r[5]}
+            {"id": r[0], "timestamp": r[1], "customer": r[2], "cashier": r[3], "product": r[4], "qty": r[5], "sales": r[6]}
             for r in rows
         ]

@@ -82,8 +82,8 @@ class AnalyticsService:
         pivots = {
             "time_prod": df.pivot_table(index='product', columns='hour', values='qty', aggfunc='sum', fill_value=0),
             "cust_prod": df.pivot_table(index='product', columns='customer', values='qty', aggfunc='sum', fill_value=0),
-            # ここを変更: values='id', aggfunc='nunique'
-            "time_cust": df.pivot_table(index='customer', columns='hour', values='id', aggfunc='nunique', fill_value=0)
+            "time_cust": df.pivot_table(index='customer', columns='hour', values='id', aggfunc='nunique', fill_value=0),
+            "cashier_sales": df.pivot_table(index='cashier', values='sales', aggfunc='sum', fill_value=0)
         }
         return pivots
 
