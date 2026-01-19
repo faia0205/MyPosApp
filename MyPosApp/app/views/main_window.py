@@ -17,6 +17,7 @@ from app.views.components.custom_buttons import ProductButton, CustomerButton
 from app.views.dialogs.payment_dialog import PaymentDialog
 from app.views.admin_window import AdminWindow
 from app.views.dialogs.login_dialog import LoginDialog
+from app.views.settings_window import SettingsWindow
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -93,6 +94,13 @@ class MainWindow(QMainWindow):
         btn_admin.setFocusPolicy(Qt.NoFocus)
         btn_admin.clicked.connect(self._open_admin_window)
         header_layout.addWidget(btn_admin)
+
+        # 設定ボタン
+        btn_settings = QPushButton("⚙ 設定") # 歯車アイコン代わりの文字
+        btn_settings.setFixedSize(80, 30)
+        btn_settings.setStyleSheet("background-color: #546e7a; color: white; border: none;")
+        btn_settings.clicked.connect(self._open_settings_window)
+        header_layout.addWidget(btn_settings)
             
         main_layout.addWidget(self.header_frame)
 
@@ -509,3 +517,15 @@ class MainWindow(QMainWindow):
             # ただし、初回起動時（まだ誰もいない時）だけは「未設定」にする必要があるなら
             if self.cart_service.current_user_name == "未設定":
                  self.btn_cashier.setText("担当: 未設定")
+    
+    def _open_settings_window(self):
+        """設定画面を開く"""
+        # 権限チェックを入れるならここで (例: 店長のみ)
+        # if self.cart_service.current_user_role != 'admin': return
+        
+        win = SettingsWindow(self)
+        win.exec()
+        
+        # 閉じた後、メイン画面の商品リストも更新が必要かもしれないため
+        # 再読み込みを行う
+        self._load_data()

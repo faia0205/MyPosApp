@@ -1,5 +1,7 @@
 # 売上保存や、決済方法、経費の取得などを担当します。
 from app.repositories.base_repo import BaseRepository
+from typing import List, Dict
+import sqlite3
 
 class TransactionRepository(BaseRepository):
     
@@ -84,3 +86,27 @@ class TransactionRepository(BaseRepository):
             raise e
         finally:
             conn.close()
+
+    def fetch_payment_methods_for_json(self) -> List[Dict]:
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, is_cash, is_active FROM payment_methods")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def upsert_payment_method(self, name: str, is_cash: bool, is_active: bool):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM payment_methods WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        
+        if row:
+            cursor.execute("UPDATE payment_methods SET is_cash=?, is_active=? WHERE id=?", 
+                           (int(is_cash), int(is_active), row[0]))
+        else:
+            cursor.execute("INSERT INTO payment_methods (name, is_cash, is_active) VALUES (?, ?, ?)",
+                           (name, int(is_cash), int(is_active)))
+        conn.commit()
+        conn.close()
