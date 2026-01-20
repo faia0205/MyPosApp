@@ -99,3 +99,15 @@ class ProductEditDialog(QDialog):
             "note": self.note_edit.text().strip(),
             "is_active": self.active_chk.isChecked()
         }
+    
+    def set_category_list(self, categories: list):
+        """カテゴリのコンボボックスに候補を設定"""
+        current = self.cat_combo.currentText()
+        self.cat_combo.clear()
+        self.cat_combo.addItems(categories)
+        
+        # もしリストになければ（新規入力など）、追加しておく
+        if current and current not in categories:
+            self.cat_combo.addItem(current)
+            
+        self.cat_combo.setCurrentText(current)

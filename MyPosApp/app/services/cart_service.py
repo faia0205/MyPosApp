@@ -48,19 +48,48 @@ class CartService(QObject):
         if not valid_prices: return 500
         return int(sum(valid_prices) / len(valid_prices))
 
-    # --- 商品追加・削除系 (変更なし) ---
+    # --- 商品追加・削除系 ---
     def add_product(self, product: Product) -> None:
         for item in self.cart_items:
             if item.get('id') == product.id and not item.get('is_manual'):
                 item['qty'] += 1
+                
+                # ★修正: カート内の単価を、マスタの最新価格に更新する
+                # これにより「追加ボタンを押すと新価格が適用される」ようになります
+                if item['price'] != product.price:
+                    item['price'] = product.price
+                    self._notify_message(f"【更新】 {product.name} の価格を更新しました", "info")
+                
                 self._notify_message(f"【追加】 {product.name} (+1)", "info")
                 self._recalculate()
                 return
+        
+        # 新規追加
         new_item = {'id': product.id, 'name': product.name, 'price': product.price, 'qty': 1, 'is_manual': False, 'note': product.note}
         self.cart_items.append(new_item)
         if product.note: self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
         else: self._notify_message(f"【追加】 {product.name}", "info")
         self._recalculate()
+    
+    # ★新規追加メソッド: マスタデータを受け取り、カート内の価格を一括更新する
+    def refresh_prices(self, master_products: List[Product]) -> None:
+        """
+        設定変更後などに呼び出し、カートに入っている商品の価格を最新マスタに合わせる
+        """
+        # ID -> Product のマップを作成
+        product_map = {p.id: p for p in master_products}
+        
+        updated_count = 0
+        for item in self.cart_items:
+            # 手入力商品(is_manual)はIDがない/Noneなので対象外
+            if not item.get('is_manual') and item.get('id') in product_map:
+                new_price = product_map[item['id']].price
+                if item['price'] != new_price:
+                    item['price'] = new_price
+                    updated_count += 1
+        
+        if updated_count > 0:
+            self._notify_message(f"{updated_count}件の価格情報を更新しました", "info")
 
     def add_manual_item(self, price: int, name: str) -> None:
         new_item = {'id': None, 'name': name, 'price': price, 'qty': 1, 'is_manual': True, 'note': "手入力"}

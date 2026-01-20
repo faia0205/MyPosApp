@@ -72,50 +72,67 @@ class ProductSettingTab(QWidget):
 
     def load_data(self):
         """DBから全データを読み込んで表示"""
-        products = self.repo.fetch_all_as_models() # 全件取得(無効含む)
+        products = self.repo.fetch_all_as_models()
         self.table.setRowCount(len(products))
-        
-        # データ保持用 (行番号 -> Productオブジェクト)
         self.current_products = products
 
+        # ★追加: 現在使われているカテゴリの一覧を取得（ダイアログに渡すため）
+        # setで重複を排除し、リスト化
+        self.existing_categories = sorted(list({p.category for p in products if p.category}))
+        if "フード" not in self.existing_categories: self.existing_categories.insert(0, "フード")
+        if "ドリンク" not in self.existing_categories: self.existing_categories.insert(1, "ドリンク")
+
         for row, p in enumerate(products):
+            # 共通のフラグ設定関数: 選択はできるが編集は不可
+            def create_readonly_item(text):
+                item = QTableWidgetItem(str(text))
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled) # Editable を外す
+                return item
+
             # ID
-            item_id = QTableWidgetItem(str(p.id))
+            item_id = create_readonly_item(p.id)
             item_id.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 0, item_id)
 
             # Name
-            self.table.setItem(row, 1, QTableWidgetItem(p.name))
+            self.table.setItem(row, 1, create_readonly_item(p.name))
 
             # Price
-            item_price = QTableWidgetItem(f"¥{p.price:,}")
+            item_price = create_readonly_item(f"¥{p.price:,}")
             item_price.setTextAlignment(Qt.AlignRight)
             self.table.setItem(row, 2, item_price)
 
             # Category
-            self.table.setItem(row, 3, QTableWidgetItem(p.category))
+            self.table.setItem(row, 3, create_readonly_item(p.category))
 
-            # Color (セル自体に色をつける)
-            item_color = QTableWidgetItem(p.color)
+            # Color
+            item_color = create_readonly_item(p.color)
             item_color.setBackground(QColor(p.color))
-            item_color.setForeground(QColor("black")) # 文字は見やすく黒固定
+            item_color.setForeground(QColor("black"))
             self.table.setItem(row, 4, item_color)
 
-            # Status (Active)
-            status_text = "販売中" if p.is_active else "無効"
-            item_status = QTableWidgetItem(status_text)
-            if not p.is_active:
-                item_status.setForeground(QColor("#ff5252")) # 赤文字
+            # Status (★見やすく変更)
+            # 文字色だけでなく、アイコンや記号で状態を示す
+            status_text = "● 販売中" if p.is_active else "× 停止中"
+            item_status = create_readonly_item(status_text)
+            if p.is_active:
+                item_status.setForeground(QColor("#69f0ae")) # 明るい緑
+                item_status.setBackground(QColor("#1b5e20")) # 背景を濃い緑に
             else:
-                item_status.setForeground(QColor("#69f0ae")) # 緑文字
+                item_status.setForeground(QColor("#bdbdbd")) # グレー
+                item_status.setBackground(QColor("#424242")) # 背景も暗く
+            item_status.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(row, 5, item_status)
 
             # Note
-            self.table.setItem(row, 6, QTableWidgetItem(p.note))
+            self.table.setItem(row, 6, create_readonly_item(p.note))
 
+    # _add_product / _edit_selected でダイアログを呼ぶ際にカテゴリリストを渡す
     def _add_product(self):
-        """追加ダイアログを開く"""
+        # Dialogの __init__ に categories 引数を追加して渡す設計にするか、
+        # Dialog側で set_categories メソッドを作る
         dialog = ProductEditDialog(parent=self)
+        dialog.set_category_list(self.existing_categories) # ★カテゴリリストを渡す
         if dialog.exec():
             data = dialog.get_data()
             success = self.repo.add_product(
@@ -134,6 +151,7 @@ class ProductSettingTab(QWidget):
         
         target = self.current_products[row]
         dialog = ProductEditDialog(target, parent=self)
+        dialog.set_category_list(self.existing_categories) # ★カテゴリリストを渡す
         
         if dialog.exec():
             data = dialog.get_data()

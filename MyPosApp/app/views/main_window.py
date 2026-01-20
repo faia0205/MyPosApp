@@ -224,8 +224,8 @@ class MainWindow(QMainWindow):
         self.cart_service.checkout_completed.connect(self._on_checkout_completed)
 
     def _load_data(self) -> None:
-        # (変更なし) 前回のコードと同じ
-        products: List[Product] = self.prod_repo.fetch_active_products()
+        self.tabs.clear()
+        products: List[Product] = self.prod_repo.fetch_all_as_models()
         cat_totals: Dict[str, int] = {}
         categorized: Dict[str, List[Product]] = {}
 
@@ -235,7 +235,8 @@ class MainWindow(QMainWindow):
                 categorized[cat] = []
                 cat_totals[cat] = 0
             categorized[cat].append(p)
-            cat_totals[cat] += p.price
+            if p.is_active:
+                cat_totals[cat] += p.price
 
         sorted_categories = sorted(cat_totals.keys(), key=lambda x: cat_totals[x], reverse=True)
         
@@ -252,7 +253,20 @@ class MainWindow(QMainWindow):
             
             for i, p in enumerate(items):
                 btn = ProductButton(p)
-                btn.clicked.connect(lambda _, x=p: self.cart_service.add_product(x))
+                if not p.is_active:
+                    btn.setEnabled(False)
+                    btn.setStyleSheet("""
+                        QPushButton {
+                            background-color: #616161; 
+                            color: #9e9e9e; 
+                            border: 1px solid #757575; 
+                            border-radius: 8px;
+                        }
+                    """)
+                    # テキストに (品切れ) 等を追加しても分かりやすい
+                    btn.setText(f"{p.name}\n(停止中)")
+                else:
+                    btn.clicked.connect(lambda _, x=p: self.cart_service.add_product(x))
                 grid.addWidget(btn, i//3, i%3)
             
             grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -269,6 +283,7 @@ class MainWindow(QMainWindow):
             self.customer_grid.addWidget(btn, i//2, i%2)
             btn.clicked.connect(lambda _, x=c: self._on_customer_selected(x))
         
+        self.cart_service.refresh_prices(products)
         self.cart_service._recalculate()
 
     # --- Event Handlers ---
@@ -522,10 +537,10 @@ class MainWindow(QMainWindow):
         """設定画面を開く"""
         # 権限チェックを入れるならここで (例: 店長のみ)
         # if self.cart_service.current_user_role != 'admin': return
-        
+
         win = SettingsWindow(self)
         win.exec()
-        
+
         # 閉じた後、メイン画面の商品リストも更新が必要かもしれないため
         # 再読み込みを行う
         self._load_data()
