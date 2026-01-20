@@ -19,7 +19,7 @@ class AnalyticsRepository(BaseRepository):
         cursor = conn.cursor()
         
         cursor.execute("""
-            SELECT t.id, t.timestamp, t.total_amount, 
+            SELECT t.id, t.timestamp, t.total_amount, t.change,
                    (SELECT COUNT(*) FROM transaction_items WHERE transaction_id = t.id),
                    (SELECT payment_method FROM transaction_payments WHERE transaction_id = t.id LIMIT 1),
                    t.customer_label
@@ -29,7 +29,15 @@ class AnalyticsRepository(BaseRepository):
         rows = cursor.fetchall()
         conn.close()
         return [
-            {"id": r[0], "timestamp": r[1], "total": r[2], "items": r[3], "payment": r[4], "customer": r[5]} 
+            {
+                "id": r[0], 
+                "timestamp": r[1], 
+                "total": r[2], 
+                "change": r[3], # ★追加
+                "items": r[4], 
+                "payment": r[5], 
+                "customer": r[6]
+            } 
             for r in rows
         ]
 
@@ -38,7 +46,7 @@ class AnalyticsRepository(BaseRepository):
         conn = self.get_connection()
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id, timestamp, total_amount, cashier_name FROM transactions WHERE id=?", (transaction_id,))
+        cursor.execute("SELECT id, timestamp, total_amount, change, cashier_name FROM transactions WHERE id=?", (transaction_id,))
         head = cursor.fetchone()
         
         cursor.execute("SELECT product_name, unit_price, quantity, subtotal FROM transaction_items WHERE transaction_id=?", (transaction_id,))
@@ -47,9 +55,11 @@ class AnalyticsRepository(BaseRepository):
         cursor.execute("SELECT payment_method, amount FROM transaction_payments WHERE transaction_id=?", (transaction_id,))
         payments = cursor.fetchall()
         conn.close()
+
+        if not head: return {}
         
         return {
-            "id": head[0], "timestamp": head[1], "total": head[2], "cashier": head[3],
+            "id": head[0], "timestamp": head[1], "total": head[2], "change": head[3], "cashier": head[4],
             "items": [{"name": r[0], "price": r[1], "qty": r[2], "sub": r[3]} for r in items],
             "payments": [{"method": r[0], "amount": r[1]} for r in payments]
         }

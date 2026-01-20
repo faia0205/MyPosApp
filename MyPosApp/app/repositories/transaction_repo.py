@@ -47,7 +47,7 @@ class TransactionRepository(BaseRepository):
         # データがない(None)場合は0を返す
         return row[0] if row[0] is not None else 0
     
-    def save_transaction(self, total_amount: int, customer_label: str, cashier_name: str, cart_items: list[dict], payments: list[tuple[str, int]]) -> int:
+    def save_transaction(self, total_amount: int, customer_label: str, cashier_name: str, cart_items: list[dict], payments: list[tuple[str, int]], change: int = 0) -> int:
         """取引保存 (トランザクション処理)"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -55,9 +55,9 @@ class TransactionRepository(BaseRepository):
         try:
             # 1. ヘッダー
             cursor.execute("""
-                INSERT INTO transactions (total_amount, customer_label, cashier_name, status) 
-                VALUES (?, ?, ?, 'completed')
-            """, (total_amount, customer_label, cashier_name))
+                INSERT INTO transactions (total_amount, change, customer_label, cashier_name, status) 
+                VALUES (?, ?, ?, ?, 'completed')
+            """, (total_amount, change, customer_label, cashier_name))
             
             transaction_id = cursor.lastrowid
             
@@ -65,7 +65,7 @@ class TransactionRepository(BaseRepository):
             # Logic層でどう扱うかによりますが、ここでは辞書アクセスとして書きます)
             for item in cart_items:
                 # 手入力商品はID=Noneの場合がある
-                prod_id = item.get('id')
+                #prod_id = item.get('id')
                 cursor.execute("""
                     INSERT INTO transaction_items (transaction_id, product_name, unit_price, quantity, subtotal)
                     VALUES (?, ?, ?, ?, ?)

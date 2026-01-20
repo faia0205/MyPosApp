@@ -89,6 +89,7 @@ def create_tables():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         total_amount INTEGER NOT NULL,
+        change INTEGER DEFAULT 0,
         customer_label TEXT,
         cashier_name TEXT,
         status TEXT DEFAULT 'completed'

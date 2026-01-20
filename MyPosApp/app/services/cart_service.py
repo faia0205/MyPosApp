@@ -193,11 +193,30 @@ class CartService(QObject):
                 'qty': d['qty'],
                 'subtotal': d['amount'] * d['qty']
             })
+        
+        # ★重要: DB保存用に決済情報を「預かり金額」から「売上充当額」に変換する
+        # 例: 合計300円に対し、現金1000円預かり(お釣り700円)の場合
+        # paymentsは [('現金', 1000)] だが、DBには [('現金', 300)] と記録したい。
+        # (そうしないと、売上集計で1000円売り上げたことになってしまうため)
+        
+        adjusted_payments = []
+        remaining_change = change
+        
+        # 逆順で処理（通常は1種類ですが、複数決済の場合も考慮）
+        # 現金払いがお釣り発生源と仮定して調整します
+        for method, amount in payments:
+            if remaining_change > 0 and amount >= remaining_change:
+                # この決済方法からお釣りを捻出したとみなして減算
+                real_sales_amount = amount - remaining_change
+                adjusted_payments.append((method, real_sales_amount))
+                remaining_change = 0
+            else:
+                adjusted_payments.append((method, amount))
 
         try:
             self.repo.save_transaction(
                 total, customer_label, self.current_user_name, 
-                final_items, payments
+                final_items, adjusted_payments, change
             )
             self.total_sales_today += total
             

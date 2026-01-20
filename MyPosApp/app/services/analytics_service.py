@@ -83,10 +83,26 @@ class AnalyticsService:
             df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Tokyo')
             df['hour'] = df['timestamp'].dt.hour
             
-            # 既存のピボットテーブル作成
-            pivots["time_prod"] = df.pivot_table(index='product', columns='hour', values='qty', aggfunc='sum', fill_value=0)
-            pivots["cust_prod"] = df.pivot_table(index='product', columns='customer', values='qty', aggfunc='sum', fill_value=0)
-            pivots["time_cust"] = df.pivot_table(index='customer', columns='hour', values='id', aggfunc='nunique', fill_value=0)
+            # 時間 x 商品 (販売数)
+            pivots["time_prod"] = df.pivot_table(
+                index='product', columns='hour', values='qty', 
+                aggfunc='sum', fill_value=0, 
+                margins=True, margins_name='合計'
+            )
+            
+            # 客層 x 商品 (販売数)
+            pivots["cust_prod"] = df.pivot_table(
+                index='product', columns='customer', values='qty', 
+                aggfunc='sum', fill_value=0, 
+                margins=True, margins_name='合計'
+            )
+            
+            # 時間 x 客層 (客数: IDのユニーク数)
+            pivots["time_cust"] = df.pivot_table(
+                index='customer', columns='hour', values='id', 
+                aggfunc='nunique', fill_value=0, 
+                margins=True, margins_name='合計'
+            )
         else:
             # データがない場合の空DataFrame
             pivots["time_prod"] = pd.DataFrame()
