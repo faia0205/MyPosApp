@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from app.repositories.user_repo import UserRepository
+# ★追加
+from app.repositories.log_repo import LogRepository
 from app.views.dialogs.user_edit_dialog import UserEditDialog
 
 class UserSettingTab(QWidget):
@@ -11,9 +13,13 @@ class UserSettingTab(QWidget):
     def __init__(self):
         super().__init__()
         self.repo = UserRepository()
+        # ★追加
+        self.log_repo = LogRepository()
+        
         self._init_ui()
         self.load_data()
 
+    # ... (_init_ui, load_data は前回の修正のままでOK) ...
     def _init_ui(self):
         layout = QVBoxLayout(self)
 
@@ -56,7 +62,6 @@ class UserSettingTab(QWidget):
 
     def load_data(self):
         """全ユーザーを表示 (無効ユーザーはグレーアウト)"""
-        # 前回の修正で追加した fetch_all_users を使用
         users = self.repo.fetch_all_users()
         self.table.setRowCount(len(users))
         self.current_users = users 
@@ -71,15 +76,11 @@ class UserSettingTab(QWidget):
                 
                 # 権限の色 (有効時のみ色をつける)
                 role_color = "#ffcc80" if u['role'] == 'admin' else "white"
-                
-                # 状態の色
                 status_text = "有効"
-                status_color = "#69f0ae" # 緑
+                status_color = "#69f0ae" 
             else:
-                # 無効時は全体をグレーに沈める
-                text_color = "#757575" # 暗めのグレー
-                bg_color = "#2b2b2b"   # 背景も少し落とす
-                
+                text_color = "#757575" 
+                bg_color = "#2b2b2b"   
                 role_color = text_color
                 
                 status_text = "無効"
@@ -114,28 +115,30 @@ class UserSettingTab(QWidget):
         if dialog.exec():
             d = dialog.get_data()
             if self.repo.add_user(d['name'], d['code'], d['role']):
+                # ★追加: ログ
+                self.log_repo.add_log("info", f"ユーザー追加: {d['name']}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加失敗\nコードが重複している可能性があります。")
 
     def _edit_selected(self):
         row = self.table.currentRow()
-        if row < 0:
-            return
+        if row < 0: return
         target = self.current_users[row]
         
         dialog = UserEditDialog(target, parent=self)
         if dialog.exec():
             d = dialog.get_data()
             if self.repo.update_user(target['id'], d['name'], d['code'], d['role'], d['is_active']):
+                # ★追加: ログ
+                self.log_repo.add_log("info", f"ユーザー更新: {target['name']} -> {d['name']}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "更新失敗\nコードが重複している可能性があります。")
 
     def _delete_selected(self):
         row = self.table.currentRow()
-        if row < 0:
-            return
+        if row < 0: return
         target = self.current_users[row]
         
         # 削除確認メッセージ
@@ -145,10 +148,14 @@ class UserSettingTab(QWidget):
         if res == QMessageBox.Yes:
             # 物理削除
             if self.repo.delete_user(target['id']):
+                # ★追加: ログ
+                self.log_repo.add_log("warning", f"ユーザー完全削除: {target['name']}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
         elif res == QMessageBox.No:
             # 無効化 (論理削除)
             if self.repo.update_user(target['id'], target['name'], target['user_code'], target['role'], False):
+                # ★追加: ログ
+                self.log_repo.add_log("info", f"ユーザー無効化: {target['name']}")
                 self.load_data()

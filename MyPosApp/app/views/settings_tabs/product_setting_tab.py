@@ -4,6 +4,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from app.repositories.product_repo import ProductRepository
+# ★追加: ログ用のリポジトリをインポート
+from app.repositories.log_repo import LogRepository
 from app.views.dialogs.product_edit_dialog import ProductEditDialog
 
 class ProductSettingTab(QWidget):
@@ -11,9 +13,13 @@ class ProductSettingTab(QWidget):
     def __init__(self):
         super().__init__()
         self.repo = ProductRepository()
+        # ★追加: ログリポジトリの初期化
+        self.log_repo = LogRepository()
+        
         self._init_ui()
         self.load_data()
 
+    # ... (_init_ui, load_data などは変更なし) ...
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
@@ -77,7 +83,6 @@ class ProductSettingTab(QWidget):
         self.current_products = products
 
         # ★追加: 現在使われているカテゴリの一覧を取得（ダイアログに渡すため）
-        # setで重複を排除し、リスト化
         self.existing_categories = sorted(list({p.category for p in products if p.category}))
         if "フード" not in self.existing_categories: self.existing_categories.insert(0, "フード")
         if "ドリンク" not in self.existing_categories: self.existing_categories.insert(1, "ドリンク")
@@ -132,7 +137,7 @@ class ProductSettingTab(QWidget):
         # Dialogの __init__ に categories 引数を追加して渡す設計にするか、
         # Dialog側で set_categories メソッドを作る
         dialog = ProductEditDialog(parent=self)
-        dialog.set_category_list(self.existing_categories) # ★カテゴリリストを渡す
+        dialog.set_category_list(self.existing_categories)
         if dialog.exec():
             data = dialog.get_data()
             success = self.repo.add_product(
@@ -140,6 +145,8 @@ class ProductSettingTab(QWidget):
                 data["color"], data["note"]
             )
             if success:
+                # ★追加: ログ記録
+                self.log_repo.add_log("info", f"商品追加: {data['name']}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加に失敗しました")
@@ -151,7 +158,7 @@ class ProductSettingTab(QWidget):
         
         target = self.current_products[row]
         dialog = ProductEditDialog(target, parent=self)
-        dialog.set_category_list(self.existing_categories) # ★カテゴリリストを渡す
+        dialog.set_category_list(self.existing_categories)
         
         if dialog.exec():
             data = dialog.get_data()
@@ -160,6 +167,8 @@ class ProductSettingTab(QWidget):
                 data["color"], data["note"], data["is_active"]
             )
             if success:
+                # ★追加: ログ記録
+                self.log_repo.add_log("info", f"商品変更: {target.name} -> {data['name']}")
                 self.load_data()
                 # 編集していた行を再度選択状態にする
                 self.table.selectRow(row)
@@ -176,10 +185,14 @@ class ProductSettingTab(QWidget):
         if res == QMessageBox.Yes:
             # 物理削除
             if self.repo.delete_product(target.id):
+                # ★追加: ログ記録
+                self.log_repo.add_log("warning", f"商品完全削除: {target.name}")
                 self.load_data()
         elif res == QMessageBox.No:
-            # 無効化 (論理削除)
+            # 無効化
             if self.repo.update_product(target.id, target.name, target.price, target.category, target.color, target.note, False):
+                # ★追加: ログ記録
+                self.log_repo.add_log("info", f"商品無効化: {target.name}")
                 self.load_data()
 
     def _move_row(self, direction):
@@ -189,12 +202,9 @@ class ProductSettingTab(QWidget):
         """
         row = self.table.currentRow()
         if row < 0: return
-        
         new_row = row + direction
-        if new_row < 0 or new_row >= len(self.current_products):
-            return
+        if new_row < 0 or new_row >= len(self.current_products): return
 
-        # スワップ対象
         item_a = self.current_products[row]
         item_b = self.current_products[new_row]
 
@@ -206,5 +216,7 @@ class ProductSettingTab(QWidget):
         }
 
         if self.repo.update_display_order(new_order_map):
+            # 並び替えは頻繁に行うのでログは出さないか、出すならレベルを下げる
+            # self.log_repo.add_log("info", "商品並び替え実施") 
             self.load_data()
             self.table.selectRow(new_row)
