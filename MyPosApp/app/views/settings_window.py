@@ -5,7 +5,7 @@ from app.services.master_data_service import MasterDataService
 
 # 作成したタブをインポート
 from app.views.settings_tabs.product_setting_tab import ProductSettingTab
-# from app.views.settings_tabs.user_setting_tab import UserSettingTab # (未実装の場合コメントアウト)
+from app.views.settings_tabs.user_setting_tab import UserSettingTab
 
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
@@ -66,9 +66,9 @@ class SettingsWindow(QDialog):
         self.tabs.addTab(self.tab_product, "商品管理")
 
         # 2. ユーザー管理 (まだ実装していない場合、プレースホルダー)
-        # self.tab_user = UserSettingTab()
-        # self.tabs.addTab(self.tab_user, "ユーザー管理")
-        self.tabs.addTab(QWidget(), "ユーザー管理(未)")
+        self.tab_user = UserSettingTab()
+        self.tabs.addTab(self.tab_user, "ユーザー管理")
+        # self.tabs.addTab(QWidget(), "ユーザー管理(未)")
         self.tabs.addTab(QWidget(), "その他設定(未)")
 
         layout.addWidget(self.tabs)
