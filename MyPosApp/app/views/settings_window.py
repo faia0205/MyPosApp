@@ -6,6 +6,9 @@ from app.services.master_data_service import MasterDataService
 # 作成したタブをインポート
 from app.views.settings_tabs.product_setting_tab import ProductSettingTab
 from app.views.settings_tabs.user_setting_tab import UserSettingTab
+from app.views.settings_tabs.customer_setting_tab import CustomerSettingTab
+from app.views.settings_tabs.payment_setting_tab import PaymentSettingTab
+from app.views.settings_tabs.expense_setting_tab import ExpenseSettingTab
 
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
@@ -65,11 +68,21 @@ class SettingsWindow(QDialog):
         self.tab_product = ProductSettingTab()
         self.tabs.addTab(self.tab_product, "商品管理")
 
-        # 2. ユーザー管理 (まだ実装していない場合、プレースホルダー)
+        # 2. ユーザー管理
         self.tab_user = UserSettingTab()
         self.tabs.addTab(self.tab_user, "ユーザー管理")
-        # self.tabs.addTab(QWidget(), "ユーザー管理(未)")
-        self.tabs.addTab(QWidget(), "その他設定(未)")
+        
+        # 3. 客層
+        self.tab_cust = CustomerSettingTab()
+        self.tabs.addTab(self.tab_cust, "客層管理")
+        
+        # 4. 支払方法
+        self.tab_pay = PaymentSettingTab()
+        self.tabs.addTab(self.tab_pay, "支払方法")
+        
+        # 5. 経費
+        self.tab_exp = ExpenseSettingTab()
+        self.tabs.addTab(self.tab_exp, "経費履歴")
 
         layout.addWidget(self.tabs)
 

@@ -1,10 +1,11 @@
 # 売上保存や、決済方法、経費の取得などを担当します。
 from app.repositories.base_repo import BaseRepository
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import sqlite3
 
 class TransactionRepository(BaseRepository):
     
+    # --- 既存メソッド (変更なし) ---
     def fetch_payment_methods(self) -> list[dict]:
         """決済方法リストを取得 (辞書型で返すが、将来的にはクラス化も可)"""
         conn = self.get_connection()
@@ -47,8 +48,8 @@ class TransactionRepository(BaseRepository):
         # データがない(None)場合は0を返す
         return row[0] if row[0] is not None else 0
     
-    def save_transaction(self, total_amount: int, customer_label: str, cashier_name: str, cart_items: list[dict], payments: list[tuple[str, int]], change: int = 0) -> int:
-        """取引保存 (トランザクション処理)"""
+    def save_transaction(self, total_amount: int, customer_label: str, cashier_name: str, 
+                         cart_items: list[dict], payments: list[tuple[str, int]], change: int = 0) -> int:
         conn = self.get_connection()
         cursor = conn.cursor()
         
@@ -110,3 +111,60 @@ class TransactionRepository(BaseRepository):
                            (name, int(is_cash), int(is_active)))
         conn.commit()
         conn.close()
+
+    # --- ★新規追加: 設定画面用メソッド ---
+
+    # 1. 支払方法の設定
+    def fetch_all_payment_methods(self) -> List[Dict]:
+        """設定画面用: 全支払方法取得"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, is_cash, is_active FROM payment_methods ORDER BY id")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def add_payment_method(self, name: str, is_cash: bool) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO payment_methods (name, is_cash, is_active) VALUES (?, ?, 1)", (name, int(is_cash)))
+            conn.commit()
+            return True
+        except: return False
+        finally: conn.close()
+
+    def update_payment_method(self, pm_id: int, name: str, is_cash: bool, is_active: bool) -> bool:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("UPDATE payment_methods SET name=?, is_cash=?, is_active=? WHERE id=?", 
+                           (name, int(is_cash), int(is_active), pm_id))
+            conn.commit()
+            return True
+        except: return False
+        finally: conn.close()
+
+    # 2. 経費(出費)の設定
+    def add_expense(self, title: str, amount: int) -> bool:
+        """経費登録"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (title, amount))
+            conn.commit()
+            return True
+        except: return False
+        finally: conn.close()
+
+    def delete_expense(self, expense_id: int) -> bool:
+        """経費削除"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
+            conn.commit()
+            return True
+        except: return False
+        finally: conn.close()
