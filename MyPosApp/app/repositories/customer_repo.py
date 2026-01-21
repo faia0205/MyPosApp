@@ -20,6 +20,7 @@ class CustomerRepository(BaseRepository):
         """)
         rows = cursor.fetchall()
         conn.close()
+        # Customerモデル内で attributes プロパティが自動的にJSONパースしてくれるため、ここではそのまま渡してOK
         return [Customer(r[0], r[1], r[2], r[3], r[4]) for r in rows]
 
     def fetch_all_for_json(self) -> List[Dict]:
@@ -39,8 +40,11 @@ class CustomerRepository(BaseRepository):
             result.append(d)
         return result
 
-    def fetch_all_presets(self) -> List[Customer]:
-        """設定画面用: 全て取得 (無効含む)"""
+    def fetch_all_presets(self) -> List[Dict]:
+        """
+        設定画面用: 全て取得 (無効含む)
+        ★修正: ここで辞書型に変換して返すように変更
+        """
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute("""
@@ -50,16 +54,25 @@ class CustomerRepository(BaseRepository):
         """)
         rows = cursor.fetchall()
         conn.close()
-        # Customerモデルに is_active フィールドがない場合は拡張が必要ですが、
-        # ここでは簡易的にモデルを使いつつ、呼び出し元で is_active を判定できるようにします
-        # 本来は Customer モデルにも is_active を足すべきですが、辞書で返します
-        return [
-            {
-                "id": r[0], "label": r[1], "attributes": r[2], 
-                "color": r[3], "display_order": r[4], "is_active": bool(r[5])
-            }
-            for r in rows
-        ]
+        
+        results = []
+        for r in rows:
+            # ★修正ポイント: JSON文字列を辞書に変換
+            attr_str = r[2]
+            try:
+                attr_dict = json.loads(attr_str) if attr_str else {}
+            except json.JSONDecodeError:
+                attr_dict = {}
+
+            results.append({
+                "id": r[0], 
+                "label": r[1], 
+                "attributes": attr_dict,  # 文字列ではなく辞書を入れる
+                "color": r[3], 
+                "display_order": r[4], 
+                "is_active": bool(r[5])
+            })
+        return results
 
     def add_preset(self, label: str, attributes: dict, color: str) -> bool:
         conn = self.get_connection()
@@ -67,7 +80,8 @@ class CustomerRepository(BaseRepository):
         try:
             # 最大並び順取得
             cursor.execute("SELECT MAX(display_order) FROM customer_presets")
-            max_ord = cursor.fetchone()[0] or 0
+            res = cursor.fetchone()
+            max_ord = res[0] if res and res[0] is not None else 0
             
             attr_json = json.dumps(attributes, ensure_ascii=False)
             cursor.execute("""
@@ -77,7 +91,7 @@ class CustomerRepository(BaseRepository):
             conn.commit()
             return True
         except Exception as e:
-            print(e)
+            print(f"Error adding preset: {e}")
             return False
         finally:
             conn.close()
@@ -94,7 +108,7 @@ class CustomerRepository(BaseRepository):
             conn.commit()
             return True
         except Exception as e:
-            print(e)
+            print(f"Error updating preset: {e}")
             return False
         finally:
             conn.close()
@@ -108,7 +122,8 @@ class CustomerRepository(BaseRepository):
                 cursor.execute("UPDATE customer_presets SET display_order=? WHERE id=?", (order, pid))
             conn.commit()
             return True
-        except:
+        except Exception as e:
+            print(f"Error updating order: {e}")
             conn.rollback()
             return False
         finally:
