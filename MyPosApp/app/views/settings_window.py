@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                                QPushButton, QMessageBox, QLabel, QWidget)
-from PySide6.QtCore import Qt
+# from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
 
 # 作成したタブをインポート

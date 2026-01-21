@@ -9,16 +9,31 @@ class LoginDialog(QDialog):
         self.resize(400, 300)
         self.selected_user_name = "ゲスト"
         
-        # スタイル (少しリッチに)
-        self.setStyleSheet("""
-            QDialog { background-color: #333; color: white; }
+        # 基本スタイル（有効なボタン用）
+        self.active_style = """
             QPushButton { 
                 background-color: #0288d1; color: white; 
                 font-size: 18px; font-weight: bold; 
                 border-radius: 8px; padding: 15px;
             }
             QPushButton:hover { background-color: #039be5; }
-            QLabel { font-size: 16px; font-weight: bold; }
+        """
+        
+        # 無効なボタン用のスタイル（グレーアウト）
+        self.inactive_style = """
+            QPushButton { 
+                background-color: #424242; color: #757575; 
+                font-size: 18px; font-weight: bold; 
+                border-radius: 8px; padding: 15px;
+                border: 1px solid #616161;
+            }
+        """
+
+        # スタイル (少しリッチに)
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #333; color: white; }}
+            QLabel {{ font-size: 16px; font-weight: bold; }}
+            {self.active_style}
         """)
 
         self._init_ui()
@@ -29,12 +44,29 @@ class LoginDialog(QDialog):
         layout.addSpacing(10)
 
         repo = UserRepository()
-        users = repo.fetch_active_users()
+        users = repo.fetch_all_users()
 
         grid = QGridLayout()
         for i, user in enumerate(users):
-            btn = QPushButton(f"{user['name']}\n({user['code']})")
-            btn.clicked.connect(lambda _, n=user['name']: self._on_user_selected(n))
+            # user_repo.py でキーを統一したので user_code を使用
+            code = user.get('user_code') or user.get('code', '')
+            is_active = bool(user.get('is_active', True))
+            
+            label_text = f"{user['name']}\n({code})"
+            if not is_active:
+                label_text += "(無効)"
+
+            btn = QPushButton(label_text)
+            
+            if is_active:
+                # 有効な場合: クリックイベントを設定
+                btn.clicked.connect(lambda _, n=user['name']: self._on_user_selected(n))
+                # スタイルはデフォルト（active_style）が適用される
+            else:
+                # 無効な場合: ボタンを無効化し、グレーアウト用スタイルを適用
+                btn.setEnabled(False)
+                btn.setStyleSheet(self.inactive_style)
+            
             grid.addWidget(btn, i // 2, i % 2)
         
         layout.addLayout(grid)

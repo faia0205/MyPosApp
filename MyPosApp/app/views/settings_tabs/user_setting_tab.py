@@ -48,36 +48,66 @@ class UserSettingTab(QWidget):
         self.table.setStyleSheet("""
             QTableWidget { background-color: #222; gridline-color: #444; color: white; }
             QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; }
+            QTableWidget::item:selected { background-color: #0d47a1; }
         """)
         layout.addWidget(self.table)
         
-        layout.addWidget(QLabel("※ コードはログイン時に使用します。重複できません。"))
+        layout.addWidget(QLabel("※ 無効化されたユーザーはグレーアウトされます（ログイン不可）。"))
 
     def load_data(self):
+        """全ユーザーを表示 (無効ユーザーはグレーアウト)"""
+        # 前回の修正で追加した fetch_all_users を使用
         users = self.repo.fetch_all_users()
         self.table.setRowCount(len(users))
-        self.current_users = users # データ保持
-
-        def create_item(text, color=None):
-            it = QTableWidgetItem(str(text))
-            it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            if color:
-                it.setForeground(QColor(color))
-            return it
+        self.current_users = users 
 
         for i, u in enumerate(users):
-            self.table.setItem(i, 0, create_item(u['id']))
-            self.table.setItem(i, 1, create_item(u['name']))
-            self.table.setItem(i, 2, create_item(u['user_code']))
+            is_active = bool(u['is_active'])
             
-            # 権限の色分け
-            role_color = "#ffcc80" if u['role'] == 'admin' else "white"
-            self.table.setItem(i, 3, create_item(u['role'], role_color))
+            # --- 色の決定 ---
+            if is_active:
+                text_color = "white"
+                bg_color = None
+                
+                # 権限の色 (有効時のみ色をつける)
+                role_color = "#ffcc80" if u['role'] == 'admin' else "white"
+                
+                # 状態の色
+                status_text = "有効"
+                status_color = "#69f0ae" # 緑
+            else:
+                # 無効時は全体をグレーに沈める
+                text_color = "#757575" # 暗めのグレー
+                bg_color = "#2b2b2b"   # 背景も少し落とす
+                
+                role_color = text_color
+                
+                status_text = "無効"
+                status_color = text_color
+
+            # アイテム作成ヘルパー
+            def create_item(text, color, bg=None):
+                it = QTableWidgetItem(str(text))
+                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                it.setForeground(QColor(color))
+                if bg:
+                    it.setBackground(QColor(bg))
+                return it
+
+            # 0: ID
+            self.table.setItem(i, 0, create_item(u['id'], text_color, bg_color))
             
-            # 状態
-            status = "有効" if u['is_active'] else "無効"
-            status_color = "#69f0ae" if u['is_active'] else "#bdbdbd"
-            self.table.setItem(i, 4, create_item(status, status_color))
+            # 1: 名前
+            self.table.setItem(i, 1, create_item(u['name'], text_color, bg_color))
+            
+            # 2: コード
+            self.table.setItem(i, 2, create_item(u['user_code'], text_color, bg_color))
+            
+            # 3: 権限
+            self.table.setItem(i, 3, create_item(u['role'], role_color, bg_color))
+            
+            # 4: 状態
+            self.table.setItem(i, 4, create_item(status_text, status_color, bg_color))
 
     def _add_user(self):
         dialog = UserEditDialog(parent=self)
@@ -108,8 +138,17 @@ class UserSettingTab(QWidget):
             return
         target = self.current_users[row]
         
-        if QMessageBox.question(self, "確認", f"{target['name']} を削除しますか？") == QMessageBox.Yes:
+        # 削除確認メッセージ
+        msg = f"{target['name']} を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (推奨)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+        
+        if res == QMessageBox.Yes:
+            # 物理削除
             if self.repo.delete_user(target['id']):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
+        elif res == QMessageBox.No:
+            # 無効化 (論理削除)
+            if self.repo.update_user(target['id'], target['name'], target['user_code'], target['role'], False):
+                self.load_data()

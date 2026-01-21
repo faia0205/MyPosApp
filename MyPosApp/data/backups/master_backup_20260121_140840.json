@@ -135,18 +135,6 @@
             "user_code": "002",
             "role": "staff",
             "is_active": 1
-        },
-        {
-            "name": "スタッフC",
-            "user_code": "003",
-            "role": "staff",
-            "is_active": 1
-        },
-        {
-            "name": "スタッフC",
-            "user_code": "004",
-            "role": "staff",
-            "is_active": 1
         }
     ],
     "customer_presets": [
