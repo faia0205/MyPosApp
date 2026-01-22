@@ -97,6 +97,16 @@ class TransactionRepository(BaseRepository):
         conn.close()
         return [dict(row) for row in rows]
 
+    def fetch_expenses_for_json(self) -> List[Dict]:
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        # idやcreated_atは再インポート時に自動採番/現在時刻になるため、中身(title, amount)だけ保存
+        cursor.execute("SELECT title, amount FROM expenses ORDER BY created_at")
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    
     def upsert_payment_method(self, name: str, is_cash: bool, is_active: bool):
         conn = self.get_connection()
         cursor = conn.cursor()

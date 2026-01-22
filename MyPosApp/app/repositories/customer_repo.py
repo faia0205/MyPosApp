@@ -28,7 +28,7 @@ class CustomerRepository(BaseRepository):
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute("SELECT label, attributes, color, display_order FROM customer_presets ORDER BY display_order")
+        cursor.execute("SELECT label, attributes, color, display_order, is_active FROM customer_presets ORDER BY display_order")
         rows = cursor.fetchall()
         conn.close()
         

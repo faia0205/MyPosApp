@@ -3,12 +3,13 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
 # from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
 
-# 作成したタブをインポート
+# 各設定タブをインポート
 from app.views.settings_tabs.product_setting_tab import ProductSettingTab
 from app.views.settings_tabs.user_setting_tab import UserSettingTab
 from app.views.settings_tabs.customer_setting_tab import CustomerSettingTab
 from app.views.settings_tabs.payment_setting_tab import PaymentSettingTab
 from app.views.settings_tabs.expense_setting_tab import ExpenseSettingTab
+from app.views.settings_tabs.discount_setting_tab import DiscountSettingTab
 
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
@@ -83,6 +84,10 @@ class SettingsWindow(QDialog):
         # 5. 経費
         self.tab_exp = ExpenseSettingTab()
         self.tabs.addTab(self.tab_exp, "経費履歴")
+
+        # 6. 割引設定
+        self.tab_disc = DiscountSettingTab()
+        self.tabs.addTab(self.tab_disc, "割引設定")
 
         layout.addWidget(self.tabs)
 

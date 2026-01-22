@@ -9,7 +9,7 @@ from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.discount_repo import DiscountRepository
-from app.repositories.transaction_repo import TransactionRepository # 決済方法用
+from app.repositories.transaction_repo import TransactionRepository 
 
 MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
 
@@ -22,7 +22,7 @@ class MasterDataService:
         self.user_repo = UserRepository()
         self.cust_repo = CustomerRepository()
         self.disc_repo = DiscountRepository()
-        self.trans_repo = TransactionRepository() # 決済方法の取得に使用
+        self.trans_repo = TransactionRepository() 
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)
@@ -44,23 +44,35 @@ class MasterDataService:
                 print(f"Backup created: {backup_path}")
 
             # 2. 各リポジトリからJSON用データを収集
-            # ※ 各Repoに実装する `fetch_all_for_json` を使用
+            
+            # 商品
+            products = self.prod_repo.fetch_all_for_json()
+            
+            # ユーザー
+            users = self.user_repo.fetch_all_for_json()
+            
+            # 客層 (is_active含む)
+            customers = self.cust_repo.fetch_all_for_json()
+            
+            # 決済方法
+            payment_methods = self.trans_repo.fetch_payment_methods_for_json()
+            
+            # 経費 (DBの経費履歴を保存)
+            expenses = self.trans_repo.fetch_expenses_for_json()
+
+            # 割引ルール (新しいテーブル構造をそのまま取得)
+            discount_rules = self.disc_repo.fetch_all_rules()
+
+            # データ構築
             master_data = {
-                "products": self.prod_repo.fetch_all_for_json(),
-                "users": self.user_repo.fetch_all_for_json(),
-                "customer_presets": self.cust_repo.fetch_all_for_json(),
-                "payment_methods": self.trans_repo.fetch_payment_methods_for_json(), # 新規メソッド
-                
-                # 割引ルールは複雑なため、ここで整形ロジックを通す
-                "discount_rules": self._fetch_formatted_discounts()
+                "products": products,
+                "users": users,
+                "customer_presets": customers,
+                "payment_methods": payment_methods,
+                "initial_expenses": expenses, 
+                "discount_rules": discount_rules
             }
             
-            # 経費は設定データではないため、ここでは初期化データとして空または既存維持でも可
-            # 今回は簡易的に、既存のJSONがあればその initial_expenses を維持する形にします
-            existing_data = self._load_json_safe()
-            if existing_data and "initial_expenses" in existing_data:
-                master_data["initial_expenses"] = existing_data["initial_expenses"]
-
             # 3. JSON書き出し
             with open(MASTER_JSON_PATH, 'w', encoding='utf-8') as f:
                 json.dump(master_data, f, ensure_ascii=False, indent=4)
@@ -73,32 +85,6 @@ class MasterDataService:
             import traceback
             traceback.print_exc()
             return False
-
-    def _fetch_formatted_discounts(self) -> List[Dict]:
-        """割引ルールをJSON形式（ターゲット商品名リスト付き）に変換するヘルパー"""
-        rules = self.disc_repo.fetch_rules_with_targets() # 既存メソッド: {'target_ids': {1,2}}
-        products = self.prod_repo.fetch_all_for_json()  # 全商品
-        
-        # ID -> Name のマップ作成
-        id_to_name = {p['id']: p['name'] for p in products if 'id' in p} # fetch_all_for_jsonにidが含まれている必要あり
-
-        formatted_rules = []
-        for r in rules:
-            target_names = []
-            for pid in r['target_ids']:
-                if pid in id_to_name:
-                    target_names.append(id_to_name[pid])
-            
-            formatted_rules.append({
-                "name": r['name'],
-                "required_qty": r['req'],
-                "discount_amount": r['amt'],
-                "target_product_names": target_names,
-                # is_activeはfetch_rules_with_targetsに含まれていない場合があるため、
-                # 必要ならRepo側のSQL修正が必要。一旦デフォルトTrue扱いとします。
-                "is_active": True 
-            })
-        return formatted_rules
 
     def _load_json_safe(self) -> Dict:
         """JSON読み込み（エラーハンドリング付き）"""
@@ -115,54 +101,40 @@ class MasterDataService:
     # ==========================================
     def sync_json_to_db(self):
         """
-        起動時用: JSONの内容をDBに反映（Upsert: 更新または挿入）する
+        起動時用: JSONの内容をDBに反映（簡易同期）
+        ※ 基本的には init_db.py で初期化される想定ですが、
+           アプリ起動時にJSONの変更を取り込みたい場合に使用
         """
         data = self._load_json_safe()
         if not data:
-            print("No master_data.json found. Skipping sync.")
             return
 
-        print("Syncing JSON to DB...")
-        
-        # A. Products (Upsert)
+        # A. Products
         for p in data.get("products", []):
-            # 名前をキーにして更新、なければ追加
-            # 簡略化のため、Repoに upsert_product_by_name を実装するか、
-            # ここで check -> update/insert を行う
             exists = self.prod_repo.find_id_by_name(p["name"])
             if exists:
                 self.prod_repo.update_product(
                     exists, p["name"], p["price"], p["category"], 
                     p.get("color", "#ffcc80"), p.get("note", ""), p.get("is_active", True)
                 )
-                # 表示順も更新
-                # (SQLのupdate_productメソッド拡張が必要かもですが、一旦スルー)
             else:
                 self.prod_repo.add_product(
                     p["name"], p["price"], p["category"], 
                     p.get("color", "#ffcc80"), p.get("note", "")
                 )
         
-        # B. Users (Upsert)
+        # B. Users
         for u in data.get("users", []):
-            # user_code をキーにする
-            # Repoにロジックが必要（後述）
             self.user_repo.upsert_user(
                 u["name"], u["user_code"], u.get("role", "staff"), u.get("is_active", True)
             )
 
-        # C. Payment Methods (Upsert)
+        # C. Payment Methods
         for pm in data.get("payment_methods", []):
             self.trans_repo.upsert_payment_method(
                 pm["name"], pm["is_cash"], pm.get("is_active", True)
             )
-
-        # D. Discounts (Re-creation strategy)
-        # 割引ルールは依存関係が複雑なので、既存を無効化するか、
-        # 名前一致で更新するロジックが必要。
-        # 今回は簡易的に「init_db.pyにお任せ（初期化時のみ）」にするか、
-        # ここで真面目に同期するかですが、
-        # 一旦「既存データのUpdate」は行わず、「JSONにあってDBにないもの」の追加だけ検討します。
-        # (複雑になりすぎるのを防ぐため)
         
-        print("Sync completed.")
+        # 客層、経費、割引ルールについては構造変更があったため、
+        # 中途半端な同期よりも「設定保存 -> JSON作成 -> init_db.pyでDB再構築」のフローが安全です。
+        # したがってここでは同期スキップします。

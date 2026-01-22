@@ -175,3 +175,14 @@ class ProductRepository(BaseRepository):
             return False
         finally:
             conn.close()
+    
+    def get_product_by_id(self, pid: int):
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, price, category, color, display_order, is_active, note FROM products WHERE id=?", (pid,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            from app.models.product import Product
+            return Product(*row)
+        return None
