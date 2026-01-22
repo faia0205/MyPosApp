@@ -1,13 +1,17 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
                                QComboBox, QCheckBox, QDialogButtonBox, QMessageBox)
-
+from app.utils.style import StyleGenerator
 class UserEditDialog(QDialog):
     """ユーザー追加・編集ダイアログ"""
     def __init__(self, user_data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ユーザー編集" if user_data else "新規ユーザー追加")
         self.resize(300, 250)
-        self.setStyleSheet("background-color: #333; color: white; QLineEdit { padding: 5px; }")
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #333; color: white; }}
+            QLineEdit, QComboBox {{ padding: 5px; color: black; background-color: white; }}
+            {StyleGenerator.get_checkbox_style()}
+        """)
         
         self.user_data = user_data
         self._init_ui()

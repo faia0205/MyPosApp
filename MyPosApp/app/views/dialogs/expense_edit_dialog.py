@@ -1,19 +1,34 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
-                               QSpinBox, QDialogButtonBox)
+                               QSpinBox, QDialogButtonBox, QDateTimeEdit)
+from PySide6.QtCore import QDateTime, Qt
 
 class ExpenseEditDialog(QDialog):
-    """経費登録ダイアログ"""
-    def __init__(self, parent=None):
+    """経費登録・編集ダイアログ"""
+    def __init__(self, data=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("経費・出費の登録")
-        self.resize(300, 200)
-        self.setStyleSheet("background-color: #333; color: white;")
+        self.setWindowTitle("経費・出費の編集" if data else "経費・出費の登録")
+        self.resize(300, 250)
+        # チェックボックススタイルも念のため適用
+        self.setStyleSheet("""
+            QDialog { background-color: #333; color: white; }
+            QLineEdit, QSpinBox, QDateTimeEdit { background-color: white; color: black; padding: 5px; }
+            QCheckBox::indicator { width: 20px; height: 20px; background-color: #b0bec5; border: 1px solid #555; }
+            QCheckBox::indicator:checked { background-color: #4caf50; }
+        """)
+        self.data = data
         self._init_ui()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         
-        layout.addWidget(QLabel("項目名 (例: 氷買い出し, 準備金増資):"))
+        # 日時 (編集時のみ、あるいは新規でも指定可能に)
+        layout.addWidget(QLabel("日時:"))
+        self.date_edit = QDateTimeEdit(QDateTime.currentDateTime())
+        self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.date_edit.setCalendarPopup(True)
+        layout.addWidget(self.date_edit)
+        
+        layout.addWidget(QLabel("項目名:"))
         self.title_edit = QLineEdit()
         layout.addWidget(self.title_edit)
         
@@ -23,6 +38,14 @@ class ExpenseEditDialog(QDialog):
         self.amount_spin.setSingleStep(100)
         layout.addWidget(self.amount_spin)
 
+        # 初期値
+        if self.data:
+            # data['timestamp'] は文字列 "YYYY-MM-DD HH:MM:SS"
+            dt = QDateTime.fromString(self.data['timestamp'], "yyyy-MM-dd HH:mm:ss")
+            if dt.isValid(): self.date_edit.setDateTime(dt)
+            self.title_edit.setText(self.data['title'])
+            self.amount_spin.setValue(self.data['amount'])
+
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
@@ -30,6 +53,7 @@ class ExpenseEditDialog(QDialog):
 
     def get_data(self):
         return {
+            "timestamp": self.date_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
             "title": self.title_edit.text(),
             "amount": self.amount_spin.value()
         }

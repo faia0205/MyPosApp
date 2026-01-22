@@ -21,6 +21,11 @@ class ExpenseSettingTab(QWidget):
         add_btn.setStyleSheet("background-color: #0277bd; color: white;")
         add_btn.clicked.connect(self._add)
         btn_lay.addWidget(add_btn)
+
+        # 「編集」ボタンを追加
+        edit_btn = QPushButton("編集")
+        edit_btn.clicked.connect(self._edit) # 追加
+        btn_lay.insertWidget(1, edit_btn) # 追加ボタンの次に入れる
         
         del_btn = QPushButton("削除")
         del_btn.setStyleSheet("background-color: #c62828; color: white;")
@@ -73,4 +78,16 @@ class ExpenseSettingTab(QWidget):
         if QMessageBox.question(self, "確認", f"「{target['title']}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
             if self.repo.delete_expense(target['id']):
                 self.log_repo.add_log("warning", f"経費削除: {target['title']}")
+                self.load_data()
+    
+    def _edit(self):
+        row = self.table.currentRow()
+        if row < 0: return
+        target = self.expenses[row]
+        
+        dlg = ExpenseEditDialog(data=target, parent=self)
+        if dlg.exec():
+            d = dlg.get_data()
+            if self.repo.update_expense(target['id'], d['title'], d['amount'], d['timestamp']):
+                self.log_repo.add_log("info", f"経費編集: {target['title']} -> {d['title']}")
                 self.load_data()

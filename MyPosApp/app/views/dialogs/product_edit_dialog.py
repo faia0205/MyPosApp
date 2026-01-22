@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QDialogButtonBox, QPushButton, QColorDialog)
 from PySide6.QtCore import Qt
 from app.models.product import Product
+from app.utils.style import StyleGenerator
 
 class ProductEditDialog(QDialog):
     """商品の追加・編集用ダイアログ"""
@@ -10,7 +11,11 @@ class ProductEditDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("商品編集" if product else "新規商品追加")
         self.resize(400, 500)
-        self.setStyleSheet("background-color: #333; color: white; QLineEdit { padding: 5px; } QSpinBox { padding: 5px; }")
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #333; color: white; }}
+            QLineEdit, QSpinBox, QComboBox {{ padding: 5px; color: black; background-color: white; }}
+            {StyleGenerator.get_checkbox_style()}
+        """)
 
         self.product = product
         self._init_ui()

@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
                                QCheckBox, QDialogButtonBox)
+from app.utils.style import StyleGenerator
 
 class PaymentEditDialog(QDialog):
     """支払方法編集ダイアログ"""
@@ -7,7 +8,11 @@ class PaymentEditDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("支払方法編集")
         self.resize(300, 200)
-        self.setStyleSheet("background-color: #333; color: white;")
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #333; color: white; }}
+            QLineEdit {{ padding: 5px; color: black; background-color: white; }}
+            {StyleGenerator.get_checkbox_style()}
+        """)
         self.data = data
         self._init_ui()
 

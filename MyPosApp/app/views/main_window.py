@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central)
 
         # --- A. ヘッダー ---
+        # (ヘッダー作成部分は変更なし) ...
         self.header_frame = QFrame()
         self.header_frame.setStyleSheet("background-color: #333; color: white; border-radius: 5px; padding: 5px;")
         header_layout = QHBoxLayout(self.header_frame)
@@ -124,10 +125,10 @@ class MainWindow(QMainWindow):
         # ★修正: カートのダークテーマ化スタイルシート
         self.cart_table.setStyleSheet("""
             QTableWidget {
-                background-color: #333333;   /* 背景: ダークグレー */
-                gridline-color: #555555;     /* 枠線: 明るめのグレー */
-                color: #ffffff;              /* 文字: 白 */
-                selection-background-color: #0d47a1; /* 選択時: 濃い青 */
+                background-color: #333333;
+                gridline-color: #555555;
+                color: #ffffff;
+                selection-background-color: #0d47a1;
                 border: 1px solid #555;
             }
             /* ヘッダーのスタイル */
@@ -195,6 +196,10 @@ class MainWindow(QMainWindow):
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
+        # ★★★ ここに追加してください ★★★
+        self.cust_group = QButtonGroup(self) # これが必要です
+        # ★★★★★★★★★★★★★★★★★
+
         self.customer_grid = QGridLayout()
         right_layout.addLayout(self.customer_grid)
         
@@ -202,7 +207,7 @@ class MainWindow(QMainWindow):
         
         btn_manual = QPushButton("手入力商品")
         btn_manual.setFixedHeight(50)
-        btn_manual.setStyleSheet(StyleGenerator.create_button_style("#5d4037")) # ダークブラウン
+        btn_manual.setStyleSheet(StyleGenerator.create_button_style("#5d4037"))
         btn_manual.setFocusPolicy(Qt.NoFocus)
         btn_manual.clicked.connect(self._open_manual_input)
         right_layout.addWidget(btn_manual)
@@ -210,7 +215,7 @@ class MainWindow(QMainWindow):
         self.btn_checkout = QPushButton("会 計")
         self.btn_checkout.setFixedHeight(80)
         self.btn_checkout.setEnabled(False)
-        self.btn_checkout.setStyleSheet(StyleGenerator.create_button_style("#d84315")) # 濃いオレンジ
+        self.btn_checkout.setStyleSheet(StyleGenerator.create_button_style("#d84315"))
         self.btn_checkout.clicked.connect(self._open_payment_dialog)
         right_layout.addWidget(self.btn_checkout)
 
@@ -224,6 +229,7 @@ class MainWindow(QMainWindow):
         self.cart_service.checkout_completed.connect(self._on_checkout_completed)
 
     def _load_data(self) -> None:
+        # 商品のロード
         self.tabs.clear()
         products: List[Product] = self.prod_repo.fetch_all_as_models()
         cat_totals: Dict[str, int] = {}
@@ -273,17 +279,74 @@ class MainWindow(QMainWindow):
             scroll.setWidget(container)
             self.tabs.addTab(scroll, cat)
 
-        self.cust_group = QButtonGroup(self)
-        self.cust_group.setExclusive(True)
+        # 2. 客層ボタンのロード (★修正)
+        # グループから既存ボタンを削除する処理が面倒なので、
+        # gridのウィジェットを全削除して作り直します
+        while self.customer_grid.count():
+            item = self.customer_grid.takeAt(0)
+            w = item.widget()
+            if w: 
+                self.cust_group.removeButton(w)
+                w.deleteLater()
+
+        # Repositoryのメソッドは fetch_presets (有効のみ) ではなく、
+        # fetch_all_presets (無効含む) が欲しいが、既存の fetch_presets は有効のみを返している。
+        # なので、CustomerRepositoryに fetch_all_presets_as_models を追加するか、
+        # 簡易的に fetch_all_presets (辞書返し) を使う。
+        # ここでは辞書返しの fetch_all_presets を使ってボタンを作ります。
         
-        customers: List[Customer] = self.cust_repo.fetch_presets()
-        for i, c in enumerate(customers):
-            btn = CustomerButton(c)
+        all_customers_data = self.cust_repo.fetch_all_presets() # 辞書リスト
+        
+        # ★現在選択中の客層が無効化された場合、選択を解除するチェック
+        current_selection_valid = False
+
+        for i, c_data in enumerate(all_customers_data):
+            # 辞書からCustomerオブジェクトを一時的に生成（CustomerButtonがモデルを要求するため）
+            # c_data: {'id': 1, 'label': '...', 'attributes': {...}, 'color': '...', 'is_active': True}
+            import json
+            attr_json = json.dumps(c_data['attributes'])
+            
+            c_model = Customer(
+                c_data['id'], c_data['label'], attr_json, 
+                c_data['color'], c_data['display_order']
+            )
+            
+            btn = CustomerButton(c_model)
             self.cust_group.addButton(btn)
             self.customer_grid.addWidget(btn, i//2, i%2)
-            btn.clicked.connect(lambda _, x=c: self._on_customer_selected(x))
-        
-        self.cart_service.refresh_prices(products)
+            
+            is_active = c_data['is_active']
+            
+            if not is_active:
+                # ★無効な客層: 無効化 & グレーアウト
+                btn.setEnabled(False)
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: #424242; color: #757575; 
+                        border: 1px solid #616161; border-radius: 8px; font-weight: bold;
+                    }}
+                """)
+                btn.setText(f"{c_data['label']}\n(無効)")
+            else:
+                # 有効: クリック接続
+                btn.clicked.connect(lambda _, x=c_model: self._on_customer_selected(x))
+                
+                # 現在選択中と同じIDなら、有効フラグを立てる
+                if self.cart_service.selected_customer and self.cart_service.selected_customer.id == c_model.id:
+                    btn.setChecked(True)
+                    current_selection_valid = True
+
+        # ★もし選択中の客層が無効化されていたら、選択解除して会計ボタンを無効化
+        if self.cart_service.selected_customer and not current_selection_valid:
+            self.cart_service.set_customer(None)
+            self.cust_group.setExclusive(False)
+            for btn in self.cust_group.buttons(): btn.setChecked(False)
+            self.cust_group.setExclusive(True)
+            
+            self.btn_checkout.setEnabled(False)
+            self.btn_checkout.setText("会 計")
+            self.cart_service._notify_message("選択中の客層が無効化されました", "warning")
+
         self.cart_service._recalculate()
 
     # --- Event Handlers ---
@@ -458,10 +521,12 @@ class MainWindow(QMainWindow):
         self.lbl_stats["黒字まで"].setStyleSheet(f"color: {color}; border: none;")
 
     def _open_payment_dialog(self) -> None:
-        # (変更なし)
         total = self.cart_service.get_total_amount()
         if total <= 0: return
-        methods = self.trans_repo.fetch_payment_methods()
+        
+        # ★修正: 「全支払方法」を取得してダイアログに渡す（無効なものをグレーアウトするため）
+        methods = self.trans_repo.fetch_all_payment_methods()
+        
         dialog = PaymentDialog(total, methods, self)
         if dialog.exec():
             payments, change = dialog.get_result()

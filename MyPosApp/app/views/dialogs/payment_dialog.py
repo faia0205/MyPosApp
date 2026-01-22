@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QListWidget, QPushButton, QGridLayout, QInputDialog, QFrame)
+                               QListWidget, QPushButton, QGridLayout, QInputDialog, QFrame, QScrollArea, QWidget)
 from PySide6.QtCore import Qt
 from app.views.components.custom_buttons import StyledButton
 
@@ -7,11 +7,12 @@ class PaymentDialog(QDialog):
     def __init__(self, total_amount: int, payment_methods: list[dict], parent=None):
         super().__init__(parent)
         self.setWindowTitle("決済選択")
-        self.resize(700, 500)
+        self.resize(800, 550) # 少し大きく
         
         self.total_amount = total_amount
+        # payment_methods は、MainWindowから「全件」渡される前提です
         self.payment_methods = payment_methods
-        self.current_payments = [] # 積み上げリスト
+        self.current_payments = [] 
 
         self._init_ui()
         self._update_ui()
@@ -19,7 +20,7 @@ class PaymentDialog(QDialog):
     def _init_ui(self) -> None:
         layout = QVBoxLayout(self)
 
-        # ヘッダー (請求額・残り)
+        # 1. ヘッダー (請求額・残り)
         status_layout = QHBoxLayout()
         self.lbl_total = QLabel(f"請求額\n¥{self.total_amount:,}")
         self.lbl_total.setStyleSheet("font-size: 20px; color: #555; font-weight: bold;")
@@ -35,40 +36,77 @@ class PaymentDialog(QDialog):
         
         layout.addWidget(self._create_line())
 
-        # ボディ
+        # 2. ボディ (左右分割)
         body = QHBoxLayout()
         
-        # 左：支払い済みリスト
+        # --- 左：支払い済みリスト ---
         left = QVBoxLayout()
         left.addWidget(QLabel("【内訳】"))
         self.payment_list = QListWidget()
-        self.payment_list.setStyleSheet("font-size: 16px;")
+        self.payment_list.setStyleSheet("font-size: 16px; border: 1px solid #ccc;")
         left.addWidget(self.payment_list)
         
         btn_undo = QPushButton("1つ取り消す")
         btn_undo.setFocusPolicy(Qt.NoFocus)
+        btn_undo.setStyleSheet("background-color: #607d8b; color: white; padding: 10px; font-weight: bold;")
         btn_undo.clicked.connect(self._undo_payment)
         left.addWidget(btn_undo)
-        body.addLayout(left, stretch=4)
+        body.addLayout(left, stretch=3)
 
-        # 右：決済ボタン
-        right = QVBoxLayout()
-        right.addWidget(QLabel("【決済方法】"))
-        grid = QGridLayout()
-        for i, pm in enumerate(self.payment_methods):
-            color = "#4caf50" if pm['is_cash'] else "#2196f3"
-            btn = StyledButton(pm['name'], color)
-            btn.setFixedSize(140, 80)
-            # ラムダで変数をキャプチャ
-            btn.clicked.connect(lambda _, m=pm: self._add_payment(m))
-            grid.addWidget(btn, i//2, i%2)
-        right.addLayout(grid)
-        right.addStretch()
-        body.addLayout(right, stretch=6)
+        # --- 右：決済ボタン一覧 (スクロール対応) ---
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
+        right_layout.addWidget(QLabel("【決済方法】"))
+        
+        # グリッドレイアウト
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        
+        row, col = 0, 0
+        for pm in self.payment_methods:
+            # is_activeキーがない場合はTrue扱い
+            is_active = pm.get('is_active', True)
+            
+            # 色とスタイルの決定
+            if not is_active:
+                # 無効: グレーアウト
+                btn = QPushButton(f"{pm['name']}\n(取扱停止)")
+                btn.setEnabled(False)
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #e0e0e0; color: #9e9e9e; 
+                        border: 1px solid #bdbdbd; border-radius: 8px; font-weight: bold; font-size: 14px;
+                    }
+                """)
+            else:
+                # 有効: 現金とキャッシュレスで色分け
+                color = "#4caf50" if pm['is_cash'] else "#2196f3" # 緑 vs 青
+                btn = StyledButton(pm['name'], color)
+                btn.clicked.connect(lambda _, m=pm: self._add_payment(m))
+            
+            btn.setFixedSize(130, 80)
+            grid.addWidget(btn, row, col)
+            
+            col += 1
+            if col > 2: # 3列で折り返し
+                col = 0
+                row += 1
+
+        right_layout.addLayout(grid)
+        right_layout.addStretch() # 下に詰める
+        
+        # スクロールエリアに入れる (ボタンが増えても大丈夫なように)
+        scroll = QScrollArea()
+        scroll.setWidget(right_container)
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+        
+        body.addWidget(scroll, stretch=7)
         layout.addLayout(body)
 
-        # フッター：完了ボタン
+        # 3. フッター：完了ボタン
         self.btn_finish = QPushButton("決 済 完 了")
         self.btn_finish.setFixedHeight(70)
         self.btn_finish.clicked.connect(self.accept)
@@ -84,9 +122,15 @@ class PaymentDialog(QDialog):
         remaining = self.total_amount - sum(p['amount'] for p in self.current_payments)
         if remaining <= 0: return
 
-        val, ok = QInputDialog.getInt(self, method['name'], "金額:", value=remaining, minValue=1, maxValue=999999)
-        if ok and val > 0:
-            self.current_payments.append({"name": method['name'], "amount": val})
+        # 現金の場合は入力ダイアログ、キャッシュレスは即時満額
+        if method['is_cash']:
+            val, ok = QInputDialog.getInt(self, method['name'], "金額:", value=remaining, minValue=1, maxValue=9999999)
+            if ok and val > 0:
+                self.current_payments.append({"name": method['name'], "amount": val})
+                self._update_ui()
+        else:
+            # キャッシュレスは残額ぴったりで追加
+            self.current_payments.append({"name": method['name'], "amount": remaining})
             self._update_ui()
 
     def _undo_payment(self) -> None:

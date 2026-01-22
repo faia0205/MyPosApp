@@ -112,11 +112,11 @@ class TransactionRepository(BaseRepository):
         conn.commit()
         conn.close()
 
-    # --- ★新規追加: 設定画面用メソッド ---
+    # --- ★追加: 設定画面・ダイアログ制御用 ---
 
     # 1. 支払方法の設定
     def fetch_all_payment_methods(self) -> List[Dict]:
-        """設定画面用: 全支払方法取得"""
+        """全支払方法取得 (無効なものも含む)"""
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -157,6 +157,24 @@ class TransactionRepository(BaseRepository):
             return True
         except: return False
         finally: conn.close()
+
+    def update_expense(self, expense_id: int, title: str, amount: int, timestamp: str) -> bool:
+        """経費情報の更新"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE expenses 
+                SET title=?, amount=?, created_at=? 
+                WHERE id=?
+            """, (title, amount, timestamp, expense_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating expense: {e}")
+            return False
+        finally:
+            conn.close()
 
     def delete_expense(self, expense_id: int) -> bool:
         """経費削除"""
