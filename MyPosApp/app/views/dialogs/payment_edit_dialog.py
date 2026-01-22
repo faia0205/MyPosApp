@@ -10,8 +10,12 @@ class PaymentEditDialog(QDialog):
         self.resize(300, 200)
         self.setStyleSheet(f"""
             QDialog {{ background-color: #333; color: white; }}
-            QLineEdit {{ padding: 5px; color: black; background-color: white; }}
-            {StyleGenerator.get_checkbox_style()}
+            QLineEdit {{ 
+                padding: 8px; color: black; background-color: white; 
+                border-radius: 4px;
+            }}
+            QLabel {{ font-weight: bold; margin-top: 10px; }}
+            {StyleGenerator.get_checkbox_style()} /* 共通チェックボックス */
         """)
         self.data = data
         self._init_ui()

@@ -13,8 +13,12 @@ class ProductEditDialog(QDialog):
         self.resize(400, 500)
         self.setStyleSheet(f"""
             QDialog {{ background-color: #333; color: white; }}
-            QLineEdit, QSpinBox, QComboBox {{ padding: 5px; color: black; background-color: white; }}
-            {StyleGenerator.get_checkbox_style()}
+            QLineEdit, QSpinBox, QComboBox {{ 
+                padding: 8px; color: black; background-color: white; 
+                border-radius: 4px;
+            }}
+            QLabel {{ font-weight: bold; margin-top: 5px; }}
+            {StyleGenerator.get_checkbox_style()} /* 共通チェックボックス */
         """)
 
         self.product = product

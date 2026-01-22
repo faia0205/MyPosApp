@@ -66,17 +66,20 @@ class StyleGenerator:
     @staticmethod
     def get_checkbox_style() -> str:
         """
-        全設定画面共通の「見やすいチェックボックス」スタイル
-        ON: 緑背景・白文字
-        OFF: 暗い背景・グレー文字
+        全設定画面共通: 有効無効が明確なチェックボックス
+        ON: 背景緑・文字白・チェックマークあり
+        OFF: 背景暗グレー・文字グレー
         """
         return """
             QCheckBox {
                 spacing: 10px;
                 font-size: 14px;
                 font-weight: bold;
-                color: #757575; /* 未チェック時の文字色 */
-                padding: 5px;
+                color: #757575; /* OFF時の文字色 */
+                padding: 8px;
+                background-color: #2b2b2b; /* ボックス全体の背景 */
+                border-radius: 4px;
+                border: 1px solid #444;
             }
             QCheckBox::indicator {
                 width: 24px;
@@ -85,22 +88,16 @@ class StyleGenerator:
                 border: 2px solid #555;
                 background-color: #333;
             }
-            QCheckBox::indicator:unchecked {
-                background-color: #333;
+            /* チェックされた時の状態 */
+            QCheckBox:checked {
+                color: #ffffff; /* ON時の文字色 */
+                background-color: #1b5e20; /* ON時のボックス背景（濃い緑） */
+                border: 1px solid #69f0ae;
             }
             QCheckBox::indicator:checked {
-                background-color: #00e676; /* チェック時の鮮やかな緑 */
+                background-color: #00e676; /* チェックマークの背景 */
                 border-color: #00e676;
-                image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-yes-16.png); /* 標準チェックマークがあれば */
-            }
-            /* チェックされた時のテキスト色を変えるための擬似ステート設定は
-               QCheckBox単体ではCSSで完結しにくい場合があるため、
-               ON/OFF切り替え時にPython側でsetStyleSheetするか、
-               あるいは常に明るい色にしておき、インジケータで判断させるのが一般的ですが、
-               今回は「チェック時のみ白文字」を実現するため、
-               QCheckBox:checked { color: white; } を指定します。
-            */
-            QCheckBox:checked {
-                color: #ffffff; /* チェック時の文字色 */
+                /* 標準のチェックマーク画像を使用 (Qt標準リソース) */
+                image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-yes-16.png);
             }
         """
