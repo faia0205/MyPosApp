@@ -13,7 +13,8 @@ class AnalyticsService:
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
 
     def _to_jst_str(self, utc_str: str) -> str:
-        if not utc_str: return ""
+        if not utc_str:
+            return ""
         try:
             dt = datetime.datetime.strptime(utc_str, "%Y-%m-%d %H:%M:%S")
             dt_jst = dt.replace(tzinfo=datetime.timezone.utc).astimezone(self.JST)
@@ -146,7 +147,8 @@ class AnalyticsService:
             df_tx = pd.DataFrame(tx_list)
             df_logs = pd.DataFrame(logs)
             
-            if 'timestamp' in df_tx.columns: df_tx = df_tx.drop(columns=['timestamp'])
+            if 'timestamp' in df_tx.columns:
+                df_tx = df_tx.drop(columns=['timestamp'])
             
             if not df_tx.empty:
                 df_tx.rename(columns={'id':'伝票ID', 'time':'日時', 'total':'合計', 'items':'点数', 'payment':'決済', 'customer':'客層'}, inplace=True)
@@ -156,10 +158,13 @@ class AnalyticsService:
             pivots = self.get_pivot_data()
 
             with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                if df_tx.empty: pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
-                else: df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
+                if df_tx.empty:
+                    pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
+                else:
+                    df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
                     
-                if not df_logs.empty: df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
+                if not df_logs.empty:
+                    df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
                 
                 if pivots:
                     pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')

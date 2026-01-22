@@ -68,7 +68,8 @@ class PaymentSettingTab(QWidget):
 
     def _edit(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.methods[row]
         dlg = PaymentEditDialog(data=target, parent=self)
         if dlg.exec():

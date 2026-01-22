@@ -89,7 +89,10 @@ class AdminWindow(QDialog):
         default = self.service.get_default_filename()
         fname, _ = QFileDialog.getSaveFileName(self, "Excel出力", default, "Excel Files (*.xlsx)")
         if fname:
-            if not fname.endswith('.xlsx'): fname += '.xlsx'
+            if not fname.endswith('.xlsx'):
+                fname += '.xlsx'
             ok, msg = self.service.export_to_excel(fname)
-            if ok: QMessageBox.information(self, "完了", msg)
-            else: QMessageBox.warning(self, "エラー", msg)
+            if ok:
+                QMessageBox.information(self, "完了", msg)
+            else:
+                QMessageBox.warning(self, "エラー", msg)

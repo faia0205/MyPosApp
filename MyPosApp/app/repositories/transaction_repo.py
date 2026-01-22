@@ -132,8 +132,10 @@ class TransactionRepository(BaseRepository):
             cursor.execute("INSERT INTO payment_methods (name, is_cash, is_active) VALUES (?, ?, 1)", (name, int(is_cash)))
             conn.commit()
             return True
-        except: return False
-        finally: conn.close()
+        except Exception:
+            return False
+        finally:
+            conn.close()
 
     def update_payment_method(self, pm_id: int, name: str, is_cash: bool, is_active: bool) -> bool:
         conn = self.get_connection()
@@ -143,8 +145,10 @@ class TransactionRepository(BaseRepository):
                            (name, int(is_cash), int(is_active), pm_id))
             conn.commit()
             return True
-        except: return False
-        finally: conn.close()
+        except Exception:
+            return False
+        finally:
+            conn.close()
 
     # 2. 経費(出費)の設定
     def add_expense(self, title: str, amount: int) -> bool:
@@ -155,8 +159,10 @@ class TransactionRepository(BaseRepository):
             cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (title, amount))
             conn.commit()
             return True
-        except: return False
-        finally: conn.close()
+        except Exception:
+            return False
+        finally:
+            conn.close()
 
     def update_expense(self, expense_id: int, title: str, amount: int, timestamp: str) -> bool:
         """経費情報の更新"""
@@ -184,5 +190,7 @@ class TransactionRepository(BaseRepository):
             cursor.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
             conn.commit()
             return True
-        except: return False
-        finally: conn.close()
+        except Exception:
+            return False
+        finally:
+            conn.close()

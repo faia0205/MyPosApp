@@ -40,7 +40,8 @@ class AnalysisTab(QWidget):
             self._fill_pivot_table(self.table_cashier_payment, pivots['cashier_payment'])
 
     def _fill_pivot_table(self, table_widget, df):
-        if df.empty: return
+        if df.empty:
+            return
         table_widget.setRowCount(len(df.index))
         table_widget.setColumnCount(len(df.columns))
         table_widget.setHorizontalHeaderLabels([str(c) for c in df.columns])

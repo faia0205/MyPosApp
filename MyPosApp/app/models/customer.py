@@ -15,5 +15,5 @@ class Customer:
         """JSON文字列を辞書として取得"""
         try:
             return json.loads(self.attributes_json)
-        except:
+        except Exception:
             return {}

@@ -123,7 +123,8 @@ class UserSettingTab(QWidget):
 
     def _edit_selected(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.current_users[row]
         
         dialog = UserEditDialog(target, parent=self)
@@ -138,7 +139,8 @@ class UserSettingTab(QWidget):
 
     def _delete_selected(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.current_users[row]
         
         # 削除確認メッセージ

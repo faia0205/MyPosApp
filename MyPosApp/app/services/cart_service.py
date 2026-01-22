@@ -45,7 +45,8 @@ class CartService(QObject):
     def _calculate_avg_price(self) -> int:
         products = self.prod_repo.fetch_active_products()
         valid_prices = [p.price for p in products if p.price > 0]
-        if not valid_prices: return 500
+        if not valid_prices:
+            return 500
         return int(sum(valid_prices) / len(valid_prices))
 
     # --- 商品追加・削除系 ---
@@ -67,8 +68,10 @@ class CartService(QObject):
         # 新規追加
         new_item = {'id': product.id, 'name': product.name, 'price': product.price, 'qty': 1, 'is_manual': False, 'note': product.note}
         self.cart_items.append(new_item)
-        if product.note: self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
-        else: self._notify_message(f"【追加】 {product.name}", "info")
+        if product.note:
+            self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
+        else:
+            self._notify_message(f"【追加】 {product.name}", "info")
         self._recalculate()
     
     # ★新規追加メソッド: マスタデータを受け取り、カート内の価格を一括更新する
@@ -101,7 +104,8 @@ class CartService(QObject):
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             old_qty = item['qty']
-            if new_qty <= 0: self.remove_item(index)
+            if new_qty <= 0:
+                self.remove_item(index)
             else:
                 item['qty'] = new_qty
                 self._notify_message(f"【変更】 {item['name']}: {old_qty}個 → {new_qty}個", "info")
@@ -122,7 +126,8 @@ class CartService(QObject):
                 item['qty'] -= 1
                 self._notify_message(f"【減少】 {item['name']} (-1)", "info")
                 self._recalculate()
-            else: self.remove_item(index)
+            else:
+                self.remove_item(index)
 
     def remove_item(self, index: int) -> None:
         if 0 <= index < len(self.cart_items):
@@ -249,7 +254,8 @@ class CartService(QObject):
     
     def is_discount_target(self, product_id: int) -> bool:
         """指定された商品IDが、いずれかの割引ルールの対象か判定"""
-        if product_id is None: return False
+        if product_id is None:
+            return False
         
         for rule in self.discount_rules:
             if product_id in rule['target_ids']:

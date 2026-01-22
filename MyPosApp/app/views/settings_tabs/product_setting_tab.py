@@ -84,8 +84,10 @@ class ProductSettingTab(QWidget):
 
         # ★追加: 現在使われているカテゴリの一覧を取得（ダイアログに渡すため）
         self.existing_categories = sorted(list({p.category for p in products if p.category}))
-        if "フード" not in self.existing_categories: self.existing_categories.insert(0, "フード")
-        if "ドリンク" not in self.existing_categories: self.existing_categories.insert(1, "ドリンク")
+        if "フード" not in self.existing_categories:
+            self.existing_categories.insert(0, "フード")
+        if "ドリンク" not in self.existing_categories:
+            self.existing_categories.insert(1, "ドリンク")
 
         for row, p in enumerate(products):
             # 共通のフラグ設定関数: 選択はできるが編集は不可
@@ -154,7 +156,8 @@ class ProductSettingTab(QWidget):
     def _edit_selected(self):
         """選択行を編集"""
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         
         target = self.current_products[row]
         dialog = ProductEditDialog(target, parent=self)
@@ -176,7 +179,8 @@ class ProductSettingTab(QWidget):
     def _delete_selected(self):
         """論理削除（無効化）または物理削除"""
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.current_products[row]
 
         msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除 (履歴等の整合性が壊れる可能性があります)\n「No」= 販売停止 (無効化) するのみ\n「Cancel」= やめる"
@@ -201,9 +205,11 @@ class ProductSettingTab(QWidget):
         direction: -1 (Up), 1 (Down)
         """
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         new_row = row + direction
-        if new_row < 0 or new_row >= len(self.current_products): return
+        if new_row < 0 or new_row >= len(self.current_products):
+            return
 
         item_a = self.current_products[row]
         item_b = self.current_products[new_row]

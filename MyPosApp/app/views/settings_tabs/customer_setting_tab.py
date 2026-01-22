@@ -71,7 +71,8 @@ class CustomerSettingTab(QWidget):
             def mk_item(txt):
                 it = QTableWidgetItem(str(txt))
                 it.setForeground(QColor(text_col))
-                if bg_col: it.setBackground(QColor(bg_col))
+                if bg_col:
+                    it.setBackground(QColor(bg_col))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 return it
 
@@ -108,7 +109,8 @@ class CustomerSettingTab(QWidget):
 
     def _edit(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.customers[row]
         dlg = CustomerEditDialog(data=target, all_presets=self.customers, parent=self)
         if dlg.exec():
@@ -119,9 +121,11 @@ class CustomerSettingTab(QWidget):
 
     def _move(self, direction):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         new_row = row + direction
-        if new_row < 0 or new_row >= len(self.customers): return
+        if new_row < 0 or new_row >= len(self.customers):
+            return
         
         a, b = self.customers[row], self.customers[new_row]
         order_map = {a['id']: b['display_order'], b['id']: a['display_order']}

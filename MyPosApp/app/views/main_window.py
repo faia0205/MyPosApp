@@ -340,7 +340,8 @@ class MainWindow(QMainWindow):
         if self.cart_service.selected_customer and not current_selection_valid:
             self.cart_service.set_customer(None)
             self.cust_group.setExclusive(False)
-            for btn in self.cust_group.buttons(): btn.setChecked(False)
+            for btn in self.cust_group.buttons():
+                btn.setChecked(False)
             self.cust_group.setExclusive(True)
             
             self.btn_checkout.setEnabled(False)
@@ -467,11 +468,13 @@ class MainWindow(QMainWindow):
         self.lbl_total.setText(f"合計: ¥{total:,}")
     def _on_cart_cell_changed(self, row: int, col: int) -> None:
         """入力バリデーション付きの変更処理"""
-        if row >= len(self.current_indices_map): return
+        if row >= len(self.current_indices_map):
+            return
         data_index = self.current_indices_map[row]
         
         item_widget = self.cart_table.item(row, col)
-        if not item_widget: return
+        if not item_widget:
+            return
         
         text_val = item_widget.text()
         
@@ -522,7 +525,8 @@ class MainWindow(QMainWindow):
 
     def _open_payment_dialog(self) -> None:
         total = self.cart_service.get_total_amount()
-        if total <= 0: return
+        if total <= 0:
+            return
         
         # ★修正: 「全支払方法」を取得してダイアログに渡す（無効なものをグレーアウトするため）
         methods = self.trans_repo.fetch_all_payment_methods()
@@ -540,7 +544,8 @@ class MainWindow(QMainWindow):
         
         # 客層ボタンのリセット
         self.cust_group.setExclusive(False)
-        for btn in self.cust_group.buttons(): btn.setChecked(False)
+        for btn in self.cust_group.buttons():
+            btn.setChecked(False)
         self.cust_group.setExclusive(True)
         
         self.btn_checkout.setEnabled(False)
@@ -554,14 +559,26 @@ class MainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("手入力商品")
         layout = QVBoxLayout(dialog)
-        name_input = QLineEdit(); name_input.setPlaceholderText("商品名"); layout.addWidget(name_input)
-        price_input = QSpinBox(); price_input.setRange(0, 999999); price_input.setSingleStep(100); price_input.setValue(100); layout.addWidget(price_input)
+        
+        name_input = QLineEdit()
+        name_input.setPlaceholderText("商品名")
+        layout.addWidget(name_input)
+        
+        price_input = QSpinBox()
+        price_input.setRange(0, 999999)
+        price_input.setSingleStep(100)
+        price_input.setValue(100)
+        layout.addWidget(price_input)
+        
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(dialog.accept); btns.rejected.connect(dialog.reject)
+        
+        btns.accepted.connect(dialog.accept)
+        btns.rejected.connect(dialog.reject)
         layout.addWidget(btns)
         if dialog.exec():
             val = price_input.value()
-            if val > 0: self.cart_service.add_manual_item(val, name_input.text() or "手入力")
+            if val > 0:
+                self.cart_service.add_manual_item(val, name_input.text() or "手入力")
     
     def _open_admin_window(self) -> None:
         """管理画面を開く"""

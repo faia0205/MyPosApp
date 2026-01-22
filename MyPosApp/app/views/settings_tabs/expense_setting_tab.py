@@ -76,7 +76,8 @@ class ExpenseSettingTab(QWidget):
 
     def _edit(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.expenses[row]
         
         dlg = ExpenseEditDialog(data=target, parent=self)
@@ -88,7 +89,8 @@ class ExpenseSettingTab(QWidget):
 
     def _delete(self):
         row = self.table.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         target = self.expenses[row]
         
         if QMessageBox.question(self, "確認", f"「{target['title']}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:

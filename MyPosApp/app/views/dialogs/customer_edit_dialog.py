@@ -49,10 +49,12 @@ class CustomerEditDialog(QDialog):
         candidates = {}
         for p in presets:
             attrs = p.get('attributes', {})
-            if not isinstance(attrs, dict): continue
+            if not isinstance(attrs, dict):
+                continue
             
             for k, v in attrs.items():
-                if k not in candidates: candidates[k] = set()
+                if k not in candidates:
+                    candidates[k] = set()
                 candidates[k].add(str(v))
         return candidates
 
@@ -178,8 +180,10 @@ class CustomerEditDialog(QDialog):
             return
             
         # 数値変換トライ
-        try: val = int(val)
-        except: pass
+        try:
+            val = int(val)
+        except Exception:
+            pass
         
         self.current_attributes[key] = val
         self._refresh_attr_list()
@@ -191,7 +195,8 @@ class CustomerEditDialog(QDialog):
     def _remove_attribute_from_list(self):
         """選択中の属性を削除"""
         row = self.attr_list_widget.currentRow()
-        if row < 0: return
+        if row < 0:
+            return
         
         item_text = self.attr_list_widget.item(row).text()
         key = item_text.split(": ")[0]

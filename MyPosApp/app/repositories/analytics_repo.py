@@ -56,7 +56,8 @@ class AnalyticsRepository(BaseRepository):
         payments = cursor.fetchall()
         conn.close()
 
-        if not head: return {}
+        if not head:
+            return {}
         
         return {
             "id": head[0], "timestamp": head[1], "total": head[2], "change": head[3], "cashier": head[4],

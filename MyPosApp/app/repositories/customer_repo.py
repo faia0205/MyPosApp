@@ -35,8 +35,10 @@ class CustomerRepository(BaseRepository):
         result = []
         for row in rows:
             d = dict(row)
-            try: d['attributes'] = json.loads(d['attributes'])
-            except: d['attributes'] = {}
+            try:
+                d['attributes'] = json.loads(d['attributes'])
+            except Exception:
+                d['attributes'] = {}
             result.append(d)
         return result
 

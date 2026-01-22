@@ -120,7 +120,8 @@ class PaymentDialog(QDialog):
 
     def _add_payment(self, method : dict) -> None:
         remaining = self.total_amount - sum(p['amount'] for p in self.current_payments)
-        if remaining <= 0: return
+        if remaining <= 0:
+            return
 
         # 現金の場合は入力ダイアログ、キャッシュレスは即時満額
         if method['is_cash']:

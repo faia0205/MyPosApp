@@ -42,7 +42,8 @@ class ExpenseEditDialog(QDialog):
         if self.data:
             # data['timestamp'] は文字列 "YYYY-MM-DD HH:MM:SS"
             dt = QDateTime.fromString(self.data['timestamp'], "yyyy-MM-dd HH:mm:ss")
-            if dt.isValid(): self.date_edit.setDateTime(dt)
+            if dt.isValid():
+                self.date_edit.setDateTime(dt)
             self.title_edit.setText(self.data['title'])
             self.amount_spin.setValue(self.data['amount'])
 
