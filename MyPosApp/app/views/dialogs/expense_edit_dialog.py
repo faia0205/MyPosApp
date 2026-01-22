@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
                                QSpinBox, QDialogButtonBox, QDateTimeEdit)
 from PySide6.QtCore import QDateTime, Qt
+from app.utils.style import StyleGenerator
 
 class ExpenseEditDialog(QDialog):
     """経費登録・編集ダイアログ"""
@@ -9,11 +10,10 @@ class ExpenseEditDialog(QDialog):
         self.setWindowTitle("経費・出費の編集" if data else "経費・出費の登録")
         self.resize(300, 250)
         # チェックボックススタイルも念のため適用
-        self.setStyleSheet("""
-            QDialog { background-color: #333; color: white; }
-            QLineEdit, QSpinBox, QDateTimeEdit { background-color: white; color: black; padding: 5px; }
-            QCheckBox::indicator { width: 20px; height: 20px; background-color: #b0bec5; border: 1px solid #555; }
-            QCheckBox::indicator:checked { background-color: #4caf50; }
+        self.setStyleSheet(f"""
+            QDialog {{ background-color: #333; color: white; }}
+            QLineEdit, QDateTimeEdit {{ background-color: white; color: black; padding: 5px; border-radius: 4px; }}
+            {StyleGenerator.get_spinbox_style()}
         """)
         self.data = data
         self._init_ui()

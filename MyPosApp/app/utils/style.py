@@ -66,38 +66,91 @@ class StyleGenerator:
     @staticmethod
     def get_checkbox_style() -> str:
         """
-        全設定画面共通: 有効無効が明確なチェックボックス
-        ON: 背景緑・文字白・チェックマークあり
+        全設定画面共通: トグルボタン風チェックボックス
+        ON: 背景緑・文字白 (全体が緑)
         OFF: 背景暗グレー・文字グレー
+        ※ paddingとmarginでクリック領域を広げています
         """
         return """
             QCheckBox {
                 spacing: 10px;
                 font-size: 14px;
                 font-weight: bold;
-                color: #757575; /* OFF時の文字色 */
-                padding: 8px;
-                background-color: #2b2b2b; /* ボックス全体の背景 */
-                border-radius: 4px;
-                border: 1px solid #444;
+                color: #bdbdbd; /* OFF時の文字色 */
+                
+                /* ボタンのような見た目にする */
+                background-color: #424242;
+                padding: 10px;
+                border-radius: 6px;
+                border: 1px solid #555;
+                margin-top: 5px;
+                margin-bottom: 5px;
             }
+            
+            /* ホバー時の反応 */
+            QCheckBox:hover {
+                background-color: #505050;
+                border-color: #888;
+            }
+
+            /* インジケータ(四角い枠)のデザイン */
             QCheckBox::indicator {
-                width: 24px;
-                height: 24px;
+                width: 20px;
+                height: 20px;
                 border-radius: 4px;
-                border: 2px solid #555;
+                border: 2px solid #aaa;
                 background-color: #333;
             }
-            /* チェックされた時の状態 */
+            
+            /* --- ONの状態 (全体を緑にする) --- */
             QCheckBox:checked {
-                color: #ffffff; /* ON時の文字色 */
-                background-color: #1b5e20; /* ON時のボックス背景（濃い緑） */
-                border: 1px solid #69f0ae;
+                color: #ffffff; 
+                background-color: #2e7d32; /* 全体背景を濃い緑に */
+                border: 1px solid #69f0ae; /* 枠線を明るい緑に */
             }
+            
+            QCheckBox:checked:hover {
+                background-color: #388e3c; /* ホバー時は少し明るく */
+            }
+
             QCheckBox::indicator:checked {
-                background-color: #00e676; /* チェックマークの背景 */
-                border-color: #00e676;
-                /* 標準のチェックマーク画像を使用 (Qt標準リソース) */
+                background-color: #00e676; 
+                border-color: #ffffff;
+                /* 標準のチェックマーク画像 */
                 image: url(:/qt-project.org/styles/commonstyle/images/standardbutton-yes-16.png);
+            }
+        """
+
+    @staticmethod
+    def get_spinbox_style() -> str:
+        """
+        QSpinBox, QDoubleSpinBox のスタイル
+        ※ 矢印アイコンが崩れないよう、ボタン部分の画像指定は行わず、
+           背景色と文字色のみを調整します。
+        """
+        return """
+            QSpinBox, QDoubleSpinBox {
+                padding: 5px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background-color: white;
+                color: black;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            /* 選択時の色 */
+            QSpinBox::selection, QDoubleSpinBox::selection {
+                background-color: #0d47a1;
+                color: white;
+            }
+            /* 矢印ボタンの背景色のみ調整 (形はOS/Qt標準に任せる) */
+            QSpinBox::up-button, QDoubleSpinBox::up-button,
+            QSpinBox::down-button, QDoubleSpinBox::down-button {
+                background-color: #e0e0e0;
+                width: 20px;
+            }
+            QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
+            QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {
+                background-color: #cfcfcf;
             }
         """
