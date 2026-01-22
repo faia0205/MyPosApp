@@ -26,7 +26,7 @@ class CartService(QObject):
         self.disc_repo = DiscountRepository()
         self.log_repo = LogRepository()
         self.calculator = PriceCalculator()
-        self.discount_manager = DiscountManager() # インスタンス化
+        self.discount_manager = DiscountManager() # 割引計算ロジック
         
         self.cart_items: List[Dict[str, Any]] = []     
         self.applied_discounts: List[Dict[str, Any]] = []
@@ -38,7 +38,7 @@ class CartService(QObject):
         
         self.avg_price_target = self._calculate_avg_price()
         
-        # 新しいリポジトリメソッドを使用
+        # 初期ロード（後で_recalculateでも読むのでここは空でも良いが一応）
         self.discount_rules = self.disc_repo.fetch_active_rules()
 
     def _calculate_avg_price(self) -> int:
@@ -58,12 +58,12 @@ class CartService(QObject):
                 self._recalculate()
                 return
         
-        # カテゴリ情報を含めて追加
+        # カテゴリ情報を含めて追加 (DiscountManagerで使用)
         new_item = {
             'id': product.id, 
             'name': product.name, 
             'price': product.price, 
-            'category': product.category or "その他", # DiscountManagerで使用
+            'category': product.category or "その他", 
             'qty': 1, 
             'is_manual': False, 
             'note': product.note
@@ -100,12 +100,16 @@ class CartService(QObject):
             self._recalculate()
 
     def add_manual_item(self, price: int, name: str) -> None:
-        new_item = {'id': None, 'name': name, 'price': price, 'qty': 1, 'is_manual': True, 'note': "手入力", 'category': "その他"}
+        new_item = {
+            'id': None, 'name': name, 'price': price, 
+            'qty': 1, 'is_manual': True, 'note': "手入力", 
+            'category': "その他"
+        }
         self.cart_items.append(new_item)
         self._recalculate()
         
-    # 価格情報の更新
     def refresh_prices(self, master_products: List[Product]) -> None:
+        """マスタ更新時にカート内価格を最新化"""
         product_map = {p.id: p for p in master_products}
         updated_count = 0
         for item in self.cart_items:
@@ -119,12 +123,16 @@ class CartService(QObject):
             self._recalculate()
 
     # --- 計算処理 ---
+
     def get_total_amount(self) -> int:
         return self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
 
     def _recalculate(self) -> None:
-        # DBから最新ルールを取得（頻繁な変更がなければinit時のみでも可）
-        # self.discount_rules = self.disc_repo.fetch_active_rules() 
+        """状態更新とシグナル発行"""
+        
+        # ★修正: 計算のたびにDBから最新の有効ルールを取得する
+        # これにより、設定画面で無効化したルールが即座に除外されます
+        self.discount_rules = self.disc_repo.fetch_active_rules()
 
         # 1. DiscountManagerで割引を計算 (合算処理済み)
         self.applied_discounts = self.discount_manager.calculate_discounts(
@@ -168,7 +176,8 @@ class CartService(QObject):
         if not self.cart_items or not self.selected_customer: return
         
         total = self.get_total_amount()
-        # 割引情報を保存用に変換（name, price, qty）
+        
+        # 保存用リスト作成
         final_items = self.cart_items.copy()
         for d in self.applied_discounts:
             final_items.append({
@@ -178,7 +187,7 @@ class CartService(QObject):
                 'subtotal': d['amount'] 
             })
 
-        # 支払情報の調整ロジック
+        # 支払情報の調整
         adjusted_payments = []
         remaining_change = change
         for method, amount in payments:
@@ -200,14 +209,8 @@ class CartService(QObject):
         self.checkout_completed.emit(self.selected_customer.label if self.selected_customer else "", change)
         self._recalculate()
     
-    # ★追加: 以前のUIロジックとの互換性用メソッド
     def is_discount_target(self, product_id: int) -> bool:
-        """
-        指定された商品IDが、いずれかの割引ルールの対象か判定する。
-        （メイン画面の描画時に呼ばれています）
-        """
-        # 現在の複雑なルール（セット割など）では単純なID判定が難しいため、
-        # 一旦 False を返して、UI側での強調表示をスキップし、クラッシュを防ぎます。
+        """UI描画時のエラー防止用（現在は使用しないためFalseを返す）"""
         return False
 
     def _notify_message(self, text: str, msg_type: str) -> None:

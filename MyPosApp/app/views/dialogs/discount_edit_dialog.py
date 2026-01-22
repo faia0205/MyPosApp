@@ -9,7 +9,7 @@ class DiscountEditDialog(QDialog):
     def __init__(self, data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("割引ルール編集")
-        self.resize(500, 650) # 縦長に
+        self.resize(500, 600)
         
         self.setStyleSheet(f"""
             QDialog {{ background-color: #333; color: white; }}
@@ -139,14 +139,14 @@ class DiscountEditDialog(QDialog):
 
         layout.addWidget(self.bundle_widget)
 
-        # 4. 自動適用
-        self.auto_chk = QCheckBox("条件を満たしたら自動適用")
-        self.auto_chk.setChecked(True) # バンドルは基本自動が良い
-        layout.addWidget(self.auto_chk)
+        # 4. オプション (有効/無効のみ)
+        # ★修正: 自動適用のチェックボックスを削除し、常に自動扱いとする
         
-        self.active_chk = QCheckBox("有効")
+        self.active_chk = QCheckBox("有効にする")
         self.active_chk.setChecked(True)
         layout.addWidget(self.active_chk)
+
+        layout.addStretch()
 
         # データ読み込み
         self._load_master_data()
@@ -165,9 +165,6 @@ class DiscountEditDialog(QDialog):
         self.products = self.prod_repo.fetch_active_products()
         self.categories = sorted(list(set(p.category for p in self.products if p.category)))
         
-        # コンボボックスに候補を入れる
-        # "商品: たこ焼き", "カテゴリ: フード" のように区別できるとベストだが
-        # ここではシンプルに混ぜて入れる
         candidates = []
         for c in self.categories: candidates.append(f"[カテゴリ] {c}")
         for p in self.products: candidates.append(f"{p.name}")
@@ -176,7 +173,6 @@ class DiscountEditDialog(QDialog):
         self.combo_target_combo.addItems(candidates)
 
     def _on_apply_type_changed(self, index):
-        # 0:cart, 1:category, 2:item, 3:bundle
         if index == 3:
             self.normal_widget.setVisible(False)
             self.bundle_widget.setVisible(True)
@@ -184,7 +180,6 @@ class DiscountEditDialog(QDialog):
             self.normal_widget.setVisible(True)
             self.bundle_widget.setVisible(False)
             
-            # Normal UI update
             self.target_combo.clear()
             self.target_combo.setEnabled(True)
             if index == 0:
@@ -198,7 +193,6 @@ class DiscountEditDialog(QDialog):
                 for p in self.products: self.target_combo.addItem(p.name)
 
     def _on_bundle_mode_changed(self, index):
-        # 0: select, 1: combo
         if index == 0:
             self.select_widget.setVisible(True)
             self.combo_widget.setVisible(False)
@@ -216,8 +210,6 @@ class DiscountEditDialog(QDialog):
         txt = self.combo_target_combo.currentText()
         qty = self.combo_qty_spin.value()
         
-        # 内部データ構造
-        # "[カテゴリ] フード" -> type='category', target='フード'
         target_type = 'item'
         target_val = txt
         if txt.startswith("[カテゴリ] "):
@@ -226,24 +218,20 @@ class DiscountEditDialog(QDialog):
             
         cond = {'target': target_val, 'type': target_type, 'qty': qty}
         self.bundle_conditions.append(cond)
-        
         self.combo_list_widget.addItem(f"{txt} x {qty}個")
 
     def _load_data(self):
-        # 既存データのロード（通常項目は省略、Bundle復元のみ要実装）
         self.name_edit.setText(self.data['name'])
         if self.data['discount_type'] == 'percent': self.rb_percent.setChecked(True)
         else: self.rb_fixed.setChecked(True)
         self.value_spin.setValue(self.data['discount_value'])
         self.active_chk.setChecked(bool(self.data['is_active']))
-        self.auto_chk.setChecked(bool(self.data['is_auto']))
         
         atype = self.data['apply_type']
         target_val = self.data['target_value']
         
         if atype == 'bundle':
             self.apply_combo.setCurrentIndex(3)
-            # JSONパースして復元
             try:
                 b_data = json.loads(target_val)
                 mode = b_data.get('mode', 'select')
@@ -251,7 +239,6 @@ class DiscountEditDialog(QDialog):
                     self.bundle_mode_combo.setCurrentIndex(0)
                     self.select_qty_spin.setValue(b_data.get('qty', 2))
                     for t in b_data.get('targets', []):
-                        # 表示用に[カテゴリ]などを復元するのは難しいが、そのままリストへ
                         self.bundle_targets.append(t)
                         self.select_list_widget.addItem(t)
                 else:
@@ -263,7 +250,6 @@ class DiscountEditDialog(QDialog):
             except:
                 pass
         else:
-            # item, category, cart
             idx = 0
             if atype == 'category': idx = 1
             elif atype == 'item': idx = 2
@@ -287,10 +273,8 @@ class DiscountEditDialog(QDialog):
             target_value = self.target_combo.currentText()
         elif idx == 3:
             a_type = 'bundle'
-            # JSON作成
             mode_idx = self.bundle_mode_combo.currentIndex()
             if mode_idx == 0: # Select
-                # ターゲット名から [カテゴリ] などを除去して整形
                 clean_targets = []
                 for t in self.bundle_targets:
                     clean_targets.append(t.replace("[カテゴリ] ", ""))
@@ -313,6 +297,6 @@ class DiscountEditDialog(QDialog):
             "discount_value": self.value_spin.value(),
             "apply_type": a_type,
             "target_value": target_value,
-            "is_auto": self.auto_chk.isChecked(),
+            "is_auto": True, # ★修正: 常に自動適用として保存
             "is_active": self.active_chk.isChecked()
         }
