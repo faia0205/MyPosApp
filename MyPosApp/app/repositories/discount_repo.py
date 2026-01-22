@@ -24,8 +24,9 @@ class DiscountRepository(BaseRepository):
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
+        # ★修正: is_active=1 のデータを取得する際、is_auto も取得するように追加
         cursor.execute("""
-            SELECT id, name, discount_type, discount_value, apply_type, target_value 
+            SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto 
             FROM discount_rules 
             WHERE is_active=1
         """)

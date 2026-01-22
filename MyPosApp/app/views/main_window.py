@@ -20,6 +20,14 @@ from app.views.dialogs.login_dialog import LoginDialog
 from app.views.settings_window import SettingsWindow
 
 class MainWindow(QMainWindow):
+    """
+    MainWindow の Docstring
+    
+    :var QPushButton: 説明
+    :vartype QPushButton: hover
+    :var QHeaderView: 説明
+    """
+    
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Modular POS System")

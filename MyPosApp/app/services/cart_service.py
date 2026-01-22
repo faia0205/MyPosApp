@@ -7,6 +7,7 @@ from app.repositories.discount_repo import DiscountRepository
 from app.models.product import Product
 from app.models.customer import Customer
 from app.logic.calculator import PriceCalculator
+from app.logic.discount_manager import DiscountManager
 from app.repositories.log_repo import LogRepository
 
 class CartService(QObject):
@@ -25,6 +26,7 @@ class CartService(QObject):
         self.disc_repo = DiscountRepository()
         self.log_repo = LogRepository()
         self.calculator = PriceCalculator()
+        self.discount_manager = DiscountManager()
         
         self.cart_items: List[Dict[str, Any]] = []     
         self.applied_discounts: List[Dict[str, Any]] = []
@@ -61,7 +63,15 @@ class CartService(QObject):
                 return
         
         # 新規追加
-        new_item = {'id': product.id, 'name': product.name, 'price': product.price, 'qty': 1, 'is_manual': False, 'note': product.note}
+        new_item = {
+            'id': product.id, 
+            'name': product.name, 
+            'price': product.price, 
+            'category': product.category or "その他", # ★ここ
+            'qty': 1, 
+            'is_manual': False, 
+            'note': product.note
+        }
         self.cart_items.append(new_item)
         if product.note:
             self._notify_message(f"⚠️ {product.name}: {product.note}", "warning")
@@ -210,11 +220,13 @@ class CartService(QObject):
     def _recalculate(self) -> None:
         """状態更新とシグナル発行"""
         
-        # 1. 割引計算
-        # ★修正: 新しいルール構造はCalculatorと互換性がない可能性があるため、
-        # 手動割引(カート内アイテム化)をメインとし、自動割引計算は一旦スキップ(空リスト渡し)します。
-        # self.applied_discounts = self.calculator.process_discounts(self.cart_items, self.discount_rules)
-        self.applied_discounts = [] 
+        # 1. 自動割引計算 (★修正: DiscountManagerを使用)
+        # activeなルールを最新化しても良いが、パフォーマンス次第
+        # self.discount_rules = self.disc_repo.fetch_active_rules() 
+        self.applied_discounts = self.discount_manager.calculate_discounts(
+            self.cart_items, 
+            self.discount_rules
+        )
 
         # 2. 合計金額計算
         grand_total = self.calculator.calculate_grand_total(

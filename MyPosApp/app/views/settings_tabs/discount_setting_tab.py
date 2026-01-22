@@ -19,11 +19,12 @@ class DiscountSettingTab(QWidget):
         
         btn_lay = QHBoxLayout()
         add_btn = QPushButton("＋ ルール追加")
-        add_btn.setStyleSheet("background-color: #0277bd; color: white;")
+        add_btn.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold; padding: 5px 15px;")
         add_btn.clicked.connect(self._add)
         btn_lay.addWidget(add_btn)
 
         edit_btn = QPushButton("編集")
+        edit_btn.setStyleSheet("padding: 5px 15px;")
         edit_btn.clicked.connect(self._edit)
         btn_lay.addWidget(edit_btn)
         
@@ -34,10 +35,17 @@ class DiscountSettingTab(QWidget):
         self.table.setColumnCount(5)
         self.table.setHorizontalHeaderLabels(["ID", "名称", "内容", "対象", "状態"])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch) # 対象も見やすく広げる
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.doubleClicked.connect(self._edit)
-        self.table.setStyleSheet("background-color: #222; color: white; gridline-color: #444;")
+        
+        # テーブル全体のスタイル
+        self.table.setStyleSheet("""
+            QTableWidget { background-color: #222; color: white; gridline-color: #444; }
+            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; padding: 4px; }
+            QTableWidget::item:selected { background-color: #0d47a1; }
+        """)
         layout.addWidget(self.table)
 
     def load_data(self):
@@ -47,11 +55,14 @@ class DiscountSettingTab(QWidget):
         
         for i, r in enumerate(rules):
             is_active = bool(r['is_active'])
-            col = "white" if is_active else "#757575"
             
-            def mk(txt):
+            # 基本色（無効ならグレー）
+            base_col = "white" if is_active else "#757575"
+            
+            def mk(txt, color=None):
                 it = QTableWidgetItem(str(txt))
-                it.setForeground(QColor(col))
+                # 指定がなければ基本色を使う
+                it.setForeground(QColor(color if color and is_active else base_col))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 return it
 
@@ -60,12 +71,36 @@ class DiscountSettingTab(QWidget):
             
             # 内容 (例: 100円引, 10%引)
             unit = "円引" if r['discount_type'] == 'fixed' else "%OFF"
-            self.table.setItem(i, 2, mk(f"{r['discount_value']}{unit}"))
+            val_text = f"{r['discount_value']}{unit}"
+            # 値引き内容は少し強調（黄色っぽい色）
+            self.table.setItem(i, 2, mk(val_text, "#ffeb3b"))
             
-            # 対象
-            target = r['apply_type']
-            if r['target_value']: target += f" ({r['target_value']})"
-            self.table.setItem(i, 3, mk(target))
+            # --- ★改善: 対象の見やすさ向上 ---
+            atype = r['apply_type']
+            target_val = r['target_value']
+            
+            target_text = ""
+            target_color = "white"
+
+            if atype == 'cart':
+                target_text = "■ カート全体"
+                target_color = "#81d4fa" # 水色
+            elif atype == 'category':
+                target_text = f"【カテゴリ】 {target_val}"
+                target_color = "#ffcc80" # オレンジ
+            elif atype == 'item':
+                target_text = f"【 商  品 】 {target_val}"
+                target_color = "#a5d6a7" # 薄緑
+            elif atype == 'bundle':
+                # ★追加: バンドルの中身を少し表示
+                target_text = "★ セット・バンドル"
+                target_color = "#e1bee7" # 紫系
+                # target_val (JSON) を簡易解析して表示しても良い
+                if "select" in target_val: target_text += " (まとめ買い)"
+                else: target_text += " (組合せ)"
+                
+            self.table.setItem(i, 3, mk(target_text, target_color))
+            # ------------------------------------
             
             self.table.setItem(i, 4, mk("有効" if is_active else "無効"))
 
