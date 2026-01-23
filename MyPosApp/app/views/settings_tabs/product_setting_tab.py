@@ -3,8 +3,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
+from app.models.product import Product
 from app.repositories.product_repo import ProductRepository
-# ★追加: ログ用のリポジトリをインポート
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.product_edit_dialog import ProductEditDialog
 
@@ -136,19 +136,27 @@ class ProductSettingTab(QWidget):
 
     # _add_product / _edit_selected でダイアログを呼ぶ際にカテゴリリストを渡す
     def _add_product(self):
-        # Dialogの __init__ に categories 引数を追加して渡す設計にするか、
-        # Dialog側で set_categories メソッドを作る
         dialog = ProductEditDialog(parent=self)
         dialog.set_category_list(self.existing_categories)
         if dialog.exec():
             data = dialog.get_data()
-            success = self.repo.add_product(
-                data["name"], data["price"], data["category"], 
-                data["color"], data["note"]
+            
+            # オブジェクト作成 (IDはNone)
+            new_product = Product(
+                id=None,
+                name=data["name"],
+                price=data["price"],
+                category=data["category"],
+                color=data["color"],
+                note=data["note"],
+                is_active=data["is_active"]
             )
+            
+            # Repositoryへオブジェクトを渡す
+            success = self.repo.add_product(new_product)
+            
             if success:
-                # ★追加: ログ記録
-                self.log_repo.add_log("info", f"商品追加: {data['name']}")
+                self.log_repo.add_log("info", f"商品追加: {new_product.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加に失敗しました")
@@ -165,15 +173,24 @@ class ProductSettingTab(QWidget):
         
         if dialog.exec():
             data = dialog.get_data()
-            success = self.repo.update_product(
-                target.id, data["name"], data["price"], data["category"], 
-                data["color"], data["note"], data["is_active"]
+
+            # 更新用オブジェクト作成 (ID維持)
+            updated_product = Product(
+                id=target.id,
+                name=data["name"],
+                price=data["price"],
+                category=data["category"],
+                color=data["color"],
+                note=data["note"],
+                is_active=data["is_active"],
+                display_order=target.display_order # 順序は維持
             )
+
+            success = self.repo.update_product(updated_product)
+            
             if success:
-                # ★追加: ログ記録
-                self.log_repo.add_log("info", f"商品変更: {target.name} -> {data['name']}")
+                self.log_repo.add_log("info", f"商品変更: {target.name} -> {updated_product.name}")
                 self.load_data()
-                # 編集していた行を再度選択状態にする
                 self.table.selectRow(row)
 
     def _delete_selected(self):
@@ -189,13 +206,12 @@ class ProductSettingTab(QWidget):
         if res == QMessageBox.Yes:
             # 物理削除
             if self.repo.delete_product(target.id):
-                # ★追加: ログ記録
                 self.log_repo.add_log("warning", f"商品完全削除: {target.name}")
                 self.load_data()
         elif res == QMessageBox.No:
             # 無効化
-            if self.repo.update_product(target.id, target.name, target.price, target.category, target.color, target.note, False):
-                # ★追加: ログ記録
+            target.is_active = False
+            if self.repo.update_product(target):
                 self.log_repo.add_log("info", f"商品無効化: {target.name}")
                 self.load_data()
 

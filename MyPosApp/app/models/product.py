@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class Product:
     """商品データモデル"""
-    id: int
+    id: Optional[int]  # 新規作成時はNoneを許容
     name: str
     price: int
     category: str

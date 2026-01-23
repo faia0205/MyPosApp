@@ -49,10 +49,10 @@ class LoginDialog(QDialog):
         grid = QGridLayout()
         for i, user in enumerate(users):
             # user_repo.py でキーを統一したので user_code を使用
-            code = user.get('user_code') or user.get('code', '')
-            is_active = bool(user.get('is_active', True))
+            code = user.user_code
+            is_active = user.is_active
             
-            label_text = f"{user['name']}\n({code})"
+            label_text = f"{user.name}\n({code})"
             if not is_active:
                 label_text += "(無効)"
 
@@ -60,7 +60,7 @@ class LoginDialog(QDialog):
             
             if is_active:
                 # 有効な場合: クリックイベントを設定
-                btn.clicked.connect(lambda _, n=user['name']: self._on_user_selected(n))
+                btn.clicked.connect(lambda _, n=user.name: self._on_user_selected(n))
                 # スタイルはデフォルト（active_style）が適用される
             else:
                 # 無効な場合: ボタンを無効化し、グレーアウト用スタイルを適用

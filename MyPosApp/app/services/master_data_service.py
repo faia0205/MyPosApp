@@ -6,6 +6,8 @@ from typing import Dict, Any, List
 from dataclasses import asdict
 
 from app.config import DATA_DIR
+from app.models.product import Product
+from app.models.user import User
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.customer_repo import CustomerRepository
@@ -50,10 +52,12 @@ class MasterDataService:
             # 2. 各リポジトリからJSON用データを収集
             
             # 商品
-            products = self.prod_repo.fetch_all_for_json()
+            products_objs = self.prod_repo.fetch_all_as_models()
+            products = [asdict(p) for p in products_objs]
             
             # ユーザー
-            users = self.user_repo.fetch_all_for_json()
+            users_objs = self.user_repo.fetch_all_users()
+            users = [asdict(u) for u in users_objs]
             
             # 客層 (is_active含む)
             customers = self.cust_repo.fetch_all_for_json()
@@ -119,23 +123,35 @@ class MasterDataService:
 
         # A. Products
         for p in data.get("products", []):
-            exists = self.prod_repo.find_id_by_name(p["name"])
-            if exists:
-                self.prod_repo.update_product(
-                    exists, p["name"], p["price"], p["category"], 
-                    p.get("color", "#ffcc80"), p.get("note", ""), p.get("is_active", True)
-                )
+            exists_id = self.prod_repo.find_id_by_name(p["name"])
+            
+            # オブジェクト作成
+            target_product = Product(
+                id=exists_id, # 更新時はIDが必要、新規時はNoneでも良いがfind結果を入れる
+                name=p["name"],
+                price=p["price"],
+                category=p["category"],
+                color=p.get("color", "#ffcc80"),
+                note=p.get("note", ""),
+                is_active=p.get("is_active", True),
+                display_order=0 # 内部で自動設定or維持されるためダミー
+            )
+
+            if exists_id:
+                self.prod_repo.update_product(target_product)
             else:
-                self.prod_repo.add_product(
-                    p["name"], p["price"], p["category"], 
-                    p.get("color", "#ffcc80"), p.get("note", "")
-                )
+                self.prod_repo.add_product(target_product)
         
         # B. Users
         for u in data.get("users", []):
-            self.user_repo.upsert_user(
-                u["name"], u["user_code"], u.get("role", "staff"), u.get("is_active", True)
+            target_user = User(
+                id=None,
+                name=u["name"],
+                user_code=u["user_code"],
+                role=u.get("role", "staff"),
+                is_active=u.get("is_active", True)
             )
+            self.user_repo.upsert_user(target_user)
 
         # C. Payment Methods
         for pm in data.get("payment_methods", []):
