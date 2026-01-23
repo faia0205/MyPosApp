@@ -1,13 +1,15 @@
 from typing import List, Dict, Tuple, Optional
 from PySide6.QtCore import QObject, Signal
 from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.payment_repo import PaymentRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.log_repo import LogRepository
 from app.models.product import Product
 from app.models.customer import Customer
-from app.models.cart_item import CartItem  # 新モデル
+from app.models.cart_item import CartItem
 from app.logic.calculator import PriceCalculator
 from app.logic.discount_manager import DiscountManager
 
@@ -15,13 +17,16 @@ class CartService(QObject):
     cart_updated = Signal()
     message_updated = Signal(str, str)
     stats_updated = Signal(int, int, int, str, bool)
-    checkout_completed = Signal(str, int)
+    checkout_completed = Signal(int, int, str)
     user_changed = Signal(str)
     customer_selected = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
-        self.repo = TransactionRepository()
+        self.trans_repo = TransactionRepository()
+        self.expense_repo = ExpenseRepository()
+        self.payment_repo = PaymentRepository()
+
         self.user_repo = UserRepository()
         self.prod_repo = ProductRepository()
         self.disc_repo = DiscountRepository()
@@ -36,8 +41,8 @@ class CartService(QObject):
         self.selected_customer: Optional[Customer] = None 
         self.current_user_name = "未設定"
 
-        self.current_expenses: int = self.repo.get_total_expenses()
-        self.total_sales_today: int = self.repo.get_total_sales_today()
+        self.current_expenses: int = self.expense_repo.get_total_amount()
+        self.total_sales_today: int = self.trans_repo.get_total_sales_today()
         self.avg_price_target = self._calculate_avg_price()
         self.discount_rules = self.disc_repo.fetch_active_rules()
 
@@ -131,21 +136,36 @@ class CartService(QObject):
         return self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
 
     def recalculate(self) -> None:
+        """カートの再計算とステータス更新"""
+        
+        # 1. 割引ルールの最新化
         self.discount_rules = self.disc_repo.fetch_active_rules()
+        
+        # ★ 2. 経費データの最新化 (ここに追加！)
+        # 設定画面で経費が変わった場合に備えて、再計算のタイミングでDBから取り直します
+        self.current_expenses = self.expense_repo.get_total_amount()
+
+        # 3. 割引計算
         self.applied_discounts = self.discount_manager.calculate_discounts(
             self.cart_items, 
             self.discount_rules
         )
+        
+        # 4. 合計金額計算
         grand_total = self.calculator.calculate_grand_total(
             self.cart_items, 
             self.applied_discounts
         )
+        
+        # 5. 利益・黒字目標の計算 (最新の self.current_expenses を使用)
         est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
             grand_total,
             self.total_sales_today,
-            self.current_expenses,
+            self.current_expenses, 
             self.avg_price_target
         )
+        
+        # 6. 通知
         self.cart_updated.emit()
         self.stats_updated.emit(
             self.total_sales_today + grand_total,
@@ -166,7 +186,8 @@ class CartService(QObject):
         self._notify_message(f"担当者: {name} さんでログインしました", "info")
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
-        if not self.cart_items or not self.selected_customer: return
+        if not self.cart_items or not self.selected_customer:
+            return
         
         total = self.get_total_amount()
         
@@ -198,16 +219,23 @@ class CartService(QObject):
             else:
                 adjusted_payments.append((method, amount))
 
-        self.repo.save_transaction(
-            total, self.selected_customer.label, self.current_user_name, 
+        current_customer_name = "未設定"
+        if self.selected_customer:
+            current_customer_name = self.selected_customer.label
+
+        self.trans_repo.save_transaction(
+            total, current_customer_name, self.current_user_name, 
             final_items_dicts, adjusted_payments, change
         )
         
         self.total_sales_today += total
+        grand_total = self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
+
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
-        self.checkout_completed.emit(self.selected_customer.label if self.selected_customer else "", change)
+        
+        self.checkout_completed.emit(grand_total, change, current_customer_name)
         self.recalculate()
     
     def is_discount_target(self, product_id: int) -> bool:

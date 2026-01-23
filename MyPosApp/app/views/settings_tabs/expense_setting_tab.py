@@ -1,14 +1,17 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
                                QTableWidgetItem, QPushButton, QHeaderView, QMessageBox)
 from PySide6.QtCore import Qt
-from app.repositories.transaction_repo import TransactionRepository
+from dataclasses import asdict
+
+from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
+from app.models.expense import Expense
 
 class ExpenseSettingTab(QWidget):
     def __init__(self):
         super().__init__()
-        self.repo = TransactionRepository()
+        self.repo = ExpenseRepository()
         self.log_repo = LogRepository()
         self._init_ui()
         self.load_data()
@@ -49,28 +52,28 @@ class ExpenseSettingTab(QWidget):
         layout.addWidget(self.table)
 
     def load_data(self):
-        expenses = self.repo.fetch_expense_list()
-        self.table.setRowCount(len(expenses))
-        self.expenses = expenses
-        for i, ex in enumerate(expenses):
+        self.expenses = self.repo.fetch_all()
+        self.table.setRowCount(len(self.expenses))
+
+        for i, ex in enumerate(self.expenses):
             # 日時変換は簡易的に
-            ts = ex['timestamp']
+            ts = ex.timestamp
             
             def mk(txt):
                 it = QTableWidgetItem(str(txt))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 return it
 
-            self.table.setItem(i, 0, mk(ex['id']))
+            self.table.setItem(i, 0, mk(ex.id))
             self.table.setItem(i, 1, mk(ts))
-            self.table.setItem(i, 2, mk(ex['title']))
-            self.table.setItem(i, 3, mk(f"¥{ex['amount']:,}"))
+            self.table.setItem(i, 2, mk(ex.title))
+            self.table.setItem(i, 3, mk(f"¥{ex.amount:,}"))
 
     def _add(self):
         dlg = ExpenseEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add_expense(d['title'], d['amount']):
+            if self.repo.add(d['title'], d['amount']):
                 self.log_repo.add_log("info", f"経費登録: {d['title']} ¥{d['amount']}")
                 self.load_data()
 
@@ -79,12 +82,20 @@ class ExpenseSettingTab(QWidget):
         if row < 0:
             return
         target = self.expenses[row]
+
+        target_dict = asdict(target)
         
-        dlg = ExpenseEditDialog(data=target, parent=self)
+        dlg = ExpenseEditDialog(data=target_dict, parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.update_expense(target['id'], d['title'], d['amount'], d['timestamp']):
-                self.log_repo.add_log("info", f"経費編集: {target['title']} -> {d['title']}")
+            updated_expense = Expense(
+                id=target.id,
+                title=d['title'],
+                amount=d['amount'],
+                timestamp=d["timestamp"] # 日時変更しない場合
+            )
+            if self.repo.update(updated_expense):
+                self.log_repo.add_log("info", f"経費編集: {target.title} -> {d['title']}")
                 self.load_data()
 
     def _delete(self):
@@ -93,7 +104,7 @@ class ExpenseSettingTab(QWidget):
             return
         target = self.expenses[row]
         
-        if QMessageBox.question(self, "確認", f"「{target['title']}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
-            if self.repo.delete_expense(target['id']):
-                self.log_repo.add_log("warning", f"経費削除: {target['title']}")
+        if QMessageBox.question(self, "確認", f"「{target.title}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"経費削除: {target.title}")
                 self.load_data()

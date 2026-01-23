@@ -3,7 +3,11 @@ import os
 # ==========================================
 # 設定
 # ==========================================
-OUTPUT_FILE = 'project_structure.txt'
+# 特定の文字列を含むファイル名が既に存在する場合、連番を付与して上書きを防止
+counter = 1
+while os.path.exists(f'project_structure_{counter}.txt'):
+    counter += 1
+OUTPUT_FILE = f'project_structure_{counter}.txt'
 
 # 構造図に載せたくないディレクトリ（無視リスト）
 IGNORE_DIRS = {

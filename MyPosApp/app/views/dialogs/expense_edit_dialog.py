@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
-                               QSpinBox, QDialogButtonBox, QDateTimeEdit)
+                               QSpinBox, QDialogButtonBox, QDateTimeEdit, QFormLayout)
 from PySide6.QtCore import QDateTime, Qt
 from app.utils.style import StyleGenerator
 
@@ -20,41 +20,46 @@ class ExpenseEditDialog(QDialog):
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        
-        # 日時 (編集時のみ、あるいは新規でも指定可能に)
-        layout.addWidget(QLabel("日時:"))
-        self.date_edit = QDateTimeEdit(QDateTime.currentDateTime())
+        form = QFormLayout()
+
+        # 日時 (編集時のみ、または常に表示)
+        self.date_edit = QDateTimeEdit()
         self.date_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
         self.date_edit.setCalendarPopup(True)
-        layout.addWidget(self.date_edit)
         
-        layout.addWidget(QLabel("項目名:"))
-        self.title_edit = QLineEdit()
-        layout.addWidget(self.title_edit)
-        
-        layout.addWidget(QLabel("金額 (円):"))
-        self.amount_spin = QSpinBox()
-        self.amount_spin.setRange(-999999, 999999)
-        self.amount_spin.setSingleStep(100)
-        layout.addWidget(self.amount_spin)
-
-        # 初期値
-        if self.data:
-            # data['timestamp'] は文字列 "YYYY-MM-DD HH:MM:SS"
+        # データがあればその時間を、なければ現在時刻を設定
+        if self.data.get('timestamp'):
+            # 文字列 "yyyy-MM-dd HH:mm:ss" を QDateTime に変換
             dt = QDateTime.fromString(self.data['timestamp'], "yyyy-MM-dd HH:mm:ss")
-            if dt.isValid():
-                self.date_edit.setDateTime(dt)
-            self.title_edit.setText(self.data['title'])
-            self.amount_spin.setValue(self.data['amount'])
+            self.date_edit.setDateTime(dt)
+        else:
+            self.date_edit.setDateTime(QDateTime.currentDateTime())
+            
+        form.addRow("日時:", self.date_edit)
 
-        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
-        layout.addWidget(btns)
+        # 項目名
+        self.title_edit = QLineEdit()
+        self.title_edit.setText(self.data.get('title', ''))
+        form.addRow("項目名:", self.title_edit)
+
+        # 金額
+        self.amount_edit = QSpinBox()
+        self.amount_edit.setRange(1, 9999999)
+        self.amount_edit.setValue(self.data.get('amount', 0))
+        form.addRow("金額:", self.amount_edit)
+
+        layout.addLayout(form)
+
+        # ボタン
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
     def get_data(self):
+        timestamp_str = self.date_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss")
         return {
-            "timestamp": self.date_edit.dateTime().toString("yyyy-MM-dd HH:mm:ss"),
-            "title": self.title_edit.text(),
-            "amount": self.amount_spin.value()
+            'title': self.title_edit.text(),
+            'amount': self.amount_edit.value(),
+            'timestamp': timestamp_str  # 新しい日時
         }

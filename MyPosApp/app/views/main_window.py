@@ -8,6 +8,8 @@ from PySide6.QtGui import QFont
 from app.services.cart_service import CartService
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.product_repo import ProductRepository
+from app.repositories.payment_repo import PaymentRepository
+
 from app.views.components.cart_widget import CartWidget
 from app.views.components.product_list_widget import ProductListWidget
 from app.views.components.customer_panel import CustomerPanel
@@ -27,7 +29,7 @@ class MainWindow(QMainWindow):
         # サービス・リポジトリ
         self.cart_service = CartService()
         self.trans_repo = TransactionRepository()
-
+        self.payment_repo = PaymentRepository()
         self.prod_repo = ProductRepository()
         
         self._init_ui()
@@ -148,15 +150,22 @@ class MainWindow(QMainWindow):
         total = self.cart_service.get_total_amount()
         if total <= 0: return
         
-        methods = self.trans_repo.fetch_all_payment_methods()
+        methods = self.payment_repo.fetch_all()
+        
         dialog = PaymentDialog(total, methods, self)
         if dialog.exec():
             payments, change = dialog.get_result()
             self.cart_service.finalize_checkout(payments, change)
 
-    def _on_checkout_completed(self, customer_name: str, change: int) -> None:
-        msg = f"【客層: {customer_name}】\nお釣り: ¥{change:,}\n\n会計が完了しました。"
-        QMessageBox.information(self, "完了", msg)
+    def _on_checkout_completed(self, total_amount: int, change: int, customer_name: str) -> None:
+        msg_text = (
+            f"会計が完了しました。\n\n"
+            f"合計: ¥{total_amount:,}\n"
+            f"お釣り: ¥{change:,}\n"
+            f"客層: {customer_name}\n"
+        )
+        
+        QMessageBox.information(self, "完了", msg_text)
         self.cart_service.reset_message()
         self._check_checkout_button()
 

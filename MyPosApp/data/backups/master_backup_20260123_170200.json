@@ -231,22 +231,16 @@
     ],
     "initial_expenses": [
         {
-            "id": 3,
-            "title": "追加買い出し",
-            "amount": 300,
-            "timestamp": "2026-01-23 17:04:35"
+            "id": 1,
+            "title": "準備金",
+            "amount": 15000,
+            "timestamp": "2026-01-22 11:36:44"
         },
         {
             "id": 2,
             "title": "買い出し",
             "amount": 500,
             "timestamp": "2026-01-22 11:36:44"
-        },
-        {
-            "id": 1,
-            "title": "準備金",
-            "amount": 15000,
-            "timestamp": "2026-01-22 11:36:34"
         }
     ],
     "discount_rules": [
@@ -286,7 +280,7 @@
             "discount_type": "fixed",
             "discount_value": 100,
             "apply_type": "bundle",
-            "target_value": "{\"mode\": \"select\", \"qty\": 4, \"targets\": [\"フード\"]}",
+            "target_value": "{\"mode\": \"select\", \"qty\": 2, \"targets\": [\"フード\"]}",
             "is_auto": 1,
             "is_active": 1
         }

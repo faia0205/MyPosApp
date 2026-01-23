@@ -3,6 +3,7 @@ import shutil
 import os
 import datetime
 from typing import Dict, Any, List
+from dataclasses import asdict
 
 from app.config import DATA_DIR
 from app.repositories.product_repo import ProductRepository
@@ -10,6 +11,8 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.transaction_repo import TransactionRepository 
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.expense_repo import ExpenseRepository
 
 MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
 
@@ -22,7 +25,8 @@ class MasterDataService:
         self.user_repo = UserRepository()
         self.cust_repo = CustomerRepository()
         self.disc_repo = DiscountRepository()
-        self.trans_repo = TransactionRepository() 
+        self.pay_repo = PaymentRepository()
+        self.exp_repo = ExpenseRepository()
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)
@@ -55,10 +59,14 @@ class MasterDataService:
             customers = self.cust_repo.fetch_all_for_json()
             
             # 決済方法
-            payment_methods = self.trans_repo.fetch_payment_methods_for_json()
+            payment_methods = [asdict(pm) for pm in self.pay_repo.fetch_all()]
             
-            # 経費 (DBの経費履歴を保存)
-            expenses = self.trans_repo.fetch_expenses_for_json()
+            # 経費
+            expenses = []
+            for ex in self.exp_repo.fetch_all():
+                d = asdict(ex)
+                # モデルのフィールド名が timestamp なら、JSONキーを created_at に変えるなどの調整が必要ならここで行う
+                expenses.append(d)
 
             # 割引ルール (新しいテーブル構造をそのまま取得)
             discount_rules = self.disc_repo.fetch_all_rules()

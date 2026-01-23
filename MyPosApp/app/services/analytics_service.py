@@ -1,14 +1,17 @@
 import pandas as pd
 import datetime
+from dataclasses import asdict
 from typing import Tuple, Dict, Any, List
 from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 
 class AnalyticsService:
     def __init__(self):
         self.ana_repo = AnalyticsRepository()
         self.trans_repo = TransactionRepository()
+        self.expense_repo = ExpenseRepository()
         self.log_repo = LogRepository()
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
 
@@ -23,17 +26,27 @@ class AnalyticsService:
             return utc_str
     
     def get_expense_list(self):
-            """経費一覧を取得 (JST変換付き)"""
-            raw_list = self.trans_repo.fetch_expense_list()
-            for ex in raw_list:
-                ex['time'] = self._to_jst_str(ex['timestamp'])
-            return raw_list
+        """経費一覧を取得 (JST変換付き)"""
+        expenses_objs = self.expense_repo.fetch_all()
+        
+        # UI表示用に辞書リストへ変換 & タイムゾーン処理
+        raw_list = []
+        for ex in expenses_objs:
+            # dataclass -> dict 変換
+            d = asdict(ex)
+            # タイムスタンプのJST変換
+            d['time'] = self._to_jst_str(d['timestamp'])
+            raw_list.append(d)
+            
+        return raw_list
 
     def get_dashboard_summary(self) -> Dict[str, Any]:
         stats = self.ana_repo.get_dashboard_stats()
         total_sales = stats['sales']
         customer_count = stats['customer_count']
-        total_expenses = self.trans_repo.get_total_expenses()
+        
+        total_expenses = self.expense_repo.get_total_amount()
+        
         profit = total_sales - total_expenses
         payments = self.ana_repo.get_payment_summary()
         avg_spend = int(total_sales / customer_count) if customer_count > 0 else 0

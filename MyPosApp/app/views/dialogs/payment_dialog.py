@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QPushButton, QListWidget, QGridLayout, QWidget)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
+from app.models.payment_method import PaymentMethod
 
 class PaymentDialog(QDialog):
     """
@@ -11,7 +12,7 @@ class PaymentDialog(QDialog):
     - 全ボタンを NoFocus に設定
     - Enterキーの挙動に合わせてボタン表記を動的に変更
     """
-    def __init__(self, total_amount: int, payment_methods: list[dict], parent=None):
+    def __init__(self, total_amount: int, payment_methods: list[PaymentMethod], parent=None):
         super().__init__(parent)
         self.setWindowTitle("お会計")
         self.resize(900, 550)
@@ -26,7 +27,7 @@ class PaymentDialog(QDialog):
         self.is_initial_input = False
         
         # 初期選択（現金があればデフォルト）
-        cash_opts = [m for m in self.payment_methods if m.get('is_cash')]
+        cash_opts = [m for m in self.payment_methods if m.is_cash]
         if cash_opts:
             self.selected_method = cash_opts[0]
         elif self.payment_methods:
@@ -116,15 +117,15 @@ class PaymentDialog(QDialog):
         
         r, c = 0, 0
         for method in self.payment_methods:
-            is_active = method.get('is_active', True)
-            name = method['name']
+            is_active = method.is_active
+            name = method.name
             
             if not is_active:
                 btn = QPushButton(f"{name}\n(停止中)")
                 btn.setEnabled(False)
                 btn.setStyleSheet("background-color: #555; color: #888; border-radius: 6px;")
             else:
-                base_color = "#2e7d32" if method.get('is_cash') else "#1565c0"
+                base_color = "#2e7d32" if method.is_cash else "#1565c0"
                 btn = QPushButton(name)
                 btn.setCheckable(True)
                 btn.setFocusPolicy(Qt.NoFocus)
@@ -258,7 +259,7 @@ class PaymentDialog(QDialog):
         amount_val = int(self.input_buffer) if self.input_buffer else 0
         if amount_val <= 0: return 
 
-        if not self.selected_method.get('is_cash', False):
+        if not self.selected_method.is_cash:
             paid_so_far = self._get_paid_total()
             remaining = self.total_amount - paid_so_far
             
@@ -266,7 +267,7 @@ class PaymentDialog(QDialog):
                 if remaining <= 0: return 
                 amount_val = remaining
 
-        method_name = self.selected_method['name']
+        method_name = self.selected_method.name
 
         existing_index = -1
         for i, pay in enumerate(self.current_payments):
@@ -344,7 +345,7 @@ class PaymentDialog(QDialog):
     def _update_method_buttons(self):
         for btn, method in self.method_btn_group:
             base_color = btn.property("base_color")
-            if self.selected_method and method['name'] == self.selected_method['name']:
+            if self.selected_method and method.name == self.selected_method.name:
                 btn.setChecked(True)
                 btn.setStyleSheet(f"""
                     QPushButton {{ 

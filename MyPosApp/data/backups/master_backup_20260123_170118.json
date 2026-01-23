@@ -211,42 +211,29 @@
     ],
     "payment_methods": [
         {
-            "id": 1,
             "name": "現金",
-            "is_cash": true,
-            "is_active": true
+            "is_cash": 1,
+            "is_active": 1
         },
         {
-            "id": 2,
             "name": "PayPay",
-            "is_cash": false,
-            "is_active": false
+            "is_cash": 0,
+            "is_active": 0
         },
         {
-            "id": 3,
             "name": "クレジット",
-            "is_cash": false,
-            "is_active": true
+            "is_cash": 0,
+            "is_active": 1
         }
     ],
     "initial_expenses": [
         {
-            "id": 3,
-            "title": "追加買い出し",
-            "amount": 300,
-            "timestamp": "2026-01-23 17:04:35"
-        },
-        {
-            "id": 2,
-            "title": "買い出し",
-            "amount": 500,
-            "timestamp": "2026-01-22 11:36:44"
-        },
-        {
-            "id": 1,
             "title": "準備金",
-            "amount": 15000,
-            "timestamp": "2026-01-22 11:36:34"
+            "amount": 15000
+        },
+        {
+            "title": "買い出し",
+            "amount": 500
         }
     ],
     "discount_rules": [
@@ -277,16 +264,6 @@
             "discount_value": 100,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"select\", \"qty\": 2, \"targets\": [\"たこ焼き\", \"焼きそば\", \"唐揚げ\"]}",
-            "is_auto": 1,
-            "is_active": 0
-        },
-        {
-            "id": 4,
-            "name": "フード２個で１００円引き",
-            "discount_type": "fixed",
-            "discount_value": 100,
-            "apply_type": "bundle",
-            "target_value": "{\"mode\": \"select\", \"qty\": 4, \"targets\": [\"フード\"]}",
             "is_auto": 1,
             "is_active": 1
         }

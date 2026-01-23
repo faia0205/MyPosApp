@@ -4,12 +4,13 @@ from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.payment_repo import PaymentRepository
 from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
 
 class PaymentSettingTab(QWidget):
     def __init__(self):
         super().__init__()
-        self.repo = TransactionRepository()
+        self.repo = PaymentRepository()
         self.log_repo = LogRepository()
         self._init_ui()
         self.load_data()
@@ -41,10 +42,10 @@ class PaymentSettingTab(QWidget):
         layout.addWidget(self.table)
 
     def load_data(self):
-        self.methods = self.repo.fetch_all_payment_methods()
+        self.methods = self.repo.fetch_all()
         self.table.setRowCount(len(self.methods))
         for i, m in enumerate(self.methods):
-            active = bool(m['is_active'])
+            active = m.is_active
             col = "white" if active else "#757575"
             
             def mk(txt):
@@ -53,16 +54,20 @@ class PaymentSettingTab(QWidget):
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 return it
 
-            self.table.setItem(i, 0, mk(m['id']))
-            self.table.setItem(i, 1, mk(m['name']))
-            self.table.setItem(i, 2, mk("Yes" if m['is_cash'] else "No"))
+            self.table.setItem(i, 0, mk(m.id))
+            self.table.setItem(i, 1, mk(m.name))
+            self.table.setItem(i, 2, mk("Yes" if m.is_cash else "No"))
             self.table.setItem(i, 3, mk("有効" if active else "無効"))
 
     def _add(self):
         dlg = PaymentEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add_payment_method(d['name'], d['is_cash']):
+            from app.models.payment_method import PaymentMethod
+            # IDはAutoIncrementなのでダミー0を入れるか、Optionalにする
+            new_obj = PaymentMethod(0, d['name'], d['is_cash'], d['is_active'])
+            
+            if self.repo.add(new_obj):
                 self.log_repo.add_log("info", f"支払方法追加: {d['name']}")
                 self.load_data()
 
@@ -71,9 +76,23 @@ class PaymentSettingTab(QWidget):
         if row < 0:
             return
         target = self.methods[row]
-        dlg = PaymentEditDialog(data=target, parent=self)
+
+        from dataclasses import asdict
+        target_dict = asdict(target)
+
+        dlg = PaymentEditDialog(data=target_dict, parent=self)
+        
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.update_payment_method(target['id'], d['name'], d['is_cash'], d['is_active']):
-                self.log_repo.add_log("info", f"支払方法更新: {target['name']}")
+
+            from app.models.payment_method import PaymentMethod
+            updated_obj = PaymentMethod(
+                id=target.id,
+                name=d['name'],
+                is_cash=d['is_cash'],
+                is_active=d['is_active']
+            )
+            
+            if self.repo.update(updated_obj):
+                self.log_repo.add_log("info", f"支払方法更新: {target.name}")
                 self.load_data()
