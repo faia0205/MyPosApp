@@ -56,7 +56,7 @@ class CartService(QObject):
                 if item.price != product.price:
                     item.price = product.price
                 self._notify_message(f"【追加】 {product.name} (+1)", "info")
-                self._recalculate()
+                self.recalculate()
                 return
         
         # 新規作成 (CartItemインスタンス)
@@ -71,7 +71,7 @@ class CartService(QObject):
         )
         self.cart_items.append(new_item)
         self._notify_message(f"【追加】 {product.name}", "info")
-        self._recalculate()
+        self.recalculate()
 
     def update_item_qty(self, index: int, new_qty: int) -> None:
         if 0 <= index < len(self.cart_items):
@@ -79,26 +79,26 @@ class CartService(QObject):
                 self.remove_item(index)
             else:
                 self.cart_items[index].qty = new_qty
-                self._recalculate()
+                self.recalculate()
 
     def update_item_price(self, index: int, new_price: int) -> None:
         if 0 <= index < len(self.cart_items):
             self.cart_items[index].price = new_price
-            self._recalculate()
+            self.recalculate()
 
     def decrease_item_qty(self, index: int) -> None:
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             if item.qty > 1:
                 item.qty -= 1
-                self._recalculate()
+                self.recalculate()
             else:
                 self.remove_item(index)
 
     def remove_item(self, index: int) -> None:
         if 0 <= index < len(self.cart_items):
             self.cart_items.pop(index)
-            self._recalculate()
+            self.recalculate()
 
     def add_manual_item(self, price: int, name: str) -> None:
         new_item = CartItem(
@@ -111,7 +111,7 @@ class CartService(QObject):
             note="手入力"
         )
         self.cart_items.append(new_item)
-        self._recalculate()
+        self.recalculate()
         
     def refresh_prices(self, master_products: List[Product]) -> None:
         product_map = {p.id: p for p in master_products}
@@ -124,13 +124,13 @@ class CartService(QObject):
                     updated_count += 1
         if updated_count > 0:
             self._notify_message(f"{updated_count}件の価格情報を更新しました", "info")
-            self._recalculate()
+            self.recalculate()
 
     # --- 計算処理 ---
     def get_total_amount(self) -> int:
         return self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
 
-    def _recalculate(self) -> None:
+    def recalculate(self) -> None:
         self.discount_rules = self.disc_repo.fetch_active_rules()
         self.applied_discounts = self.discount_manager.calculate_discounts(
             self.cart_items, 
@@ -208,7 +208,7 @@ class CartService(QObject):
         self.applied_discounts = []
         self.selected_customer = None
         self.checkout_completed.emit(self.selected_customer.label if self.selected_customer else "", change)
-        self._recalculate()
+        self.recalculate()
     
     def is_discount_target(self, product_id: int) -> bool:
         return False

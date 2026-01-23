@@ -7,6 +7,7 @@ from PySide6.QtGui import QFont
 
 from app.services.cart_service import CartService
 from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.product_repo import ProductRepository
 from app.views.components.cart_widget import CartWidget
 from app.views.components.product_list_widget import ProductListWidget
 from app.views.components.customer_panel import CustomerPanel
@@ -27,6 +28,8 @@ class MainWindow(QMainWindow):
         self.cart_service = CartService()
         self.trans_repo = TransactionRepository()
 
+        self.prod_repo = ProductRepository()
+        
         self._init_ui()
         self._connect_signals()
         
@@ -194,8 +197,22 @@ class MainWindow(QMainWindow):
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
     
     def _open_settings_window(self):
+        """設定画面を開く"""
         win = SettingsWindow(self)
-        win.exec()
-        # 設定変更後の再読み込み
+        win.exec() # 画面が閉じられるまでここで待機
+
+        # ★追加: 設定画面が閉じられたら、データを最新化する
+        
+        # 1. 商品価格の更新（設定で価格が変わっているかもしれないため）
+        active_products = self.prod_repo.fetch_active_products()
+        self.cart_service.refresh_prices(active_products)
+        
+        # 2. 割引ルールの再適用（設定でルールが変わっているかもしれないため）
+        self.cart_service.recalculate()
+
+        # 3. 商品リストと客層パネルのボタン再描画（色や名称の変更反映）
         self.product_list_widget.refresh_data()
-        self.customer_panel.refresh_data()
+        self.customer_panel.refresh_data() # (CustomerPanel作成済みの場合)
+        
+        # 4. ログアウトされた場合に備えて担当者表示更新（もし設定画面でユーザー操作した場合）
+        # self.btn_cashier.setText(...) # 必要なら
