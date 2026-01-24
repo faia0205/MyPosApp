@@ -19,10 +19,19 @@ class CartWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. 案内ラベル
+        # 1. 案内ウィンドウ (拡張版)
+        # 以前の QLabel から設定を変更
         self.info_box = QLabel("いらっしゃいませ")
-        self.info_box.setFixedHeight(40)
-        self.info_box.setStyleSheet("background-color: #37474f; color: #fff; border: 1px solid #90caf9; padding: 5px; font-weight: bold;")
+        self.info_box.setFixedHeight(85) # 3行分程度確保
+        self.info_box.setAlignment(Qt.AlignTop | Qt.AlignLeft) # 左上詰め
+        self.info_box.setWordWrap(True) # 折り返し有効
+        self.info_box.setStyleSheet("""
+            background-color: #37474f; 
+            color: #fff; 
+            border: 2px solid #90caf9; 
+            padding: 8px; 
+            font-size: 14px;
+        """)
         layout.addWidget(self.info_box)
         
         self.cart_service.message_updated.connect(self._update_message)
@@ -133,9 +142,7 @@ class CartWidget(QWidget):
         discounts = self.cart_service.applied_discounts
         self.discount_table.setRowCount(len(discounts))
         for i, d in enumerate(discounts):
-            # ★修正: 辞書キー['amount']ではなく属性.amountにアクセス
-            # AppliedDiscount(rule_id, name, amount, qty)
-            sub = d.amount # マイナス値がそのまま入っている
+            sub = d.amount
             
             def create_disc_item(text):
                 it = QTableWidgetItem(str(text))
@@ -167,14 +174,19 @@ class CartWidget(QWidget):
             self._render_cart()
 
     def _update_message(self, text: str, msg_type: str) -> None:
-        base_style = "padding: 5px; border-radius: 4px; font-weight: bold;"
-        if msg_type == "info":
-            bg_color = "#37474f"
-            text_color = "#ffffff"
-            border = "1px solid #90caf9"
-        else:
-            bg_color = "#5d4037"
-            text_color = "#ff8a80"
-            border = "2px solid #ff5252"
+        # ★修正: 以前はスタイル全体を上書きしていましたが、
+        # 初期化時に設定した基本スタイルを維持しつつ、枠線色などを変更します。
+        
+        border_color = "#90caf9" if msg_type == "info" else "#ff5252"
+        bg_color = "#37474f" if msg_type == "info" else "#5d4037"
+        
+        self.info_box.setStyleSheet(f"""
+            background-color: {bg_color}; 
+            color: #fff; 
+            border: 2px solid {border_color}; 
+            padding: 8px;
+            font-size: 14px;
+        """)
+        
+        # HTMLタグが使えるようにテキストをセット
         self.info_box.setText(text)
-        self.info_box.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: {border}; {base_style}")
