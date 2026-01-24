@@ -6,9 +6,9 @@
             "price": 500,
             "category": "フード",
             "color": "#ffcc80",
-            "note": "",
             "display_order": 1,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         },
         {
             "id": 2,
@@ -16,9 +16,9 @@
             "price": 500,
             "category": "フード",
             "color": "#ffcc80",
-            "note": "大盛り対応可能",
             "display_order": 2,
-            "is_active": true
+            "is_active": 1,
+            "note": "大盛り対応可能"
         },
         {
             "id": 3,
@@ -26,9 +26,9 @@
             "price": 400,
             "category": "フード",
             "color": "#ffcc80",
-            "note": "",
             "display_order": 3,
-            "is_active": false
+            "is_active": 0,
+            "note": ""
         },
         {
             "id": 4,
@@ -36,9 +36,9 @@
             "price": 300,
             "category": "フード",
             "color": "#ffcc80",
-            "note": "",
             "display_order": 4,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         },
         {
             "id": 5,
@@ -46,9 +46,9 @@
             "price": 600,
             "category": "ドリンク",
             "color": "#80d8ff",
-            "note": "年齢確認必須",
             "display_order": 5,
-            "is_active": true
+            "is_active": 1,
+            "note": "年齢確認必須"
         },
         {
             "id": 6,
@@ -56,9 +56,9 @@
             "price": 400,
             "category": "ドリンク",
             "color": "#80d8ff",
-            "note": "年齢確認必須",
             "display_order": 6,
-            "is_active": true
+            "is_active": 1,
+            "note": "年齢確認必須"
         },
         {
             "id": 7,
@@ -66,9 +66,9 @@
             "price": 150,
             "category": "ドリンク",
             "color": "#80d8ff",
-            "note": "",
             "display_order": 7,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         },
         {
             "id": 8,
@@ -76,9 +76,9 @@
             "price": 150,
             "category": "ドリンク",
             "color": "#80d8ff",
-            "note": "",
             "display_order": 8,
-            "is_active": false
+            "is_active": 0,
+            "note": ""
         },
         {
             "id": 9,
@@ -86,9 +86,9 @@
             "price": 10,
             "category": "その他",
             "color": "#ffffff",
-            "note": "",
             "display_order": 9,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         },
         {
             "id": 10,
@@ -96,9 +96,9 @@
             "price": -50,
             "category": "割引",
             "color": "#ff8a80",
-            "note": "",
             "display_order": 99,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         },
         {
             "id": 11,
@@ -106,119 +106,107 @@
             "price": -100,
             "category": "割引",
             "color": "#ff8a80",
-            "note": "",
             "display_order": 100,
-            "is_active": true
+            "is_active": 1,
+            "note": ""
         }
     ],
     "users": [
         {
-            "id": 1,
             "name": "店長",
             "user_code": "9999",
             "role": "admin",
-            "is_active": true
+            "is_active": 1
         },
         {
-            "id": 2,
             "name": "副店長",
             "user_code": "8888",
             "role": "admin",
-            "is_active": true
+            "is_active": 1
         },
         {
-            "id": 3,
             "name": "スタッフA",
             "user_code": "001",
             "role": "staff",
-            "is_active": true
+            "is_active": 0
         },
         {
-            "id": 4,
             "name": "スタッフB",
             "user_code": "002",
             "role": "staff",
-            "is_active": true
+            "is_active": 1
         },
         {
-            "id": 5,
             "name": "スタッフC",
             "user_code": "003",
             "role": "staff",
-            "is_active": true
+            "is_active": 1
         },
         {
-            "id": 6,
             "name": "スタッフD",
             "user_code": "004",
             "role": "staff",
-            "is_active": true
+            "is_active": 1
         }
     ],
     "customer_presets": [
         {
-            "id": 1,
             "label": "男1",
+            "attributes": {
+                "sex": "male",
+                "count": 1
+            },
             "color": "#bbdefb",
             "display_order": 1,
-            "is_active": true,
-            "attributes": {
-                "sex": "male",
-                "count": 1
-            }
+            "is_active": 1
         },
         {
-            "id": 2,
             "label": "女1",
+            "attributes": {
+                "sex": "female",
+                "count": 1
+            },
             "color": "#f8bbd0",
             "display_order": 2,
-            "is_active": true,
-            "attributes": {
-                "sex": "female",
-                "count": 1
-            }
+            "is_active": 1
         },
         {
-            "id": 3,
             "label": "男複数",
-            "color": "#90caf9",
-            "display_order": 3,
-            "is_active": true,
             "attributes": {
                 "sex": "male",
                 "count": "many"
-            }
+            },
+            "color": "#90caf9",
+            "display_order": 3,
+            "is_active": 1
         },
         {
-            "id": 4,
             "label": "女複数",
-            "color": "#f48fb1",
-            "display_order": 4,
-            "is_active": true,
             "attributes": {
                 "sex": "female",
                 "count": "many"
-            }
+            },
+            "color": "#f48fb1",
+            "display_order": 4,
+            "is_active": 1
         },
         {
-            "id": 5,
             "label": "家族連れ",
-            "color": "#a5d6a7",
-            "display_order": 5,
-            "is_active": true,
             "attributes": {
                 "type": "family"
-            }
+            },
+            "color": "#a5d6a7",
+            "display_order": 5,
+            "is_active": 0
         },
         {
-            "id": 6,
             "label": "男女グループ",
-            "color": "#a5d6a7",
-            "display_order": 6,
-            "is_active": true,
             "attributes": {
                 "type": "group"
-            }
+            },
+            "color": "#a5d6a7",
+            "display_order": 6,
+            "is_active": 1
         }
     ],
     "payment_methods": [
@@ -232,7 +220,7 @@
             "id": 2,
             "name": "PayPay",
             "is_cash": false,
-            "is_active": true
+            "is_active": false
         },
         {
             "id": 3,
@@ -294,7 +282,7 @@
         },
         {
             "id": 4,
-            "name": "フード4個で１００円引き",
+            "name": "フード２個で１００円引き",
             "discount_type": "fixed",
             "discount_value": 100,
             "apply_type": "bundle",

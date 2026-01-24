@@ -533,24 +533,30 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\mode
 ==================================================
 
 from dataclasses import dataclass
+from typing import Optional
 import json
 
 @dataclass
 class Customer:
     """客層データモデル"""
-    id: int
+    id: Optional[int]
     label: str
-    attributes_json: str # DBからはJSON文字列で来る
-    color: str
+    attributes_json: str = "{}" # DBにはJSON文字列として保存
+    color: str = "#ffffff"
     display_order: int = 0
+    is_active: bool = True
 
     @property
     def attributes(self) -> dict:
-        """JSON文字列を辞書として取得"""
+        """JSON文字列を辞書として取得（読み取り専用）"""
         try:
             return json.loads(self.attributes_json)
         except Exception:
             return {}
+
+    def set_attributes(self, data: dict):
+        """辞書からJSON文字列を設定するヘルパー"""
+        self.attributes_json = json.dumps(data, ensure_ascii=False)
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\expense.py
@@ -583,11 +589,12 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\mode
 ==================================================
 
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class Product:
     """商品データモデル"""
-    id: int
+    id: Optional[int]  # 新規作成時はNoneを許容
     name: str
     price: int
     category: str
@@ -611,10 +618,11 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\mode
 ==================================================
 
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class User:
-    id: int
+    id: Optional[int]
     name: str
     user_code: str
     role: str
@@ -1116,8 +1124,7 @@ class PaymentRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\product_repo.py
 ==================================================
 
-from typing import List, Dict, Optional
-import sqlite3
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.product import Product
 
@@ -1127,183 +1134,115 @@ class ProductRepository(BaseRepository):
     """
 
     def fetch_active_products(self) -> List[Product]:
-        """
-        販売画面用: 有効(is_active=1)な商品のみを取得し、display_order順に返す
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, price, category, color, note, display_order, is_active
-            FROM products 
-            WHERE is_active = 1 
-            ORDER BY display_order
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-
-        products = []
-        for row in rows:
-            products.append(Product(
-                id=row[0],
-                name=row[1],
-                price=row[2],
-                category=row[3],
-                color=row[4],
-                note=row[5],
-                display_order=row[6],
-                is_active=bool(row[7])
-            ))
-        return products
-
-    def fetch_all_for_json(self) -> List[Dict]:
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        # ★ id を追加しました
-        cursor.execute("""
-            SELECT id, name, price, category, color, display_order, is_active, note 
-            FROM products 
-            ORDER BY display_order
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-    
-    def find_id_by_name(self, name: str) -> Optional[int]:
-        """名前からIDを検索（同期用）"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM products WHERE name = ?", (name,))
-        row = cursor.fetchone()
-        conn.close()
-        return row[0] if row else None
+        """販売画面用: 有効(is_active=1)な商品のみを取得し、display_order順に返す"""
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, price, category, color, note, display_order, is_active
+                FROM products 
+                WHERE is_active = 1 
+                ORDER BY display_order
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
 
     def fetch_all_as_models(self) -> List[Product]:
-        """
-        設定画面一覧表示用: 全商品をProductモデルのリストとして取得
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, price, category, color, note, display_order, is_active
-            FROM products 
-            ORDER BY display_order
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-
-        products = []
-        for row in rows:
-            products.append(Product(
-                id=row[0],
-                name=row[1],
-                price=row[2],
-                category=row[3],
-                color=row[4],
-                note=row[5],
-                display_order=row[6],
-                is_active=bool(row[7])
-            ))
-        return products
-
-    def add_product(self, name: str, price: int, category: str, color: str = "#ffcc80", note: str = "") -> bool:
-        """
-        新規商品の追加
-        display_orderは現在の最大値+1を自動設定します。
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            # 現在の最大 display_order を取得
-            cursor.execute("SELECT MAX(display_order) FROM products")
-            result = cursor.fetchone()
-            max_order = result[0] if result[0] is not None else 0
-            
+        """設定画面・JSON出力用: 全商品をProductモデルのリストとして取得"""
+        with self.transaction() as (conn, cursor):
             cursor.execute("""
-                INSERT INTO products (name, price, category, color, note, display_order, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-            """, (name, price, category, color, note, max_order + 1))
-            
-            conn.commit()
+                SELECT id, name, price, category, color, note, display_order, is_active
+                FROM products 
+                ORDER BY display_order
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
+
+    def find_id_by_name(self, name: str) -> Optional[int]:
+        """名前からIDを検索（同期用）"""
+        with self.transaction() as (conn, cursor):
+            cursor.execute("SELECT id FROM products WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def get_product_by_id(self, pid: int) -> Optional[Product]:
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, price, category, color, note, display_order, is_active 
+                FROM products WHERE id=?
+            """, (pid,))
+            row = cursor.fetchone()
+            return self._map_to_model(row) if row else None
+
+    def add_product(self, product: Product) -> bool:
+        """新規商品の追加 (オブジェクト受け取りに変更)"""
+        try:
+            with self.transaction() as (conn, cursor):
+                # 現在の最大 display_order を取得
+                cursor.execute("SELECT MAX(display_order) FROM products")
+                result = cursor.fetchone()
+                max_order = result[0] if result[0] is not None else 0
+                
+                cursor.execute("""
+                    INSERT INTO products (name, price, category, color, note, display_order, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (product.name, product.price, product.category, product.color, 
+                      product.note, max_order + 1, int(product.is_active)))
+            # コンテキストを抜ける際に自動commit/closeされます
             return True
         except Exception as e:
             print(f"Error adding product: {e}")
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
-    def update_product(self, product_id: int, name: str, price: int, category: str, 
-                       color: str, note: str, is_active: bool) -> bool:
-        """
-        既存商品の更新
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    def update_product(self, product: Product) -> bool:
+        """既存商品の更新 (オブジェクト受け取りに変更)"""
         try:
-            cursor.execute("""
-                UPDATE products 
-                SET name=?, price=?, category=?, color=?, note=?, is_active=?
-                WHERE id=?
-            """, (name, price, category, color, note, int(is_active), product_id))
-            
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    UPDATE products 
+                    SET name=?, price=?, category=?, color=?, note=?, is_active=?
+                    WHERE id=?
+                """, (product.name, product.price, product.category, product.color, 
+                      product.note, int(product.is_active), product.id))
             return True
         except Exception as e:
             print(f"Error updating product: {e}")
-            conn.rollback()
             return False
-        finally:
-            conn.close()
 
     def delete_product(self, product_id: int) -> bool:
-        """
-        商品の完全削除（注意: 過去の取引履歴との整合性が崩れる可能性があります）
-        基本的には is_active=False での運用を推奨しますが、誤登録削除用に用意します。
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        """完全削除"""
         try:
-            cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
             return True
         except Exception as e:
             print(f"Error deleting product: {e}")
-            conn.rollback()
             return False
-        finally:
-            conn.close()
-            
+
     def update_display_order(self, order_map: Dict[int, int]) -> bool:
-        """
-        表示順の一括更新
-        args:
-            order_map: {product_id: new_order_index, ...}
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        """表示順の一括更新"""
         try:
-            for pid, order in order_map.items():
-                cursor.execute("UPDATE products SET display_order=? WHERE id=?", (order, pid))
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                for pid, order in order_map.items():
+                    cursor.execute("UPDATE products SET display_order=? WHERE id=?", (order, pid))
             return True
         except Exception as e:
             print(f"Error updating orders: {e}")
-            conn.rollback()
             return False
-        finally:
-            conn.close()
-    
-    def get_product_by_id(self, pid: int):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, price, category, color, display_order, is_active, note FROM products WHERE id=?", (pid,))
-        row = cursor.fetchone()
-        conn.close()
-        if row:
-            from app.models.product import Product
-            return Product(*row)
-        return None
+
+    def _map_to_model(self, row) -> Product:
+        """DBの行データをProductモデルに変換"""
+        # rowはタプルまたはsqlite3.Row
+        if row is None: return None
+        # インデックスアクセス前提 (SELECTの順序に依存)
+        return Product(
+            id=row[0],
+            name=row[1],
+            price=row[2],
+            category=row[3],
+            color=row[4],
+            note=row[5],
+            display_order=row[6],
+            is_active=bool(row[7])
+        )
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\transaction_repo.py
@@ -1393,107 +1332,104 @@ class TransactionRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\user_repo.py
 ==================================================
 
-from typing import List, Dict, Any
+from typing import List, Optional
 from app.repositories.base_repo import BaseRepository
-import sqlite3
+from app.models.user import User
 
 class UserRepository(BaseRepository):
-    def fetch_active_users(self) -> List[Dict[str, Any]]:
-        """有効なユーザーリストを取得"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, user_code FROM users WHERE is_active=1 ORDER BY id")
-        rows = cursor.fetchall()
-        conn.close()
-        return [{"id": r[0], "name": r[1], "code": r[2]} for r in rows]
-    
-    def fetch_all_for_json(self) -> List[Dict]:
-        """JSON出力用: 全ユーザー取得"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT name, user_code, role, is_active FROM users")
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
+    """
+    ユーザーデータのCRUD。
+    transaction() を使用して安全にDB操作を行います。
+    """
 
-    def fetch_all_users(self) -> List[Dict[str, Any]]:
-        """設定画面用: 全ユーザー取得 (ID付き)"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name, user_code, role, is_active FROM users ORDER BY id")
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-    
-    def upsert_user(self, name: str, code: str, role: str, is_active: bool):
+    def fetch_active_users(self) -> List[User]:
+        """販売画面・ログイン用: 有効なユーザーリストを取得"""
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, user_code, role, is_active 
+                FROM users WHERE is_active=1 ORDER BY id
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
+
+    def fetch_all_users(self) -> List[User]:
+        """設定画面・JSON出力用: 全ユーザー取得"""
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, user_code, role, is_active 
+                FROM users ORDER BY id
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
+
+    def upsert_user(self, user: User) -> bool:
         """JSON同期用: コードが同じなら更新、なければ挿入"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        # チェック
-        cursor.execute("SELECT id FROM users WHERE user_code = ?", (code,))
-        row = cursor.fetchone()
-        
-        if row:
-            # 更新
-            cursor.execute("""
-                UPDATE users SET name=?, role=?, is_active=? WHERE id=?
-            """, (name, role, int(is_active), row[0]))
-        else:
-            # 挿入
-            cursor.execute("""
-                INSERT INTO users (name, user_code, role, is_active)
-                VALUES (?, ?, ?, ?)
-            """, (name, code, role, int(is_active)))
-        
-        conn.commit()
-        conn.close()
-    
-    def add_user(self, name: str, code: str, role: str) -> bool:
-        """ユーザー新規追加"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
         try:
-            cursor.execute("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, 1)",
-                           (name, code, role))
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            # コード重複などのエラー
-            return False
-        finally:
-            conn.close()
-
-    def update_user(self, user_id: int, name: str, code: str, role: str, is_active: bool) -> bool:
-        """ユーザー更新"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("""
-                UPDATE users SET name=?, user_code=?, role=?, is_active=? WHERE id=?
-            """, (name, code, role, int(is_active), user_id))
-            conn.commit()
-            return True
-        except sqlite3.IntegrityError:
-            return False
-        finally:
-            conn.close()
-            
-    def delete_user(self, user_id: int) -> bool:
-        """物理削除 (誤登録用)"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("DELETE FROM users WHERE id=?", (user_id,))
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                cursor.execute("SELECT id FROM users WHERE user_code = ?", (user.user_code,))
+                row = cursor.fetchone()
+                
+                if row:
+                    # 更新
+                    cursor.execute("""
+                        UPDATE users SET name=?, role=?, is_active=? WHERE id=?
+                    """, (user.name, user.role, int(user.is_active), row[0]))
+                else:
+                    # 挿入
+                    cursor.execute("""
+                        INSERT INTO users (name, user_code, role, is_active)
+                        VALUES (?, ?, ?, ?)
+                    """, (user.name, user.user_code, user.role, int(user.is_active)))
             return True
         except Exception as e:
-            print(f"Error occurred: {e}")
+            print(f"Error upserting user: {e}")
             return False
-        finally:
-            conn.close()
+
+    def add_user(self, user: User) -> bool:
+        """ユーザー新規追加"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    INSERT INTO users (name, user_code, role, is_active) 
+                    VALUES (?, ?, ?, ?)
+                """, (user.name, user.user_code, user.role, int(user.is_active)))
+            return True
+        except Exception as e:
+            print(f"Error adding user: {e}")
+            return False
+
+    def update_user(self, user: User) -> bool:
+        """ユーザー更新"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    UPDATE users SET name=?, user_code=?, role=?, is_active=?
+                    WHERE id=?
+                """, (user.name, user.user_code, user.role, int(user.is_active), user.id))
+            return True
+        except Exception as e:
+            print(f"Error updating user: {e}")
+            return False
+
+    def delete_user(self, user_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM users WHERE id=?", (user_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting user: {e}")
+            return False
+
+    def _map_to_model(self, row) -> User:
+        if row is None: return None
+        return User(
+            id=row[0],
+            name=row[1],
+            user_code=row[2],
+            role=row[3],
+            is_active=bool(row[4])
+        )
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\__init__.py
@@ -1963,6 +1899,8 @@ from typing import Dict, Any, List
 from dataclasses import asdict
 
 from app.config import DATA_DIR
+from app.models.product import Product
+from app.models.user import User
 from app.repositories.product_repo import ProductRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.customer_repo import CustomerRepository
@@ -2007,10 +1945,12 @@ class MasterDataService:
             # 2. 各リポジトリからJSON用データを収集
             
             # 商品
-            products = self.prod_repo.fetch_all_for_json()
+            products_objs = self.prod_repo.fetch_all_as_models()
+            products = [asdict(p) for p in products_objs]
             
             # ユーザー
-            users = self.user_repo.fetch_all_for_json()
+            users_objs = self.user_repo.fetch_all_users()
+            users = [asdict(u) for u in users_objs]
             
             # 客層 (is_active含む)
             customers = self.cust_repo.fetch_all_for_json()
@@ -2076,23 +2016,35 @@ class MasterDataService:
 
         # A. Products
         for p in data.get("products", []):
-            exists = self.prod_repo.find_id_by_name(p["name"])
-            if exists:
-                self.prod_repo.update_product(
-                    exists, p["name"], p["price"], p["category"], 
-                    p.get("color", "#ffcc80"), p.get("note", ""), p.get("is_active", True)
-                )
+            exists_id = self.prod_repo.find_id_by_name(p["name"])
+            
+            # オブジェクト作成
+            target_product = Product(
+                id=exists_id, # 更新時はIDが必要、新規時はNoneでも良いがfind結果を入れる
+                name=p["name"],
+                price=p["price"],
+                category=p["category"],
+                color=p.get("color", "#ffcc80"),
+                note=p.get("note", ""),
+                is_active=p.get("is_active", True),
+                display_order=0 # 内部で自動設定or維持されるためダミー
+            )
+
+            if exists_id:
+                self.prod_repo.update_product(target_product)
             else:
-                self.prod_repo.add_product(
-                    p["name"], p["price"], p["category"], 
-                    p.get("color", "#ffcc80"), p.get("note", "")
-                )
+                self.prod_repo.add_product(target_product)
         
         # B. Users
         for u in data.get("users", []):
-            self.user_repo.upsert_user(
-                u["name"], u["user_code"], u.get("role", "staff"), u.get("is_active", True)
+            target_user = User(
+                id=None,
+                name=u["name"],
+                user_code=u["user_code"],
+                role=u.get("role", "staff"),
+                is_active=u.get("is_active", True)
             )
+            self.user_repo.upsert_user(target_user)
 
         # C. Payment Methods
         for pm in data.get("payment_methods", []):
@@ -3831,10 +3783,10 @@ class LoginDialog(QDialog):
         grid = QGridLayout()
         for i, user in enumerate(users):
             # user_repo.py でキーを統一したので user_code を使用
-            code = user.get('user_code') or user.get('code', '')
-            is_active = bool(user.get('is_active', True))
+            code = user.user_code
+            is_active = user.is_active
             
-            label_text = f"{user['name']}\n({code})"
+            label_text = f"{user.name}\n({code})"
             if not is_active:
                 label_text += "(無効)"
 
@@ -3842,7 +3794,7 @@ class LoginDialog(QDialog):
             
             if is_active:
                 # 有効な場合: クリックイベントを設定
-                btn.clicked.connect(lambda _, n=user['name']: self._on_user_selected(n))
+                btn.clicked.connect(lambda _, n=user.name: self._on_user_selected(n))
                 # スタイルはデフォルト（active_style）が適用される
             else:
                 # 無効な場合: ボタンを無効化し、グレーアウト用スタイルを適用
@@ -5000,8 +4952,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
+from app.models.product import Product
 from app.repositories.product_repo import ProductRepository
-# ★追加: ログ用のリポジトリをインポート
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.product_edit_dialog import ProductEditDialog
 
@@ -5133,19 +5085,27 @@ class ProductSettingTab(QWidget):
 
     # _add_product / _edit_selected でダイアログを呼ぶ際にカテゴリリストを渡す
     def _add_product(self):
-        # Dialogの __init__ に categories 引数を追加して渡す設計にするか、
-        # Dialog側で set_categories メソッドを作る
         dialog = ProductEditDialog(parent=self)
         dialog.set_category_list(self.existing_categories)
         if dialog.exec():
             data = dialog.get_data()
-            success = self.repo.add_product(
-                data["name"], data["price"], data["category"], 
-                data["color"], data["note"]
+            
+            # オブジェクト作成 (IDはNone)
+            new_product = Product(
+                id=None,
+                name=data["name"],
+                price=data["price"],
+                category=data["category"],
+                color=data["color"],
+                note=data["note"],
+                is_active=data["is_active"]
             )
+            
+            # Repositoryへオブジェクトを渡す
+            success = self.repo.add_product(new_product)
+            
             if success:
-                # ★追加: ログ記録
-                self.log_repo.add_log("info", f"商品追加: {data['name']}")
+                self.log_repo.add_log("info", f"商品追加: {new_product.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加に失敗しました")
@@ -5162,15 +5122,24 @@ class ProductSettingTab(QWidget):
         
         if dialog.exec():
             data = dialog.get_data()
-            success = self.repo.update_product(
-                target.id, data["name"], data["price"], data["category"], 
-                data["color"], data["note"], data["is_active"]
+
+            # 更新用オブジェクト作成 (ID維持)
+            updated_product = Product(
+                id=target.id,
+                name=data["name"],
+                price=data["price"],
+                category=data["category"],
+                color=data["color"],
+                note=data["note"],
+                is_active=data["is_active"],
+                display_order=target.display_order # 順序は維持
             )
+
+            success = self.repo.update_product(updated_product)
+            
             if success:
-                # ★追加: ログ記録
-                self.log_repo.add_log("info", f"商品変更: {target.name} -> {data['name']}")
+                self.log_repo.add_log("info", f"商品変更: {target.name} -> {updated_product.name}")
                 self.load_data()
-                # 編集していた行を再度選択状態にする
                 self.table.selectRow(row)
 
     def _delete_selected(self):
@@ -5186,13 +5155,12 @@ class ProductSettingTab(QWidget):
         if res == QMessageBox.Yes:
             # 物理削除
             if self.repo.delete_product(target.id):
-                # ★追加: ログ記録
                 self.log_repo.add_log("warning", f"商品完全削除: {target.name}")
                 self.load_data()
         elif res == QMessageBox.No:
             # 無効化
-            if self.repo.update_product(target.id, target.name, target.price, target.category, target.color, target.note, False):
-                # ★追加: ログ記録
+            target.is_active = False
+            if self.repo.update_product(target):
                 self.log_repo.add_log("info", f"商品無効化: {target.name}")
                 self.load_data()
 
@@ -5233,8 +5201,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget,
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
+from app.models.user import User
 from app.repositories.user_repo import UserRepository
-# ★追加
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.user_edit_dialog import UserEditDialog
 
@@ -5297,56 +5265,50 @@ class UserSettingTab(QWidget):
         self.current_users = users 
 
         for i, u in enumerate(users):
-            is_active = bool(u['is_active'])
+            is_active = u.is_active
             
             # --- 色の決定 ---
             if is_active:
                 text_color = "white"
                 bg_color = None
-                
-                # 権限の色 (有効時のみ色をつける)
-                role_color = "#ffcc80" if u['role'] == 'admin' else "white"
+                role_color = "#ffcc80" if u.role == 'admin' else "white"
                 status_text = "有効"
                 status_color = "#69f0ae" 
             else:
                 text_color = "#757575" 
                 bg_color = "#2b2b2b"   
                 role_color = text_color
-                
                 status_text = "無効"
                 status_color = text_color
 
-            # アイテム作成ヘルパー
             def create_item(text, color, bg=None):
                 it = QTableWidgetItem(str(text))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 it.setForeground(QColor(color))
-                if bg:
-                    it.setBackground(QColor(bg))
+                if bg: it.setBackground(QColor(bg))
                 return it
 
-            # 0: ID
-            self.table.setItem(i, 0, create_item(u['id'], text_color, bg_color))
-            
-            # 1: 名前
-            self.table.setItem(i, 1, create_item(u['name'], text_color, bg_color))
-            
-            # 2: コード
-            self.table.setItem(i, 2, create_item(u['user_code'], text_color, bg_color))
-            
-            # 3: 権限
-            self.table.setItem(i, 3, create_item(u['role'], role_color, bg_color))
-            
-            # 4: 状態
+            self.table.setItem(i, 0, create_item(u.id, text_color, bg_color))
+            self.table.setItem(i, 1, create_item(u.name, text_color, bg_color))
+            self.table.setItem(i, 2, create_item(u.user_code, text_color, bg_color))
+            self.table.setItem(i, 3, create_item(u.role, role_color, bg_color))
             self.table.setItem(i, 4, create_item(status_text, status_color, bg_color))
 
     def _add_user(self):
         dialog = UserEditDialog(parent=self)
         if dialog.exec():
             d = dialog.get_data()
-            if self.repo.add_user(d['name'], d['code'], d['role']):
-                # ★追加: ログ
-                self.log_repo.add_log("info", f"ユーザー追加: {d['name']}")
+            
+            new_user = User(
+                id=None,
+                name=d['name'],
+                user_code=d['code'],
+                role=d['role'],
+                is_active=d['is_active']
+            )
+            
+            if self.repo.add_user(new_user):
+                self.log_repo.add_log("info", f"ユーザー追加: {new_user.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加失敗\nコードが重複している可能性があります。")
@@ -5357,15 +5319,26 @@ class UserSettingTab(QWidget):
             return
         target = self.current_users[row]
         
-        dialog = UserEditDialog(target, parent=self)
+        from dataclasses import asdict
+        target_dict = asdict(target)
+        
+        dialog = UserEditDialog(target_dict, parent=self)
         if dialog.exec():
             d = dialog.get_data()
-            if self.repo.update_user(target['id'], d['name'], d['code'], d['role'], d['is_active']):
-                # ★追加: ログ
-                self.log_repo.add_log("info", f"ユーザー更新: {target['name']} -> {d['name']}")
+            
+            updated_user = User(
+                id=target.id,
+                name=d['name'],
+                user_code=d['code'],
+                role=d['role'],
+                is_active=d['is_active']
+            )
+            
+            if self.repo.update_user(updated_user):
+                self.log_repo.add_log("info", f"ユーザー更新: {target.name} -> {updated_user.name}")
                 self.load_data()
             else:
-                QMessageBox.warning(self, "エラー", "更新失敗\nコードが重複している可能性があります。")
+                QMessageBox.warning(self, "エラー", "更新失敗")
 
     def _delete_selected(self):
         row = self.table.currentRow()
@@ -5374,22 +5347,21 @@ class UserSettingTab(QWidget):
         target = self.current_users[row]
         
         # 削除確認メッセージ
-        msg = f"{target['name']} を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (推奨)\n「Cancel」= やめる"
+        msg = f"{target.name} を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (推奨)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
         
         if res == QMessageBox.Yes:
             # 物理削除
-            if self.repo.delete_user(target['id']):
+            if self.repo.delete_user(target.id):
                 # ★追加: ログ
-                self.log_repo.add_log("warning", f"ユーザー完全削除: {target['name']}")
+                self.log_repo.add_log("warning", f"ユーザー完全削除: {target.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
         elif res == QMessageBox.No:
             # 無効化 (論理削除)
-            if self.repo.update_user(target['id'], target['name'], target['user_code'], target['role'], False):
-                # ★追加: ログ
-                self.log_repo.add_log("info", f"ユーザー無効化: {target['name']}")
+            if self.repo.update_user(target):
+                self.log_repo.add_log("info", f"ユーザー無効化: {target.name}")
                 self.load_data()
 
 ==================================================

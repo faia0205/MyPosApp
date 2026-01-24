@@ -5,6 +5,8 @@ from PySide6.QtGui import QColor
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
+from app.models.customer import Customer
+from dataclasses import asdict
 
 class CustomerSettingTab(QWidget):
     def __init__(self):
@@ -59,12 +61,11 @@ class CustomerSettingTab(QWidget):
         layout.addWidget(QLabel("※ IDの順序でメイン画面に表示されます"))
 
     def load_data(self):
-        self.customers = self.repo.fetch_all_presets()
+        self.customers = self.repo.fetch_all()
         self.table.setRowCount(len(self.customers))
         for i, c in enumerate(self.customers):
-            is_active = c['is_active']
+            is_active = c.is_active
             
-            # 無効時はグレーアウト
             text_col = "white" if is_active else "#757575"
             bg_col = None if is_active else "#2b2b2b"
 
@@ -77,19 +78,18 @@ class CustomerSettingTab(QWidget):
                 return it
 
             # ID
-            self.table.setItem(i, 0, mk_item(c['id']))
+            self.table.setItem(i, 0, mk_item(c.id))
             
-            # ラベル (文字色を黒にして背景をボタン色にする)
-            label_item = mk_item(c['label'])
+            # ラベル
+            label_item = mk_item(c.label)
             if is_active:
-                label_item.setBackground(QColor(c['color']))
+                label_item.setBackground(QColor(c.color))
                 label_item.setForeground(QColor("black"))
             self.table.setItem(i, 1, label_item)
 
-            # ★修正: 属性を見やすく整形
-            attrs = c['attributes']
-            if isinstance(attrs, dict) and attrs:
-                # 例: {"sex": "male"} -> "sex: male"
+            # 属性
+            attrs = c.attributes
+            if attrs:
                 attr_str = ", ".join([f"{k}: {v}" for k, v in attrs.items()])
             else:
                 attr_str = "-"
@@ -100,10 +100,26 @@ class CustomerSettingTab(QWidget):
             self.table.setItem(i, 3, mk_item(status))
 
     def _add(self):
-        dlg = CustomerEditDialog(all_presets=self.customers, parent=self)
+        # Dialog用に辞書リストを作成
+        presets_as_dicts = []
+        for c in self.customers:
+            d = asdict(c)
+            d['attributes'] = c.attributes
+            presets_as_dicts.append(d)
+
+        dlg = CustomerEditDialog(all_presets=presets_as_dicts, parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add_preset(d['label'], d['attributes'], d['color']):
+            new_customer = Customer(
+                id=None,
+                label=d['label'],
+                attributes_json="", # set_attributesで設定
+                color=d['color'],
+                is_active=d['is_active']
+            )
+            new_customer.set_attributes(d['attributes'])
+
+            if self.repo.add(new_customer):
                 self.log_repo.add_log("info", f"客層追加: {d['label']}")
                 self.load_data()
 
@@ -112,11 +128,32 @@ class CustomerSettingTab(QWidget):
         if row < 0:
             return
         target = self.customers[row]
-        dlg = CustomerEditDialog(data=target, all_presets=self.customers, parent=self)
+
+        # Dialog用に辞書変換
+        target_dict = asdict(target)
+        target_dict['attributes'] = target.attributes
+        
+        presets_as_dicts = []
+        for c in self.customers:
+            pd = asdict(c)
+            pd['attributes'] = c.attributes
+            presets_as_dicts.append(pd)
+
+        dlg = CustomerEditDialog(data=target_dict, all_presets=presets_as_dicts, parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.update_preset(target['id'], d['label'], d['attributes'], d['color'], d['is_active']):
-                self.log_repo.add_log("info", f"客層変更: {target['label']}")
+            updated_customer = Customer(
+                id=target.id,
+                label=d['label'],
+                attributes_json="",
+                color=d['color'],
+                display_order=target.display_order,
+                is_active=d['is_active']
+            )
+            updated_customer.set_attributes(d['attributes'])
+
+            if self.repo.update(updated_customer):
+                self.log_repo.add_log("info", f"客層変更: {target.label}")
                 self.load_data()
 
     def _move(self, direction):
@@ -128,7 +165,8 @@ class CustomerSettingTab(QWidget):
             return
         
         a, b = self.customers[row], self.customers[new_row]
-        order_map = {a['id']: b['display_order'], b['id']: a['display_order']}
+        order_map = {a.id: b.display_order, b.id: a.display_order}
+        
         if self.repo.update_display_order(order_map):
             self.load_data()
             self.table.selectRow(new_row)

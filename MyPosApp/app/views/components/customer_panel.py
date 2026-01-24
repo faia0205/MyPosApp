@@ -36,25 +36,21 @@ class CustomerPanel(QWidget):
                 self.cust_group.removeButton(w)
                 w.deleteLater()
         
-        all_customers_data = self.repo.fetch_all_presets() # Dict List
+        # Repoからオブジェクトリストを取得
+        all_customers = self.repo.fetch_all() 
         current_selection_valid = False
 
-        for i, c_data in enumerate(all_customers_data):
-            attr_json = json.dumps(c_data['attributes'])
-            c_model = Customer(
-                c_data['id'], c_data['label'], attr_json, 
-                c_data['color'], c_data['display_order']
-            )
+        for i, c_model in enumerate(all_customers):
+            # c_model は既に Customer オブジェクト
             
             btn = CustomerButton(c_model)
             self.cust_group.addButton(btn)
             self.customer_grid.addWidget(btn, i//2, i%2)
             
-            is_active = c_data['is_active']
-            if not is_active:
+            if not c_model.is_active:
                 btn.setEnabled(False)
                 btn.setStyleSheet("background-color: #424242; color: #757575; border: 1px solid #616161; border-radius: 8px; font-weight: bold;")
-                btn.setText(f"{c_data['label']}\n(無効)")
+                btn.setText(f"{c_model.label}\n(無効)")
             else:
                 btn.clicked.connect(lambda _, x=c_model: self._on_customer_selected(x))
                 
@@ -70,9 +66,6 @@ class CustomerPanel(QWidget):
 
     def _on_customer_selected(self, customer: Customer):
         self.cart_service.set_customer(customer)
-        # Main Window側で会計ボタンを有効化するためにシグナルなどが必要だが、
-        # ここではServiceの状態更新のみ行い、MainWindowがそれを検知する形が良い。
-        # 今回は簡易的にServiceの状態更新のみ。
 
     def _reset_selection(self, *args):
         self.cust_group.setExclusive(False)
