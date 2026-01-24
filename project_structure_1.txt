@@ -16,6 +16,7 @@ Root: MyPosApp/
             expense.py
             payment_method.py
             product.py
+            transaction.py
             user.py
         repositories/
             __init__.py
@@ -102,3 +103,5 @@ Root: MyPosApp/
             master_backup_20260123_170200.json
             master_backup_20260123_170448.json
             master_backup_20260123_174523.json
+            master_backup_20260124_090937.json
+            master_backup_20260124_091115.json

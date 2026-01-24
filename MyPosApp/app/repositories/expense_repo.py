@@ -7,11 +7,14 @@ class ExpenseRepository(BaseRepository):
 
     def fetch_all(self) -> List[Expense]:
         with self.transaction() as (conn, cursor):
+            # 注意: ここで r['id'] のように辞書アクセスしていますが、
+            # BaseRepositoryで row_factory = sqlite3.Row が設定されている前提です。
             cursor.execute("SELECT id, title, amount, created_at FROM expenses ORDER BY created_at DESC")
             rows = cursor.fetchall()
             return [Expense(id=r['id'], title=r['title'], amount=r['amount'], timestamp=r['created_at']) for r in rows]
 
-    def get_total_amount(self) -> int:
+    # ★修正: メソッド名を get_total_amount から get_total_expenses に変更しました
+    def get_total_expenses(self) -> int:
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT SUM(amount) FROM expenses")
             res = cursor.fetchone()

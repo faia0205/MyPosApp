@@ -1,5 +1,13 @@
 from typing import List, Dict, Tuple, Optional
 from PySide6.QtCore import QObject, Signal
+
+# Models
+from app.models.product import Product
+from app.models.customer import Customer
+from app.models.cart_item import CartItem
+from app.models.transaction import Transaction, TransactionItem, TransactionPayment
+
+# Repositories
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.payment_repo import PaymentRepository
@@ -7,9 +15,8 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.log_repo import LogRepository
-from app.models.product import Product
-from app.models.customer import Customer
-from app.models.cart_item import CartItem
+
+# Logic
 from app.logic.calculator import PriceCalculator
 from app.logic.discount_manager import DiscountManager
 
@@ -35,215 +42,271 @@ class CartService(QObject):
         self.calculator = PriceCalculator()
         self.discount_manager = DiscountManager()
         
-        # ★変更: CartItemオブジェクトのリストで管理
-        self.cart_items: List[CartItem] = []     
+        self.cart_items: List[CartItem] = []
         self.applied_discounts: List[Dict] = []
-        self.selected_customer: Optional[Customer] = None 
-        self.current_user_name = "未設定"
+        
+        self.current_user_name: str = "Admin"
+        self.current_user_role: str = "admin"
+        self.selected_customer: Optional[Customer] = None
+        
+        # 統計用キャッシュ
+        self.total_sales_today = 0
+        self.current_expenses = 0
+        self.avg_price_target = 0
+        
+        self._init_sales_data()
 
-        self.current_expenses: int = self.expense_repo.get_total_amount()
-        self.total_sales_today: int = self.trans_repo.get_total_sales_today()
+    def _init_sales_data(self):
+        """起動時に本日の売上・経費・目標単価を取得"""
+        self.total_sales_today = self.trans_repo.get_total_sales_today()
+        self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
-        self.discount_rules = self.disc_repo.fetch_active_rules()
 
     def _calculate_avg_price(self) -> int:
-        products = self.prod_repo.fetch_active_products()
-        valid_prices = [p.price for p in products if p.price > 0]
-        if not valid_prices: return 500
-        return int(sum(valid_prices) / len(valid_prices))
+        products = self.prod_repo.fetch_all_as_models()
+        if not products:
+            return 1000
+        total_p = sum(p.price for p in products if p.is_active)
+        count = sum(1 for p in products if p.is_active)
+        return int(total_p / count) if count > 0 else 1000
 
-    # --- 商品操作 ---
-    def add_product(self, product: Product) -> None:
-        # 既存チェック (属性アクセス)
+    # ★修正: ProductListWidgetからの呼び出しに合わせてリネーム (add_item -> add_product)
+    def add_product(self, product: Product):
+        """商品リストからの追加"""
         for item in self.cart_items:
-            if item.id == product.id and not item.is_manual:
+            # 既存なら数量+1
+            if item.id == product.id:
                 item.qty += 1
-                if item.price != product.price:
-                    item.price = product.price
-                self._notify_message(f"【追加】 {product.name} (+1)", "info")
                 self.recalculate()
                 return
         
-        # 新規作成 (CartItemインスタンス)
         new_item = CartItem(
             id=product.id,
             name=product.name,
             price=product.price,
-            category=product.category or "その他",
             qty=1,
-            is_manual=False,
-            note=product.note
+            category=product.category
         )
         self.cart_items.append(new_item)
-        self._notify_message(f"【追加】 {product.name}", "info")
         self.recalculate()
 
-    def update_item_qty(self, index: int, new_qty: int) -> None:
-        if 0 <= index < len(self.cart_items):
-            if new_qty <= 0:
-                self.remove_item(index)
-            else:
-                self.cart_items[index].qty = new_qty
-                self.recalculate()
-
-    def update_item_price(self, index: int, new_price: int) -> None:
-        if 0 <= index < len(self.cart_items):
-            self.cart_items[index].price = new_price
-            self.recalculate()
-
-    def decrease_item_qty(self, index: int) -> None:
-        if 0 <= index < len(self.cart_items):
-            item = self.cart_items[index]
-            if item.qty > 1:
-                item.qty -= 1
-                self.recalculate()
-            else:
-                self.remove_item(index)
-
-    def remove_item(self, index: int) -> None:
-        if 0 <= index < len(self.cart_items):
-            self.cart_items.pop(index)
-            self.recalculate()
-
-    def add_manual_item(self, price: int, name: str) -> None:
+    # ★追加: MainWindowの手入力用
+    def add_manual_item(self, price: int, name: str):
+        """手入力商品の追加"""
         new_item = CartItem(
             id=None,
             name=name,
             price=price,
             qty=1,
-            category="その他",
-            is_manual=True,
-            note="手入力"
+            category="手入力",
+            is_manual=True
         )
         self.cart_items.append(new_item)
         self.recalculate()
-        
-    def refresh_prices(self, master_products: List[Product]) -> None:
-        product_map = {p.id: p for p in master_products}
-        updated_count = 0
-        for item in self.cart_items:
-            if not item.is_manual and item.id in product_map:
-                new_price = product_map[item.id].price
-                if item.price != new_price:
-                    item.price = new_price
-                    updated_count += 1
-        if updated_count > 0:
-            self._notify_message(f"{updated_count}件の価格情報を更新しました", "info")
+
+    def remove_item(self, index: int):
+        if 0 <= index < len(self.cart_items):
+            self.cart_items.pop(index)
             self.recalculate()
 
-    # --- 計算処理 ---
-    def get_total_amount(self) -> int:
-        return self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
+    # ★追加: CartWidgetの入力欄(絶対値指定)用
+    def update_item_qty(self, index: int, qty: int):
+        """数量を直接指定"""
+        if 0 <= index < len(self.cart_items):
+            if qty > 0:
+                self.cart_items[index].qty = qty
+            else:
+                self.cart_items.pop(index)
+            self.recalculate()
 
-    def recalculate(self) -> None:
-        """カートの再計算とステータス更新"""
-        
-        # 1. 割引ルールの最新化
-        self.discount_rules = self.disc_repo.fetch_active_rules()
-        
-        # ★ 2. 経費データの最新化 (ここに追加！)
-        # 設定画面で経費が変わった場合に備えて、再計算のタイミングでDBから取り直します
-        self.current_expenses = self.expense_repo.get_total_amount()
+    # ★追加: CartWidgetのマイナスボタン用
+    def decrease_item_qty(self, index: int):
+        """数量を1減らす"""
+        self._change_qty_delta(index, -1)
 
-        # 3. 割引計算
-        self.applied_discounts = self.discount_manager.calculate_discounts(
-            self.cart_items, 
-            self.discount_rules
-        )
-        
-        # 4. 合計金額計算
-        grand_total = self.calculator.calculate_grand_total(
-            self.cart_items, 
-            self.applied_discounts
-        )
-        
-        # 5. 利益・黒字目標の計算 (最新の self.current_expenses を使用)
-        est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
-            grand_total,
-            self.total_sales_today,
-            self.current_expenses, 
-            self.avg_price_target
-        )
-        
-        # 6. 通知
-        self.cart_updated.emit()
-        self.stats_updated.emit(
-            self.total_sales_today + grand_total,
-            self.current_expenses,
-            est_profit,
-            msg,
-            is_red
-        )
+    def _change_qty_delta(self, index: int, delta: int):
+        """数量を差分で変更（内部ロジック）"""
+        if 0 <= index < len(self.cart_items):
+            item = self.cart_items[index]
+            new_qty = item.qty + delta
+            if new_qty > 0:
+                item.qty = new_qty
+            else:
+                self.cart_items.pop(index)
+            self.recalculate()
 
-    # --- その他 ---
-    def set_customer(self, customer: Customer) -> None:
+    # ★追加: CartWidgetの単価変更用
+    def update_item_price(self, index: int, new_price: int):
+        """単価の変更"""
+        if 0 <= index < len(self.cart_items):
+            self.cart_items[index].price = new_price
+            self.recalculate()
+
+    # ★追加: MainWindowの設定変更反映用
+    def refresh_prices(self, active_products: List[Product]):
+        """マスタ更新時の価格同期"""
+        product_map = {p.id: p.price for p in active_products}
+        updated = False
+        for item in self.cart_items:
+            # 手入力商品(id=None)や、マスタにない商品は無視
+            if item.id is not None and item.id in product_map:
+                if item.price != product_map[item.id]:
+                    item.price = product_map[item.id]
+                    updated = True
+        if updated:
+            self.recalculate()
+
+    def clear_cart(self):
+        self.cart_items = []
+        self.applied_discounts = []
+        self.recalculate()
+
+    def set_user(self, user_name: str, role: str = "staff"):
+        self.current_user_name = user_name
+        self.current_user_role = role
+        self.user_changed.emit(user_name)
+
+    # LoginDialog等の互換性用
+    def set_current_user(self, user_name: str):
+        # ロール取得ロジックを入れるのがベストだが、簡易的に
+        # 必要なら user_repo から引く
+        self.set_user(user_name)
+
+    def set_customer(self, customer: Optional[Customer]):
         self.selected_customer = customer
         self.customer_selected.emit(customer)
+        self.recalculate()
 
-    def set_current_user(self, name: str):
-        self.current_user_name = name
-        self.user_changed.emit(name)
-        self._notify_message(f"担当者: {name} さんでログインしました", "info")
+    def get_total_amount(self) -> int:
+        sub_prod = sum(item.price * item.qty for item in self.cart_items)
+        sub_disc = sum(d['amount'] for d in self.applied_discounts) # amountは負数
+        return max(0, sub_prod + sub_disc)
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
+        """会計確定処理"""
         if not self.cart_items or not self.selected_customer:
+            self._notify_message("カートが空か、客層が未選択です", "warning")
             return
         
         total = self.get_total_amount()
         
-        # 保存用に辞書へ変換
-        final_items_dicts = []
-        for item in self.cart_items:
-            final_items_dicts.append({
-                'name': item.name,
-                'price': item.price,
-                'qty': item.qty,
-                'subtotal': item.price * item.qty
-            })
-            
-        for d in self.applied_discounts:
-            final_items_dicts.append({
-                'name': d['name'],
-                'price': d['amount'],
-                'qty': d['qty'],
-                'subtotal': d['amount'] # 合算済み金額
-            })
-
-        # お釣り調整
-        adjusted_payments = []
-        remaining_change = change
-        for method, amount in payments:
-            if remaining_change > 0 and amount >= remaining_change:
-                adjusted_payments.append((method, amount - remaining_change))
-                remaining_change = 0
-            else:
-                adjusted_payments.append((method, amount))
-
-        current_customer_name = "未設定"
-        if self.selected_customer:
-            current_customer_name = self.selected_customer.label
-
-        self.trans_repo.save_transaction(
-            total, current_customer_name, self.current_user_name, 
-            final_items_dicts, adjusted_payments, change
-        )
+        # 1. 明細リスト作成
+        tx_items: List[TransactionItem] = []
         
+        # 商品明細
+        for item in self.cart_items:
+            tx_items.append(TransactionItem(
+                id=None, 
+                transaction_id=None,
+                product_name=item.name,
+                unit_price=item.price,
+                quantity=item.qty,
+                subtotal=item.price * item.qty
+            ))
+            
+        # 割引明細
+        for d in self.applied_discounts:
+            qty = d['qty'] if d['qty'] > 0 else 1
+            total_disc = d['amount']
+            unit_price = int(total_disc / qty)
+
+            tx_items.append(TransactionItem(
+                id=None, 
+                transaction_id=None,
+                product_name=d['name'],
+                unit_price=unit_price,
+                quantity=qty,
+                subtotal=total_disc
+            ))
+
+        # 2. 決済リスト作成
+        tx_payments: List[TransactionPayment] = []
+        remaining_change = change
+        
+        for method, amount in payments:
+            actual_pay = amount
+            if remaining_change > 0 and amount >= remaining_change:
+                actual_pay = amount - remaining_change
+                remaining_change = 0
+            
+            if actual_pay > 0:
+                tx_payments.append(TransactionPayment(
+                    id=None, 
+                    transaction_id=None,
+                    payment_method=method,
+                    amount=actual_pay
+                ))
+
+        # 3. ヘッダー作成
+        current_customer_name = self.selected_customer.label
+        
+        transaction = Transaction(
+            id=None,
+            total_amount=total,
+            change=change,
+            customer_label=current_customer_name,
+            cashier_name=self.current_user_name,
+            items=tx_items,
+            payments=tx_payments
+        )
+
+        # 保存実行
+        self.trans_repo.save(transaction)
+        
+        # 状態更新
         self.total_sales_today += total
         grand_total = self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
 
+        # カートクリア
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
         
         self.checkout_completed.emit(grand_total, change, current_customer_name)
         self.recalculate()
-    
+        
+        self.log_repo.add_log("info", f"会計完了: ¥{total}")
+
+    def recalculate(self):
+        """カート状態の再計算とシグナル発火"""
+        # 1. 割引適用計算
+        rules = self.disc_repo.fetch_active_rules()
+        self.applied_discounts = self.discount_manager.calculate_discounts(self.cart_items, rules)
+        
+        # 2. 合計計算
+        grand_total = self.get_total_amount()
+        
+        # 3. カート更新通知
+        self.cart_updated.emit()
+        
+        # 4. 統計更新通知
+        est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
+            grand_total,
+            self.total_sales_today,
+            self.current_expenses, 
+            self.avg_price_target
+        )
+        self.stats_updated.emit(self.total_sales_today, self.current_expenses, est_profit, msg, is_red)
+   
     def is_discount_target(self, product_id: int) -> bool:
+        """商品が何らかの割引対象になり得るか判定（UIのバッジ表示用）"""
+        rules = self.disc_repo.fetch_active_rules()
+        product = self.prod_repo.get_product_by_id(product_id)
+        if not product: return False
+        
+        for r in rules:
+            t_val = r['target_value']
+            if (r['apply_type'] == 'category' and t_val == product.category):
+                return True
+            if (r['apply_type'] == 'item' and t_val == product.name):
+                return True
+            if (r['apply_type'] == 'bundle'):
+                if t_val and product.name in t_val: 
+                    return True
         return False
 
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
-        if hasattr(self, 'log_repo'): self.log_repo.add_log(msg_type, text)
 
     def reset_message(self):
         self._notify_message("次の会計をお願いします", "info")

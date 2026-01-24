@@ -45,7 +45,7 @@ class AnalyticsService:
         total_sales = stats['sales']
         customer_count = stats['customer_count']
         
-        total_expenses = self.expense_repo.get_total_amount()
+        total_expenses = self.expense_repo.get_total_expenses()
         
         profit = total_sales - total_expenses
         payments = self.ana_repo.get_payment_summary()
