@@ -13,8 +13,7 @@ from app.models.user import User
 from app.models.customer import Customer
 from app.models.payment_method import PaymentMethod
 from app.models.expense import Expense
-# Discountモデルは辞書管理の可能性があるため、必要に応じてインポート
-# from app.models.discount import DiscountRule 
+from app.models.discount import DiscountRule  # ★追加
 
 # Repositories
 from app.repositories.product_repo import ProductRepository
@@ -88,8 +87,10 @@ class MasterDataService:
                 d = asdict(ex)
                 expenses.append(d)
 
-            # 割引ルール (Repositoryの実装に合わせて取得)
-            discount_rules = self.disc_repo.fetch_all_rules()
+            # 割引ルール
+            # ★修正: fetch_all_rules() はオブジェクトを返すようになったため、asdictで変換が必要
+            discount_rules_objs = self.disc_repo.fetch_all_rules()
+            discount_rules = [asdict(r) for r in discount_rules_objs]
 
             # データ構築
             master_data = {
@@ -140,12 +141,10 @@ class MasterDataService:
 
         # --- A. Products (商品) ---
         for p in data.get("products", []):
-            # 名前で重複チェック (IDが変わっている可能性も考慮し、名前を正とする運用の場合)
-            # もしIDベースで同期したい場合は logic を変更してください
             exists_id = self.prod_repo.find_id_by_name(p["name"])
             
             target_product = Product(
-                id=exists_id, # 既存があればそのIDを使う
+                id=exists_id, 
                 name=p["name"],
                 price=p["price"],
                 category=p["category"],
@@ -154,7 +153,7 @@ class MasterDataService:
                 is_active=p.get("is_active", True),
                 display_order=p.get("display_order", 0)
             )
-            # 商品コード(barcode)がある場合はここでセット
+            # barcode対応
             if "barcode" in p:
                 target_product.barcode = p["barcode"]
 
@@ -165,10 +164,8 @@ class MasterDataService:
         
         # --- B. Users (ユーザー) ---
         for u in data.get("users", []):
-            # ユーザーコード等で検索するメソッドがあればそれを使うが、
-            # ここでは upsert_user (IDなしなら追加、ありなら更新) を想定
             target_user = User(
-                id=u.get("id"), # JSONのIDを信じるか、Noneにして新規採番させるかは運用次第
+                id=u.get("id"),
                 name=u["name"],
                 user_code=u["user_code"],
                 role=u.get("role", "staff"),
@@ -177,35 +174,26 @@ class MasterDataService:
             self.user_repo.upsert_user(target_user)
 
         # --- C. Payment Methods (決済方法) ---
-        # ★修正: TransactionRepoではなくPaymentRepoを使用
         for pm in data.get("payment_methods", []):
-            # 決済種別はシステム上重要なので、基本的にJSONの定義を正とします
             target_pm = PaymentMethod(
                 id=pm.get("id"),
                 name=pm["name"],
                 is_cash=pm.get("is_cash", False),
-                is_active=pm.get("is_active", True),
-                display_order=pm.get("display_order", 0)
+                is_active=pm.get("is_active", True)
             )
-            
-            # PaymentRepositoryに upsert 的な機能がない場合の実装例:
-            # ID指定で更新を試み、失敗(対象なし)なら追加
-            # ※ Repositoryの実装に依存しますが、ここでは一般的な update/add パターンで記述します
+            # 簡易upsertロジック
             if target_pm.id:
-                success = self.pay_repo.update(target_pm)
-                if not success:
+                if not self.pay_repo.update(target_pm):
                     self.pay_repo.add(target_pm)
             else:
                 self.pay_repo.add(target_pm)
 
         # --- D. Customer Presets (客層) ---
         for c in data.get("customer_presets", []):
-            # JSONのattributes(dict) -> DB保存用のattributes_json(str)への変換は
-            # Repository/Model側で吸収させるか、ここで変換する
             target_cust = Customer(
                 id=c.get("id"),
                 label=c["label"],
-                attributes_json="", # set_attributesで設定
+                attributes_json="", 
                 color=c.get("color", "#ffffff"),
                 display_order=c.get("display_order", 0),
                 is_active=c.get("is_active", True)
@@ -219,26 +207,29 @@ class MasterDataService:
                 self.cust_repo.add(target_cust)
 
         # --- E. Initial Expenses (経費項目) ---
-        for ex in data.get("initial_expenses", []):
-            target_exp = Expense(
-                id=ex.get("id"),
-                name=ex["name"],
-                amount=ex.get("amount", 0),
-                is_active=ex.get("is_active", True)
-                # 必要に応じて他のフィールド
-            )
-            # 経費項目も同様に同期
-            # idを持っていればupdate、なければadd
-            # (ExpenseRepositoryの実装に合わせて調整してください)
-            # ここではaddのみの例（重複チェックなし）になりがちなので注意が必要ですが
-            # マスタとして管理されているなら update/add を行います
-            # self.exp_repo.upsert(target_exp) # 仮定
-            pass 
+        # 起動時にJSONにある経費を追加するかは運用次第だが、
+        # ここではマスタ定義的なものがもしあれば追加するロジック（今回は省略または最小限）
+        pass 
 
         # --- F. Discount Rules (割引) ---
-        # 割引ルールは複雑なため、単純な同期が難しい場合がありますが、
-        # 基本的には全消し＆全追加、あるいはIDマッチングで行います
-        # ここではスキップ、または DiscountRepo の実装に合わせて記述
-        pass
+        # ★修正: 新しい DiscountRule オブジェクトを使って同期
+        for r in data.get("discount_rules", []):
+            target_rule = DiscountRule(
+                id=r.get('id'),
+                name=r['name'],
+                discount_type=r['discount_type'],
+                discount_value=r['discount_value'],
+                apply_type=r['apply_type'],
+                target_value=r.get('target_value', ""),
+                is_auto=bool(r.get('is_auto', False)),
+                is_active=bool(r.get('is_active', True))
+            )
+            
+            # Repositoryの実装に合わせて upsert 的な処理
+            if target_rule.id:
+                if not self.disc_repo.update(target_rule):
+                    self.disc_repo.add(target_rule)
+            else:
+                self.disc_repo.add(target_rule)
 
         print("Sync completed.")

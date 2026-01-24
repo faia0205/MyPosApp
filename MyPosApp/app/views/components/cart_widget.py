@@ -13,8 +13,6 @@ class CartWidget(QWidget):
         self.cart_service = cart_service
         self.current_indices_map: List[int] = [] 
         self._init_ui()
-        
-        # シグナル接続
         self.cart_service.cart_updated.connect(self._render_cart)
 
     def _init_ui(self):
@@ -86,7 +84,6 @@ class CartWidget(QWidget):
     def _render_cart(self):
         items = self.cart_service.cart_items
         
-        # ソート: マイナス価格(値引)は下に、それ以外は価格順
         indices = list(range(len(items)))
         indices.sort(key=lambda i: (items[i].price < 0, -items[i].price))
         self.current_indices_map = indices
@@ -132,18 +129,22 @@ class CartWidget(QWidget):
 
         self.cart_table.blockSignals(False)
         
-        # 割引テーブル描画
+        # --- 割引テーブル描画 ---
         discounts = self.cart_service.applied_discounts
         self.discount_table.setRowCount(len(discounts))
         for i, d in enumerate(discounts):
-            sub = d['amount'] * d['qty']
+            # ★修正: 辞書キー['amount']ではなく属性.amountにアクセス
+            # AppliedDiscount(rule_id, name, amount, qty)
+            sub = d.amount # マイナス値がそのまま入っている
+            
             def create_disc_item(text):
                 it = QTableWidgetItem(str(text))
                 it.setForeground(QColor("#ff8a80"))
                 it.setFlags(it.flags() ^ Qt.ItemIsEditable)
                 return it
-            self.discount_table.setItem(i, 0, create_disc_item(d['name']))
-            self.discount_table.setItem(i, 1, create_disc_item(f"{d['qty']}回"))
+                
+            self.discount_table.setItem(i, 0, create_disc_item(d.name))
+            self.discount_table.setItem(i, 1, create_disc_item(f"{d.qty}回"))
             self.discount_table.setItem(i, 2, create_disc_item(f"¥{sub:,}"))
 
         # 合計更新

@@ -1,62 +1,87 @@
-from typing import List, Dict, Any
-import sqlite3
+from typing import List, Optional
 from app.repositories.base_repo import BaseRepository
+from app.models.discount import DiscountRule
 
 class DiscountRepository(BaseRepository):
-    """割引ルールのCRUD"""
+    """割引ルールのCRUD (Dataclass対応版)"""
 
-    def fetch_all_rules(self) -> List[Dict[str, Any]]:
+    def fetch_all_rules(self) -> List[DiscountRule]:
         """設定画面用: 全ルール取得"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
-            FROM discount_rules 
-            ORDER BY id
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
+                FROM discount_rules 
+                ORDER BY id
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
 
-    def fetch_active_rules(self) -> List[Dict[str, Any]]:
+    def fetch_active_rules(self) -> List[DiscountRule]:
         """販売画面用: 有効なルールのみ取得"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        # ★修正: is_active=1 のデータを取得する際、is_auto も取得するように追加
-        cursor.execute("""
-            SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto 
-            FROM discount_rules 
-            WHERE is_active=1
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-
-    def add_rule(self, name, d_type, d_value, a_type, target, is_auto) -> bool:
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
+        with self.transaction() as (conn, cursor):
             cursor.execute("""
-                INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-            """, (name, d_type, int(d_value), a_type, target, int(is_auto)))
-            conn.commit()
-            return True
-        except: return False
-        finally: conn.close()
+                SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
+                FROM discount_rules 
+                WHERE is_active=1
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
 
-    def update_rule(self, rule_id, name, d_type, d_value, a_type, target, is_auto, is_active) -> bool:
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    def add(self, rule: DiscountRule) -> bool:
+        """ルールの追加"""
         try:
-            cursor.execute("""
-                UPDATE discount_rules 
-                SET name=?, discount_type=?, discount_value=?, apply_type=?, target_value=?, is_auto=?, is_active=?
-                WHERE id=?
-            """, (name, d_type, int(d_value), a_type, target, int(is_auto), int(is_active), rule_id))
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    rule.name, 
+                    rule.discount_type, 
+                    rule.discount_value, 
+                    rule.apply_type, 
+                    rule.target_value, 
+                    int(rule.is_auto), 
+                    int(rule.is_active)
+                ))
             return True
-        except: return False
-        finally: conn.close()
+        except Exception as e:
+            print(f"Error adding discount rule: {e}")
+            return False
+
+    def update(self, rule: DiscountRule) -> bool:
+        """ルールの更新"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    UPDATE discount_rules 
+                    SET name=?, discount_type=?, discount_value=?, apply_type=?, target_value=?, is_auto=?, is_active=?
+                    WHERE id=?
+                """, (
+                    rule.name, 
+                    rule.discount_type, 
+                    rule.discount_value, 
+                    rule.apply_type, 
+                    rule.target_value, 
+                    int(rule.is_auto), 
+                    int(rule.is_active), 
+                    rule.id
+                ))
+            return True
+        except Exception as e:
+            print(f"Error updating discount rule: {e}")
+            return False
+    
+    # 以前の add_rule / update_rule は廃止し、add / update に統合しました。
+
+    def _map_to_model(self, row) -> DiscountRule:
+        if row is None: return None
+        return DiscountRule(
+            id=row[0],
+            name=row[1],
+            discount_type=row[2],
+            discount_value=row[3],
+            apply_type=row[4],
+            target_value=row[5] if row[5] else "",
+            is_auto=bool(row[6]),
+            is_active=bool(row[7])
+        )

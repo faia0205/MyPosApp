@@ -1,4 +1,5 @@
-from typing import List, Dict, Tuple, Optional
+from typing import List, Tuple, Optional
+import json
 from PySide6.QtCore import QObject, Signal
 
 # Models
@@ -6,6 +7,7 @@ from app.models.product import Product
 from app.models.customer import Customer
 from app.models.cart_item import CartItem
 from app.models.transaction import Transaction, TransactionItem, TransactionPayment
+from app.models.discount import AppliedDiscount  # ★追加
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -43,7 +45,7 @@ class CartService(QObject):
         self.discount_manager = DiscountManager()
         
         self.cart_items: List[CartItem] = []
-        self.applied_discounts: List[Dict] = []
+        self.applied_discounts: List[AppliedDiscount] = [] # ★型変更
         
         self.current_user_name: str = "Admin"
         self.current_user_role: str = "admin"
@@ -70,11 +72,9 @@ class CartService(QObject):
         count = sum(1 for p in products if p.is_active)
         return int(total_p / count) if count > 0 else 1000
 
-    # ★修正: ProductListWidgetからの呼び出しに合わせてリネーム (add_item -> add_product)
     def add_product(self, product: Product):
         """商品リストからの追加"""
         for item in self.cart_items:
-            # 既存なら数量+1
             if item.id == product.id:
                 item.qty += 1
                 self.recalculate()
@@ -90,7 +90,6 @@ class CartService(QObject):
         self.cart_items.append(new_item)
         self.recalculate()
 
-    # ★追加: MainWindowの手入力用
     def add_manual_item(self, price: int, name: str):
         """手入力商品の追加"""
         new_item = CartItem(
@@ -109,7 +108,6 @@ class CartService(QObject):
             self.cart_items.pop(index)
             self.recalculate()
 
-    # ★追加: CartWidgetの入力欄(絶対値指定)用
     def update_item_qty(self, index: int, qty: int):
         """数量を直接指定"""
         if 0 <= index < len(self.cart_items):
@@ -119,13 +117,12 @@ class CartService(QObject):
                 self.cart_items.pop(index)
             self.recalculate()
 
-    # ★追加: CartWidgetのマイナスボタン用
     def decrease_item_qty(self, index: int):
         """数量を1減らす"""
         self._change_qty_delta(index, -1)
 
     def _change_qty_delta(self, index: int, delta: int):
-        """数量を差分で変更（内部ロジック）"""
+        """数量を差分で変更"""
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             new_qty = item.qty + delta
@@ -135,20 +132,17 @@ class CartService(QObject):
                 self.cart_items.pop(index)
             self.recalculate()
 
-    # ★追加: CartWidgetの単価変更用
     def update_item_price(self, index: int, new_price: int):
         """単価の変更"""
         if 0 <= index < len(self.cart_items):
             self.cart_items[index].price = new_price
             self.recalculate()
 
-    # ★追加: MainWindowの設定変更反映用
     def refresh_prices(self, active_products: List[Product]):
         """マスタ更新時の価格同期"""
         product_map = {p.id: p.price for p in active_products}
         updated = False
         for item in self.cart_items:
-            # 手入力商品(id=None)や、マスタにない商品は無視
             if item.id is not None and item.id in product_map:
                 if item.price != product_map[item.id]:
                     item.price = product_map[item.id]
@@ -166,10 +160,7 @@ class CartService(QObject):
         self.current_user_role = role
         self.user_changed.emit(user_name)
 
-    # LoginDialog等の互換性用
     def set_current_user(self, user_name: str):
-        # ロール取得ロジックを入れるのがベストだが、簡易的に
-        # 必要なら user_repo から引く
         self.set_user(user_name)
 
     def set_customer(self, customer: Optional[Customer]):
@@ -179,7 +170,8 @@ class CartService(QObject):
 
     def get_total_amount(self) -> int:
         sub_prod = sum(item.price * item.qty for item in self.cart_items)
-        sub_disc = sum(d['amount'] for d in self.applied_discounts) # amountは負数
+        # ★修正: オブジェクト属性アクセスに変更
+        sub_disc = sum(d.amount for d in self.applied_discounts) 
         return max(0, sub_prod + sub_disc)
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
@@ -193,7 +185,6 @@ class CartService(QObject):
         # 1. 明細リスト作成
         tx_items: List[TransactionItem] = []
         
-        # 商品明細
         for item in self.cart_items:
             tx_items.append(TransactionItem(
                 id=None, 
@@ -204,16 +195,16 @@ class CartService(QObject):
                 subtotal=item.price * item.qty
             ))
             
-        # 割引明細
         for d in self.applied_discounts:
-            qty = d['qty'] if d['qty'] > 0 else 1
-            total_disc = d['amount']
+            # ★修正: オブジェクト属性アクセスに変更
+            qty = d.qty if d.qty > 0 else 1
+            total_disc = d.amount
             unit_price = int(total_disc / qty)
 
             tx_items.append(TransactionItem(
                 id=None, 
                 transaction_id=None,
-                product_name=d['name'],
+                product_name=d.name,
                 unit_price=unit_price,
                 quantity=qty,
                 subtotal=total_disc
@@ -250,14 +241,13 @@ class CartService(QObject):
             payments=tx_payments
         )
 
-        # 保存実行
         self.trans_repo.save(transaction)
         
-        # 状態更新
         self.total_sales_today += total
-        grand_total = self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
+        # calculator.calculate_grand_total は古い辞書用ロジックが残っている可能性があるため
+        # ここでは直接 get_total_amount() を使うのが安全
+        grand_total = self.get_total_amount()
 
-        # カートクリア
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
@@ -268,15 +258,16 @@ class CartService(QObject):
         self.log_repo.add_log("info", f"会計完了: ¥{total}")
 
     def recalculate(self):
-        """カート状態の再計算とシグナル発火"""
-        # 1. 割引適用計算
+        """カート状態の再計算"""
+        # 1. 割引適用計算 (RepositoryがDiscountRuleオブジェクトリストを返す)
         rules = self.disc_repo.fetch_active_rules()
+        # ManagerがAppliedDiscountオブジェクトリストを返す
         self.applied_discounts = self.discount_manager.calculate_discounts(self.cart_items, rules)
         
         # 2. 合計計算
         grand_total = self.get_total_amount()
         
-        # 3. カート更新通知
+        # 3. UI更新通知
         self.cart_updated.emit()
         
         # 4. 統計更新通知
@@ -289,20 +280,39 @@ class CartService(QObject):
         self.stats_updated.emit(self.total_sales_today, self.current_expenses, est_profit, msg, is_red)
    
     def is_discount_target(self, product_id: int) -> bool:
-        """商品が何らかの割引対象になり得るか判定（UIのバッジ表示用）"""
+        """商品が何らかの割引対象になり得るか判定"""
         rules = self.disc_repo.fetch_active_rules()
         product = self.prod_repo.get_product_by_id(product_id)
         if not product: return False
         
         for r in rules:
-            t_val = r['target_value']
-            if (r['apply_type'] == 'category' and t_val == product.category):
+            # ★修正: オブジェクト属性アクセスに変更
+            t_val = r.target_value
+            if (r.apply_type == 'category' and t_val == product.category):
                 return True
-            if (r['apply_type'] == 'item' and t_val == product.name):
+            elif (r.apply_type == 'item' and t_val == product.name):
                 return True
-            if (r['apply_type'] == 'bundle'):
-                if t_val and product.name in t_val: 
-                    return True
+            elif r.apply_type == 'bundle':
+                try:
+                    data = json.loads(t_val)
+                    
+                    # Pattern A: Selectモード (リスト内のいずれか)
+                    if data.get('mode') == 'select':
+                        targets = data.get('targets', [])
+                        # 商品名 または カテゴリ名 が含まれていれば対象
+                        if product.name in targets: return True
+                        if product.category in targets: return True
+                        
+                    # Pattern B: Comboモード (条件の組み合わせ)
+                    elif data.get('mode') == 'combo':
+                        for cond in data.get('conditions', []):
+                            c_target = cond.get('target')
+                            # 商品名 または カテゴリ名 が一致すれば対象
+                            if c_target == product.name: return True
+                            if c_target == product.category: return True
+                except:
+                    # パース失敗時は念のため従来の簡易チェック
+                    if t_val and product.name in t_val: return True
         return False
 
     def _notify_message(self, text: str, msg_type: str) -> None:

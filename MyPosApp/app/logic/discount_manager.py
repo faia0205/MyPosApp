@@ -2,12 +2,13 @@ import json
 import math
 from typing import List, Dict, Tuple
 from app.models.cart_item import CartItem
+from app.models.discount import DiscountRule, AppliedDiscount
 
 class DiscountManager:
     """割引計算ロジック（オブジェクト対応版）"""
 
-    def calculate_discounts(self, cart_items: List[CartItem], rules: List[Dict]) -> List[Dict]:
-        # 1. 計算用に在庫リストを作成 (Dict変換して管理)
+    def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
+        # 1. 計算用に在庫リストを作成
         inventory = []
         for item in cart_items:
             if item.id is not None and item.price > 0:
@@ -20,36 +21,41 @@ class DiscountManager:
                     'original_item': item
                 })
         
-        raw_discounts = []
+        applied_discounts: List[AppliedDiscount] = []
         
-        # 2. ルールの優先順位付け (変更なし)
+        # 2. ルールの優先順位付け (バンドル > 商品 > カテゴリ > 全体)
         type_priority = {'bundle': 0, 'item': 1, 'category': 2, 'cart': 3}
+        
         sorted_rules = sorted(rules, key=lambda r: (
-            type_priority.get(r['apply_type'], 99),
-            -r['discount_value'] 
+            type_priority.get(r.apply_type, 99),
+            -r.discount_value 
         ))
 
-        # 3. ルール適用 (ロジックは既存維持だが、カート合計計算だけ修正)
+        # 3. ルール適用（バンドル・商品・カテゴリ）
         for rule in sorted_rules:
-            if not rule.get('is_auto', True): continue 
+            if not rule.is_auto: continue 
 
-            apply_type = rule['apply_type']
+            apply_type = rule.apply_type
             
+            # --- カート全体割引は後回しにする ---
+            if apply_type == 'cart':
+                continue
+
             if apply_type == 'bundle':
                 while True:
                     consumed, discount_amt = self._try_apply_bundle(rule, inventory)
                     if consumed and discount_amt > 0:
-                        raw_discounts.append({
-                            'rule_id': rule['id'],
-                            'name': rule['name'],
-                            'amount': -discount_amt,
-                            'qty': 1
-                        })
+                        applied_discounts.append(AppliedDiscount(
+                            rule_id=rule.id,
+                            name=rule.name,
+                            amount=-discount_amt,
+                            qty=1
+                        ))
                     else:
                         break
 
             elif apply_type in ['item', 'category']:
-                target = rule['target_value']
+                target = rule.target_value
                 for inv_item in inventory:
                     if inv_item['qty'] <= 0: continue
                     
@@ -60,62 +66,86 @@ class DiscountManager:
                     if is_hit:
                         count = inv_item['qty']
                         unit_discount = 0
-                        if rule['discount_type'] == 'fixed':
-                            unit_discount = rule['discount_value']
+                        
+                        if rule.discount_type == 'fixed':
+                            unit_discount = rule.discount_value
                         else:
-                            unit_discount = math.floor(inv_item['price'] * (rule['discount_value'] / 100))
+                            unit_discount = math.floor(inv_item['price'] * (rule.discount_value / 100))
                         
                         if unit_discount > 0:
                             total_discount = unit_discount * count
-                            raw_discounts.append({
-                                'rule_id': rule['id'],
-                                'name': rule['name'],
-                                'amount': -total_discount,
-                                'qty': count
-                            })
+                            applied_discounts.append(AppliedDiscount(
+                                rule_id=rule.id,
+                                name=rule.name,
+                                amount=-total_discount,
+                                qty=count
+                            ))
                             inv_item['qty'] = 0
 
-        # --- Cart全体割引 ---
-        # CartItemオブジェクトから計算
-        current_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
+        # --- 4. Cart全体割引の計算 ---
+        # ★修正ポイント: ここまでの割引適用後の金額（Net Total）をベースにする
         
+        # 定価ベースの合計
+        gross_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
+        
+        # 適用済み割引の合計 (amountは負の値なので足し込むと引かれる)
+        discount_sum_so_far = sum(d.amount for d in applied_discounts)
+        
+        # 割引適用後の小計 (0未満にはならない)
+        net_total = max(0, gross_total + discount_sum_so_far)
+
         for rule in sorted_rules:
-            if rule['apply_type'] == 'cart':
-                disc = 0
-                if rule['discount_type'] == 'fixed':
-                    disc = rule['discount_value']
-                else:
-                    disc = math.floor(current_total * (rule['discount_value'] / 100))
+            if rule.apply_type == 'cart':
+                if not rule.is_auto: continue
                 
+                disc = 0
+                if rule.discount_type == 'fixed':
+                    disc = rule.discount_value
+                else:
+                    # ★修正: 定価(gross_total)ではなく、割引後小計(net_total)に対して率を掛ける
+                    disc = math.floor(net_total * (rule.discount_value / 100))
+                
+                # 割引額が有効、かつ小計を超えない範囲で適用
                 if disc > 0:
-                    raw_discounts.append({
-                        'rule_id': rule['id'],
-                        'name': rule['name'],
-                        'amount': -disc,
-                        'qty': 1
-                    })
+                    # 念のため、残りの金額以上には割り引かない（マイナス会計防止）
+                    # 複数のカート割引がある場合、並列適用の場合は net_total を使うが、
+                    # 累積適用の場合はここでも net_total を減算していく必要がある。
+                    # ここでは「並列適用（Net Totalに対する率）」とするが、最大額チェックを入れる。
+                    
+                    # 現在の残額チェック
+                    current_discount_total = sum(d.amount for d in applied_discounts) # 再計算
+                    current_remaining = max(0, gross_total + current_discount_total)
+                    
+                    final_disc = min(disc, current_remaining)
 
-        # 合算処理 (変更なし)
-        merged_map = {}
-        for d in raw_discounts:
-            rid = d['rule_id']
+                    if final_disc > 0:
+                        applied_discounts.append(AppliedDiscount(
+                            rule_id=rule.id,
+                            name=rule.name,
+                            amount=-final_disc,
+                            qty=1
+                        ))
+
+        # 5. 合算処理 (AppliedDiscountオブジェクト同士をマージ)
+        merged_map: Dict[int, AppliedDiscount] = {}
+        for d in applied_discounts:
+            rid = d.rule_id
             if rid in merged_map:
-                merged_map[rid]['amount'] += d['amount']
-                merged_map[rid]['qty'] += d['qty']
+                merged_map[rid].amount += d.amount
+                merged_map[rid].qty += d.qty
             else:
-                merged_map[rid] = d.copy()
+                merged_map[rid] = d
 
-        return [v for v in merged_map.values() if v['amount'] < 0]
+        return list(merged_map.values())
 
-    def _try_apply_bundle(self, rule, inventory) -> Tuple[bool, int]:
-        # 内部ロジックは inventory (dict list) を使うので変更不要
+    def _try_apply_bundle(self, rule: DiscountRule, inventory: List[Dict]) -> Tuple[bool, int]:
         try:
-            target_json = json.loads(rule['target_value'])
+            target_json = json.loads(rule.target_value)
         except:
             return False, 0
 
         mode = target_json.get('mode', 'combo')
-        temp_consumption = {}
+        temp_consumption = {} 
         total_price_in_bundle = 0
 
         if mode == 'select':
@@ -158,13 +188,14 @@ class DiscountManager:
                 
                 if needed > 0: return False, 0
 
+        # 消費確定
         for idx, qty in temp_consumption.items():
             inventory[idx]['qty'] -= qty
             
         discount_amt = 0
-        if rule['discount_type'] == 'fixed':
-            discount_amt = rule['discount_value']
+        if rule.discount_type == 'fixed':
+            discount_amt = rule.discount_value
         else:
-            discount_amt = math.floor(total_price_in_bundle * (rule['discount_value'] / 100))
+            discount_amt = math.floor(total_price_in_bundle * (rule.discount_value / 100))
 
         return True, discount_amt
