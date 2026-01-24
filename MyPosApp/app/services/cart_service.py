@@ -1,5 +1,6 @@
 from typing import List, Tuple, Optional
 import json
+import urllib.parse  # ★追加: URLエンコード用
 from PySide6.QtCore import QObject, Signal
 
 # Models
@@ -58,7 +59,6 @@ class CartService(QObject):
         self._init_sales_data()
 
     def _init_sales_data(self):
-        """起動時に本日の売上・経費・目標単価を取得"""
         self.total_sales_today = self.trans_repo.get_total_sales_today()
         self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
@@ -71,7 +71,6 @@ class CartService(QObject):
         count = sum(1 for p in products if p.is_active)
         return int(total_p / count) if count > 0 else 1000
 
-    # ★追加ヘルパー: 対象となる割引ルール名を取得
     def get_applicable_rule_names(self, product: Product) -> List[str]:
         """商品に適用可能な割引ルール名を取得（カート全体割引を除く）"""
         rules = self.disc_repo.fetch_active_rules()
@@ -81,7 +80,6 @@ class CartService(QObject):
             t_val = r.target_value
             is_match = False
             
-            # カート全体割引は対象外
             if r.apply_type == 'cart':
                 continue
             
@@ -113,19 +111,25 @@ class CartService(QObject):
     def add_product(self, product: Product):
         """商品リストからの追加"""
         
-        # 1. 備考メッセージ (色を明るい水色に変更)
+        # 1. 備考メッセージ (明るい水色)
         note_html = ""
         if product.note:
             note_html = f"<br><span style='color:#81d4fa'>※ {product.note}</span>"
             
-        # 2. 割引対象リスト作成
+        # 2. 割引対象リンク作成 (方針D: データ埋め込みリンク)
         discount_html = ""
         rule_names = self.get_applicable_rule_names(product)
         if rule_names:
-            # 黄色い見出しの下に、ルール名をリスト表示
-            discount_html = "<br><span style='color:#ffeb3b; font-weight:bold;'>★ 対象割引:</span>"
-            for r_name in rule_names:
-                discount_html += f"<br>&nbsp;&nbsp;・{r_name}"
+            # ルール名を「|」で結合し、URLエンコードしてhrefに埋め込む
+            joined_names = "|".join(rule_names)
+            encoded_names = urllib.parse.quote(joined_names)
+            count = len(rule_names)
+            
+            # リンクの生成 (detailsスキーム)
+            discount_html = (
+                f"<br><span style='color:#ffeb3b'>★ {count}件の割引対象 "
+                f"<a href='discount_details:{encoded_names}' style='color:#ffffff; text-decoration:underline; font-weight:bold;'>(詳細...)</a></span>"
+            )
 
         # 3. カート追加処理
         for item in self.cart_items:
@@ -307,11 +311,9 @@ class CartService(QObject):
         self.stats_updated.emit(self.total_sales_today, self.current_expenses, est_profit, msg, is_red)
    
     def is_discount_target(self, product_id: int) -> bool:
-        """商品が何らかの割引対象になり得るか判定（バッジ表示用）"""
+        """バッジ表示用"""
         product = self.prod_repo.get_product_by_id(product_id)
         if not product: return False
-        
-        # 新しいロジックを再利用
         rule_names = self.get_applicable_rule_names(product)
         return len(rule_names) > 0
 

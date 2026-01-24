@@ -1,8 +1,10 @@
+import urllib.parse
 from typing import List
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QLabel, QPushButton, QMessageBox)
+                               QHeaderView, QLabel, QPushButton, QMessageBox, 
+                               QDialog, QListWidget, QAbstractItemView) # ★追加
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from app.services.cart_service import CartService
 
 class CartWidget(QWidget):
@@ -19,12 +21,14 @@ class CartWidget(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. 案内ウィンドウ (拡張版)
-        # 以前の QLabel から設定を変更
+        # 1. 案内ウィンドウ (HTMLリンク対応)
         self.info_box = QLabel("いらっしゃいませ")
-        self.info_box.setFixedHeight(85) # 3行分程度確保
-        self.info_box.setAlignment(Qt.AlignTop | Qt.AlignLeft) # 左上詰め
-        self.info_box.setWordWrap(True) # 折り返し有効
+        self.info_box.setFixedHeight(85)
+        self.info_box.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.info_box.setWordWrap(True)
+        self.info_box.setOpenExternalLinks(False) # 外部ブラウザで開かせない
+        self.info_box.linkActivated.connect(self._on_link_activated) # ★リンクハンドラ接続
+        
         self.info_box.setStyleSheet("""
             background-color: #37474f; 
             color: #fff; 
@@ -138,7 +142,7 @@ class CartWidget(QWidget):
 
         self.cart_table.blockSignals(False)
         
-        # --- 割引テーブル描画 ---
+        # 割引テーブル描画
         discounts = self.cart_service.applied_discounts
         self.discount_table.setRowCount(len(discounts))
         for i, d in enumerate(discounts):
@@ -174,9 +178,6 @@ class CartWidget(QWidget):
             self._render_cart()
 
     def _update_message(self, text: str, msg_type: str) -> None:
-        # ★修正: 以前はスタイル全体を上書きしていましたが、
-        # 初期化時に設定した基本スタイルを維持しつつ、枠線色などを変更します。
-        
         border_color = "#90caf9" if msg_type == "info" else "#ff5252"
         bg_color = "#37474f" if msg_type == "info" else "#5d4037"
         
@@ -187,6 +188,46 @@ class CartWidget(QWidget):
             padding: 8px;
             font-size: 14px;
         """)
-        
-        # HTMLタグが使えるようにテキストをセット
         self.info_box.setText(text)
+
+    # ★追加: リンククリック時の処理
+    def _on_link_activated(self, link: str):
+        if link.startswith("discount_details:"):
+            # データをデコードしてリスト化
+            encoded_data = link.replace("discount_details:", "")
+            decoded_data = urllib.parse.unquote(encoded_data)
+            rules = decoded_data.split("|")
+            
+            self._show_discount_details(rules)
+
+    # ★追加: 詳細ポップアップ表示
+    def _show_discount_details(self, rules: List[str]):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("対象の割引ルール")
+        dlg.setFixedSize(300, 250)
+        dlg.setStyleSheet("background-color: #424242; color: white;")
+        
+        layout = QVBoxLayout(dlg)
+        
+        lbl = QLabel("この商品に適用可能な割引:")
+        lbl.setStyleSheet("font-weight: bold; margin-bottom: 5px;")
+        layout.addWidget(lbl)
+        
+        lst = QListWidget()
+        lst.addItems(rules)
+        lst.setStyleSheet("""
+            QListWidget { background-color: #333; border: 1px solid #666; font-size: 14px; }
+            QListWidget::item { padding: 5px; }
+        """)
+        lst.setSelectionMode(QAbstractItemView.NoSelection) # 選択不可
+        layout.addWidget(lst)
+        
+        btn = QPushButton("閉じる")
+        btn.setStyleSheet("""
+            QPushButton { background-color: #0277bd; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }
+            QPushButton:hover { background-color: #039be5; }
+        """)
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn)
+        
+        dlg.exec()
