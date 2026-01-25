@@ -1,6 +1,6 @@
 from typing import List, Tuple, Optional
 import json
-import urllib.parse  # ★追加: URLエンコード用
+import urllib.parse
 from PySide6.QtCore import QObject, Signal
 
 # Models
@@ -72,7 +72,7 @@ class CartService(QObject):
         return int(total_p / count) if count > 0 else 1000
 
     def get_applicable_rule_names(self, product: Product) -> List[str]:
-        """商品に適用可能な割引ルール名を取得（カート全体割引を除く）"""
+        """商品に適用可能な割引ルール名を取得"""
         rules = self.disc_repo.fetch_active_rules()
         names = []
         
@@ -111,33 +111,31 @@ class CartService(QObject):
     def add_product(self, product: Product):
         """商品リストからの追加"""
         
-        # 1. 備考メッセージ (明るい水色)
+        # UIメッセージ用
         note_html = ""
         if product.note:
             note_html = f"<br><span style='color:#81d4fa'>※ {product.note}</span>"
             
-        # 2. 割引対象リンク作成 (方針D: データ埋め込みリンク)
         discount_html = ""
         rule_names = self.get_applicable_rule_names(product)
         if rule_names:
-            # ルール名を「|」で結合し、URLエンコードしてhrefに埋め込む
             joined_names = "|".join(rule_names)
             encoded_names = urllib.parse.quote(joined_names)
             count = len(rule_names)
-            
-            # リンクの生成 (detailsスキーム)
             discount_html = (
                 f"<br><span style='color:#ffeb3b'>★ {count}件の割引対象 "
                 f"<a href='discount_details:{encoded_names}' style='color:#ffffff; text-decoration:underline; font-weight:bold;'>(詳細...)</a></span>"
             )
 
-        # 3. カート追加処理
         for item in self.cart_items:
             if item.id == product.id:
                 item.qty += 1
                 self.recalculate()
+                
                 msg = f"<b>{item.name}</b> を追加しました (計{item.qty}個){note_html}{discount_html}"
                 self._notify_message(msg, "info")
+                # ★追加: DBログ
+                self.log_repo.add_log("info", f"カート追加: {item.name} (計{item.qty}個)")
                 return
         
         new_item = CartItem(
@@ -152,6 +150,8 @@ class CartService(QObject):
         
         msg = f"<b>{product.name}</b> をカートに入れました{note_html}{discount_html}"
         self._notify_message(msg, "info")
+        # ★追加: DBログ
+        self.log_repo.add_log("info", f"カート追加: {product.name}")
 
     def add_manual_item(self, price: int, name: str):
         new_item = CartItem(
@@ -164,23 +164,33 @@ class CartService(QObject):
         )
         self.cart_items.append(new_item)
         self.recalculate()
+        
         self._notify_message(f"手入力追加: {name} (¥{price})", "info")
+        # ★追加: DBログ
+        self.log_repo.add_log("info", f"手入力追加: {name} (¥{price})")
 
     def remove_item(self, index: int):
         if 0 <= index < len(self.cart_items):
             item = self.cart_items.pop(index)
             self.recalculate()
+            
             self._notify_message(f"削除: {item.name}", "warning")
+            # ★追加: DBログ
+            self.log_repo.add_log("info", f"カート削除: {item.name}")
 
     def update_item_qty(self, index: int, qty: int):
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
+            old_qty = item.qty
             if qty > 0:
                 item.qty = qty
                 self._notify_message(f"数量変更: {item.name} -> {qty}個", "info")
+                # ★追加: DBログ
+                self.log_repo.add_log("info", f"数量変更: {item.name} ({old_qty}->{qty})")
             else:
                 self.cart_items.pop(index)
                 self._notify_message(f"削除: {item.name}", "warning")
+                self.log_repo.add_log("info", f"カート削除(数量0): {item.name}")
             self.recalculate()
 
     def decrease_item_qty(self, index: int):
@@ -195,9 +205,11 @@ class CartService(QObject):
                 item.qty = new_qty
                 msg = "数量追加" if delta > 0 else "数量減少"
                 self._notify_message(f"{msg}: {item.name} (計{new_qty}個)", "info")
+                self.log_repo.add_log("info", f"{msg}: {item.name} (計{new_qty}個)")
             else:
                 self.cart_items.pop(index)
                 self._notify_message(f"削除: {item.name}", "warning")
+                self.log_repo.add_log("info", f"カート削除: {item.name}")
                 
             self.recalculate()
 
@@ -207,7 +219,10 @@ class CartService(QObject):
             old_price = item.price
             item.price = new_price
             self.recalculate()
+            
             self._notify_message(f"単価変更: {item.name} (¥{old_price}→¥{new_price})", "info")
+            # ★追加: DBログ
+            self.log_repo.add_log("info", f"単価変更: {item.name} (¥{old_price}→¥{new_price})")
 
     def refresh_prices(self, active_products: List[Product]):
         product_map = {p.id: p.price for p in active_products}
@@ -220,18 +235,21 @@ class CartService(QObject):
         if updated:
             self.recalculate()
             self._notify_message("商品マスタに合わせて価格を更新しました", "info")
+            self.log_repo.add_log("info", "カート内単価更新(マスタ同期)")
 
     def clear_cart(self):
         self.cart_items = []
         self.applied_discounts = []
         self.recalculate()
         self._notify_message("カートをクリアしました", "warning")
+        self.log_repo.add_log("info", "カートクリア")
 
     def set_user(self, user_name: str, role: str = "staff"):
         self.current_user_name = user_name
         self.current_user_role = role
         self.user_changed.emit(user_name)
         self._notify_message(f"担当者変更: {user_name}", "info")
+        self.log_repo.add_log("info", f"担当者変更: {user_name}")
 
     def set_current_user(self, user_name: str):
         self.set_user(user_name)
@@ -242,6 +260,7 @@ class CartService(QObject):
         self.recalculate()
         if customer:
             self._notify_message(f"客層選択: {customer.label}", "info")
+            self.log_repo.add_log("info", f"客層選択: {customer.label}")
         else:
             self._notify_message("客層選択を解除しました", "info")
 
@@ -251,55 +270,92 @@ class CartService(QObject):
         return max(0, sub_prod + sub_disc)
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
+        """会計確定処理"""
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
         
         total = self.get_total_amount()
         
-        # 明細・決済リスト作成・保存処理 (変更なし)
+        # 1. 明細リスト作成
         tx_items: List[TransactionItem] = []
         for item in self.cart_items:
-            tx_items.append(TransactionItem(None, None, item.name, item.price, item.qty, item.price * item.qty))
+            tx_items.append(TransactionItem(
+                id=None, 
+                transaction_id=None,
+                product_name=item.name,
+                unit_price=item.price,
+                quantity=item.qty,
+                subtotal=item.price * item.qty
+            ))
+            
         for d in self.applied_discounts:
             qty = d.qty if d.qty > 0 else 1
             total_disc = d.amount
             unit_price = int(total_disc / qty)
-            tx_items.append(TransactionItem(None, None, d.name, unit_price, qty, total_disc))
 
+            tx_items.append(TransactionItem(
+                id=None, 
+                transaction_id=None,
+                product_name=d.name,
+                unit_price=unit_price,
+                quantity=qty,
+                subtotal=total_disc
+            ))
+
+        # 2. 決済リスト作成
         tx_payments: List[TransactionPayment] = []
         remaining_change = change
+        
         for method, amount in payments:
             actual_pay = amount
             if remaining_change > 0 and amount >= remaining_change:
                 actual_pay = amount - remaining_change
                 remaining_change = 0
+            
             if actual_pay > 0:
-                tx_payments.append(TransactionPayment(None, None, method, actual_pay))
+                tx_payments.append(TransactionPayment(
+                    id=None, 
+                    transaction_id=None,
+                    payment_method=method,
+                    amount=actual_pay
+                ))
 
+        # 3. ヘッダー作成 (キーワード引数で明示)
         current_customer_name = self.selected_customer.label
+        
         transaction = Transaction(
-            None, total, change, current_customer_name, self.current_user_name, tx_items, tx_payments
+            id=None,
+            total_amount=total,
+            change=change,
+            customer_label=current_customer_name,
+            cashier_name=self.current_user_name,
+            status="completed",
+            items=tx_items,
+            payments=tx_payments
         )
 
+        # 保存実行
         self.trans_repo.save(transaction)
+        
+        # 状態更新
         self.total_sales_today += total
         grand_total = self.get_total_amount()
 
+        # カートクリア
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
         
         self.checkout_completed.emit(grand_total, change, current_customer_name)
         self.recalculate()
+        
         self.log_repo.add_log("info", f"会計完了: ¥{total}")
 
     def recalculate(self):
         rules = self.disc_repo.fetch_active_rules()
         self.applied_discounts = self.discount_manager.calculate_discounts(self.cart_items, rules)
-        
         grand_total = self.get_total_amount()
-        
         self.cart_updated.emit()
         
         est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
