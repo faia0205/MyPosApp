@@ -7,35 +7,6 @@ class PriceCalculator:
     def calculate_items_subtotal(self, items: List[CartItem]) -> int:
         return sum(item.price * item.qty for item in items)
 
-    def process_discounts(self, items: List[CartItem], rules: List[Dict]) -> List[Dict]:
-        """
-        ※このメソッドはDiscountManagerにロジックが移行していますが、
-          簡易計算用に残す場合の互換性を維持します。
-        """
-        applied_discounts = []
-        for rule in rules:
-            target_count = 0
-            for item in items:
-                # item.id アクセスに変更
-                if item.id is not None and item.id in rule.get('target_ids', []):
-                    target_count += item.qty
-            
-            req = rule.get('req', 9999)
-            apply_times = target_count // req
-            
-            if apply_times > 0:
-                applied_discounts.append({
-                    'name': rule['name'],
-                    'amount': rule.get('amt', 0),
-                    'qty': apply_times
-                })
-        return applied_discounts
-
-    def calculate_grand_total(self, items: List[CartItem], discounts: List[Dict]) -> int:
-        subtotal = self.calculate_items_subtotal(items)
-        discount_total = sum(d['amount'] * d['qty'] for d in discounts)
-        return subtotal + discount_total
-
     def calculate_profit_metrics(self, current_total: int, total_sales_today: int, 
                                  current_expenses: int, avg_price_target: int) -> Tuple[int, bool, str]:
         # このロジックは依存がないので変更なし

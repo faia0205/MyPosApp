@@ -304,7 +304,7 @@
         },
         {
             "id": 5,
-            "name": "たこ焼きドリンクセット100円引き",
+            "name": "",
             "discount_type": "fixed",
             "discount_value": 100,
             "apply_type": "bundle",

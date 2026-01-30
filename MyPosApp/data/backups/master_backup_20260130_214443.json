@@ -300,7 +300,7 @@
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"select\", \"qty\": 4, \"targets\": [\"フード\"]}",
             "is_auto": true,
-            "is_active": false
+            "is_active": true
         },
         {
             "id": 5,

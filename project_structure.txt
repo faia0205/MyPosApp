@@ -118,3 +118,7 @@ Root: MyPosApp/
             master_backup_20260124_172050.json
             master_backup_20260124_184508.json
             master_backup_20260130_202042.json
+            master_backup_20260130_214305.json
+            master_backup_20260130_214334.json
+            master_backup_20260130_214432.json
+            master_backup_20260130_214443.json
