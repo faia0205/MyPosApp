@@ -9,10 +9,17 @@ Root: MyPosApp/
             calculator.py
             discount_manager.py
             strategies/
+                __init__.py
+                bundle_strategy.py
+                cart_strategy.py
+                category_strategy.py
+                discount_strategy.py
+                item_strategy.py
         models/
             __init__.py
             cart_item.py
             customer.py
+            discount.py
             expense.py
             payment_method.py
             product.py
@@ -34,6 +41,7 @@ Root: MyPosApp/
             __init__.py
             analytics_service.py
             cart_service.py
+            checkout_service.py
             master_data_service.py
         utils/
             __init__.py
@@ -60,6 +68,7 @@ Root: MyPosApp/
                 product_edit_dialog.py
                 user_edit_dialog.py
             settings_tabs/
+                base_setting_tab.py
                 customer_setting_tab.py
                 discount_setting_tab.py
                 expense_setting_tab.py
@@ -105,3 +114,7 @@ Root: MyPosApp/
             master_backup_20260123_174523.json
             master_backup_20260124_090937.json
             master_backup_20260124_091115.json
+            master_backup_20260124_171625.json
+            master_backup_20260124_172050.json
+            master_backup_20260124_184508.json
+            master_backup_20260130_202042.json

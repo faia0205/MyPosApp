@@ -23,6 +23,9 @@ from app.repositories.log_repo import LogRepository
 from app.logic.calculator import PriceCalculator
 from app.logic.discount_manager import DiscountManager
 
+# services
+from app.services.checkout_service import CheckoutService
+
 class CartService(QObject):
     cart_updated = Signal()
     message_updated = Signal(str, str)
@@ -31,19 +34,28 @@ class CartService(QObject):
     user_changed = Signal(str)
     customer_selected = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, 
+                 prod_repo: ProductRepository,
+                 disc_repo: DiscountRepository,
+                 discount_manager: DiscountManager,
+                 checkout_service: CheckoutService,
+                 user_repo: UserRepository,     # 必要なRepoは注入
+                 expense_repo: ExpenseRepository,
+                 payment_repo: PaymentRepository, # PaymentDialog呼び出し等で使う場合
+                 log_repo: LogRepository
+                 ) -> None:
         super().__init__()
-        self.trans_repo = TransactionRepository()
-        self.expense_repo = ExpenseRepository()
-        self.payment_repo = PaymentRepository()
+        self.expense_repo = expense_repo
+        self.payment_repo = payment_repo
 
-        self.user_repo = UserRepository()
-        self.prod_repo = ProductRepository()
-        self.disc_repo = DiscountRepository()
-        self.log_repo = LogRepository()
+        self.user_repo = user_repo
+        self.prod_repo = prod_repo
+        self.disc_repo = disc_repo
+        self.log_repo = log_repo
         
+        self.discount_manager = discount_manager
+        self.checkout_service = checkout_service
         self.calculator = PriceCalculator()
-        self.discount_manager = DiscountManager()
         
         self.cart_items: List[CartItem] = []
         self.applied_discounts: List[AppliedDiscount] = []
@@ -56,10 +68,18 @@ class CartService(QObject):
         self.current_expenses = 0
         self.avg_price_target = 0
         
+        self.trans_repo = None
+
         self._init_sales_data()
 
     def _init_sales_data(self):
-        self.total_sales_today = self.trans_repo.get_total_sales_today()
+        # TransactionRepoへの依存をCheckoutService経由または別途注入されたRepoから取得
+        # ここでは簡易的に self.checkout_service.trans_repo を参照するか、
+        # main_windowで初期値をセットする設計に変更が望ましいが、
+        # 今回は trans_repo が checkout_service 内にあるため、読み取り専用として別途注入が必要か、
+        # checkout_service に get_total_sales_today を持たせる。
+        # リファクタリングの範囲を広げすぎないよう、checkout_service.trans_repo を使う
+        self.total_sales_today = self.checkout_service.trans_repo.get_total_sales_today()
         self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
 
@@ -336,21 +356,19 @@ class CartService(QObject):
         )
 
         # 保存実行
-        self.trans_repo.save(transaction)
+        self.checkout_service.process_checkout(transaction)
         
         # 状態更新
         self.total_sales_today += total
-        grand_total = self.get_total_amount()
 
         # カートクリア
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
         
-        self.checkout_completed.emit(grand_total, change, current_customer_name)
+        self.checkout_completed.emit(total, change, current_customer_name)
         self.recalculate()
         
-        self.log_repo.add_log("info", f"会計完了: ¥{total}")
 
     def recalculate(self):
         rules = self.disc_repo.fetch_active_rules()

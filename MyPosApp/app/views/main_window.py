@@ -1,15 +1,31 @@
 from typing import Dict
-from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QFrame, QLabel, QPushButton, QMessageBox, 
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                               QFrame, QLabel, QPushButton, QMessageBox,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from app.services.cart_service import CartService
+# Repositories
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
 
+# [cite_start]Service/Logic [cite: 159, 122, 20]
+from app.services.cart_service import CartService
+from app.services.checkout_service import CheckoutService
+from app.logic.discount_manager import DiscountManager
+
+# [cite_start]Strategies [cite: 25, 30, 32, 35]
+from app.logic.strategies.item_strategy import ItemDiscountStrategy
+from app.logic.strategies.category_strategy import CategoryDiscountStrategy
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
+from app.logic.strategies.cart_strategy import CartDiscountStrategy
+
+# Views
 from app.views.components.cart_widget import CartWidget
 from app.views.components.product_list_widget import ProductListWidget
 from app.views.components.customer_panel import CustomerPanel
@@ -26,16 +42,50 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setStyleSheet("QMainWindow { background-color: #2b2b2b; } QWidget { color: #ffffff; }")
 
-        # サービス・リポジトリ
-        self.cart_service = CartService()
-        self.trans_repo = TransactionRepository()
-        self.payment_repo = PaymentRepository()
-        self.prod_repo = ProductRepository()
+        # --- 依存関係の構築 (Composition Root) ---
         
+        # 1. Repositories (データアクセス層)
+        self.trans_repo = TransactionRepository()
+        self.prod_repo = ProductRepository()
+        self.payment_repo = PaymentRepository()
+        self.disc_repo = DiscountRepository()
+        self.user_repo = UserRepository()
+        self.expense_repo = ExpenseRepository()
+        self.log_repo = LogRepository()
+
+        # 2. Strategies (割引ロジックの部品)
+        strategies = {
+            'item': ItemDiscountStrategy(),
+            'category': CategoryDiscountStrategy(),
+            'bundle': BundleDiscountStrategy(),
+            'cart': CartDiscountStrategy()
+        }
+        
+        # 3. Manager (ロジック統括)
+        # [cite_start]Strategyを注入してManagerを生成 [cite: 20]
+        self.discount_manager = DiscountManager(strategies)
+
+        # 4. Services (アプリケーション層)
+        # [cite_start]CheckoutServiceにRepoを注入 [cite: 122]
+        self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
+        
+        # [cite_start]CartServiceに全ての依存関係を注入 (DI) [cite: 103]
+        self.cart_service = CartService(
+            prod_repo=self.prod_repo,
+            disc_repo=self.disc_repo,
+            discount_manager=self.discount_manager,
+            checkout_service=self.checkout_service,
+            user_repo=self.user_repo,
+            expense_repo=self.expense_repo,
+            payment_repo=self.payment_repo,
+            log_repo=self.log_repo
+        )
+
+        # UI初期化
         self._init_ui()
         self._connect_signals()
         
-        # 初期表示
+        # 初期表示（ログイン）
         self._show_login_dialog()
 
     def _init_ui(self) -> None:
@@ -57,7 +107,7 @@ class MainWindow(QMainWindow):
             self.lbl_stats[key] = lbl
         
         header_layout.addStretch()
-        
+
         self.btn_cashier = QPushButton("担当: ---")
         self.btn_cashier.setFont(QFont("Meiryo", 10, QFont.Bold))
         self.btn_cashier.setStyleSheet("QPushButton { color: #bbb; background-color: transparent; border: 1px solid #555; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #444; color: white; }")
@@ -65,7 +115,7 @@ class MainWindow(QMainWindow):
         self.btn_cashier.setFocusPolicy(Qt.NoFocus)
         self.btn_cashier.clicked.connect(self._show_login_dialog)
         header_layout.addWidget(self.btn_cashier)
-        
+
         btn_admin = QPushButton("管理・分析")
         btn_admin.setFixedSize(100, 30)
         btn_admin.setStyleSheet("background-color: #607d8b; color: white; border: none; font-weight: bold;")
@@ -78,7 +128,7 @@ class MainWindow(QMainWindow):
         btn_settings.setStyleSheet("background-color: #546e7a; color: white; border: none;")
         btn_settings.clicked.connect(self._open_settings_window)
         header_layout.addWidget(btn_settings)
-           
+
         main_layout.addWidget(self.header_frame)
 
         # --- ボディ ---
@@ -122,11 +172,7 @@ class MainWindow(QMainWindow):
         self.cart_service.stats_updated.connect(self._update_stats)
         self.cart_service.checkout_completed.connect(self._on_checkout_completed)
         self.cart_service.user_changed.connect(lambda n: self.btn_cashier.setText(f"担当: {n}"))
-        
-        # カートの内容が変わったときにもボタン状態をチェック (客層選択済みでカートを空にした場合などのため)
         self.cart_service.cart_updated.connect(self._check_checkout_button)
-
-        # ★追加: 客層が選択されたら即座にボタン状態をチェック
         self.cart_service.customer_selected.connect(self._check_checkout_button)
 
     def _check_checkout_button(self):
@@ -151,8 +197,8 @@ class MainWindow(QMainWindow):
         if total <= 0: return
         
         methods = self.payment_repo.fetch_all()
-        
         dialog = PaymentDialog(total, methods, self)
+        
         if dialog.exec():
             payments, change = dialog.get_result()
             self.cart_service.finalize_checkout(payments, change)
@@ -164,7 +210,6 @@ class MainWindow(QMainWindow):
             f"お釣り: ¥{change:,}\n"
             f"客層: {customer_name}\n"
         )
-        
         QMessageBox.information(self, "完了", msg_text)
         self.cart_service.reset_message()
         self._check_checkout_button()
@@ -188,15 +233,16 @@ class MainWindow(QMainWindow):
         btns.accepted.connect(dialog.accept)
         btns.rejected.connect(dialog.reject)
         layout.addWidget(btns)
+        
         if dialog.exec():
             val = price_input.value()
             if val > 0:
                 self.cart_service.add_manual_item(val, name_input.text() or "手入力")
-    
+
     def _open_admin_window(self) -> None:
         admin = AdminWindow(self)
         admin.exec()
-    
+
     def _show_login_dialog(self):
         dialog = LoginDialog(self)
         if dialog.exec():
@@ -204,24 +250,13 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
-    
-    def _open_settings_window(self):
-        """設定画面を開く"""
-        win = SettingsWindow(self)
-        win.exec() # 画面が閉じられるまでここで待機
 
-        # ★追加: 設定画面が閉じられたら、データを最新化する
-        
-        # 1. 商品価格の更新（設定で価格が変わっているかもしれないため）
+    def _open_settings_window(self):
+        win = SettingsWindow(self)
+        win.exec()
+        # 設定画面から戻ったらデータをリフレッシュ
         active_products = self.prod_repo.fetch_active_products()
         self.cart_service.refresh_prices(active_products)
-        
-        # 2. 割引ルールの再適用（設定でルールが変わっているかもしれないため）
         self.cart_service.recalculate()
-
-        # 3. 商品リストと客層パネルのボタン再描画（色や名称の変更反映）
         self.product_list_widget.refresh_data()
-        self.customer_panel.refresh_data() # (CustomerPanel作成済みの場合)
-        
-        # 4. ログアウトされた場合に備えて担当者表示更新（もし設定画面でユーザー操作した場合）
-        # self.btn_cashier.setText(...) # 必要なら
+        self.customer_panel.refresh_data()

@@ -333,12 +333,19 @@ import json
 import math
 from typing import List, Dict, Tuple
 from app.models.cart_item import CartItem
+from app.models.discount import DiscountRule, AppliedDiscount
+from app.logic.strategies.discount_strategy import DiscountStrategy # 追加
 
 class DiscountManager:
-    """割引計算ロジック（オブジェクト対応版）"""
+    """割引計算ロジック（Strategyパターン適用版）"""
 
-    def calculate_discounts(self, cart_items: List[CartItem], rules: List[Dict]) -> List[Dict]:
-        # 1. 計算用に在庫リストを作成 (Dict変換して管理)
+    def __init__(self, strategies: Dict[str, DiscountStrategy]):
+        # Strategyを注入
+        self.strategies = strategies
+
+    def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
+        
+        # 1. 計算用に在庫リストを作成
         inventory = []
         for item in cart_items:
             if item.id is not None and item.price > 0:
@@ -350,158 +357,366 @@ class DiscountManager:
                     'qty': item.qty,
                     'original_item': item
                 })
-        
-        raw_discounts = []
-        
-        # 2. ルールの優先順位付け (変更なし)
+
+        applied_discounts: List[AppliedDiscount] = []
+
+        # 2. ルールの優先順位付け (バンドル > 商品 > カテゴリ > 全体)
         type_priority = {'bundle': 0, 'item': 1, 'category': 2, 'cart': 3}
         sorted_rules = sorted(rules, key=lambda r: (
-            type_priority.get(r['apply_type'], 99),
-            -r['discount_value'] 
+            type_priority.get(r.apply_type, 99),
+            -r.discount_value
         ))
 
-        # 3. ルール適用 (ロジックは既存維持だが、カート合計計算だけ修正)
+        # 3. ルール適用（バンドル・商品・カテゴリ）
         for rule in sorted_rules:
-            if not rule.get('is_auto', True): continue 
-
-            apply_type = rule['apply_type']
+            if not rule.is_auto: continue
             
-            if apply_type == 'bundle':
-                while True:
-                    consumed, discount_amt = self._try_apply_bundle(rule, inventory)
-                    if consumed and discount_amt > 0:
-                        raw_discounts.append({
-                            'rule_id': rule['id'],
-                            'name': rule['name'],
-                            'amount': -discount_amt,
-                            'qty': 1
-                        })
-                    else:
-                        break
+            # カート全体割引は後回し
+            if rule.apply_type == 'cart':
+                continue
 
-            elif apply_type in ['item', 'category']:
-                target = rule['target_value']
-                for inv_item in inventory:
-                    if inv_item['qty'] <= 0: continue
-                    
-                    is_hit = False
-                    if apply_type == 'item' and inv_item['name'] == target: is_hit = True
-                    elif apply_type == 'category' and inv_item['category'] == target: is_hit = True
-                    
-                    if is_hit:
-                        count = inv_item['qty']
-                        unit_discount = 0
-                        if rule['discount_type'] == 'fixed':
-                            unit_discount = rule['discount_value']
-                        else:
-                            unit_discount = math.floor(inv_item['price'] * (rule['discount_value'] / 100))
-                        
-                        if unit_discount > 0:
-                            total_discount = unit_discount * count
-                            raw_discounts.append({
-                                'rule_id': rule['id'],
-                                'name': rule['name'],
-                                'amount': -total_discount,
-                                'qty': count
-                            })
-                            inv_item['qty'] = 0
+            # Strategyの取得と実行
+            strategy = self.strategies.get(rule.apply_type)
+            if strategy:
+                results = strategy.apply(inventory, rule)
+                applied_discounts.extend(results)
 
-        # --- Cart全体割引 ---
-        # CartItemオブジェクトから計算
-        current_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
+        # 4. Cart全体割引の計算
         
-        for rule in sorted_rules:
-            if rule['apply_type'] == 'cart':
-                disc = 0
-                if rule['discount_type'] == 'fixed':
-                    disc = rule['discount_value']
-                else:
-                    disc = math.floor(current_total * (rule['discount_value'] / 100))
-                
-                if disc > 0:
-                    raw_discounts.append({
-                        'rule_id': rule['id'],
-                        'name': rule['name'],
-                        'amount': -disc,
-                        'qty': 1
-                    })
+        # 現在の小計を計算（定価合計 + 適用済み割引(マイナス値)）
+        gross_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
+        discount_sum_so_far = sum(d.amount for d in applied_discounts)
+        net_total = max(0, gross_total + discount_sum_so_far)
 
-        # 合算処理 (変更なし)
-        merged_map = {}
-        for d in raw_discounts:
-            rid = d['rule_id']
+        # カート割引の適用
+        cart_strategy = self.strategies.get('cart')
+        if cart_strategy:
+            for rule in sorted_rules:
+                if rule.apply_type == 'cart' and rule.is_auto:
+                    # Strategy適用
+                    results = cart_strategy.apply(inventory, rule, current_net_total=net_total)
+                    
+                    # カート割引の重複適用・残高チェック処理
+                    for res in results:
+                        current_disc_total = sum(d.amount for d in applied_discounts)
+                        current_remaining = max(0, gross_total + current_disc_total)
+                        
+                        # 割引額が残高を超えないように調整
+                        actual_disc = min(abs(res.amount), current_remaining)
+                        if actual_disc > 0:
+                            res.amount = -actual_disc
+                            applied_discounts.append(res)
+                            # ネット合計を更新して次のルールへ（累積適用の場合はここを調整）
+                            net_total = max(0, net_total - actual_disc)
+
+        # 5. 合算処理 (AppliedDiscountオブジェクト同士をマージ)
+        merged_map: Dict[int, AppliedDiscount] = {}
+        for d in applied_discounts:
+            rid = d.rule_id
             if rid in merged_map:
-                merged_map[rid]['amount'] += d['amount']
-                merged_map[rid]['qty'] += d['qty']
+                merged_map[rid].amount += d.amount
+                merged_map[rid].qty += d.qty
             else:
-                merged_map[rid] = d.copy()
+                merged_map[rid] = d
 
-        return [v for v in merged_map.values() if v['amount'] < 0]
+        return list(merged_map.values())
 
-    def _try_apply_bundle(self, rule, inventory) -> Tuple[bool, int]:
-        # 内部ロジックは inventory (dict list) を使うので変更不要
+    # _try_apply_bundle メソッドは BundleDiscountStrategy に移動したため削除
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\bundle_strategy.py
+==================================================
+
+import json
+import math
+from typing import List, Dict, Tuple
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class BundleDiscountStrategy(DiscountStrategy):
+    """
+    バンドル（セット）割引ロジック
+    JSON形式の target_value を解析し、条件に合う組み合わせがある限り適用を繰り返す。
+    """
+
+    def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
+        applied = []
+        
+        # 可能な限りセットを作成し続ける
+        while True:
+            # 1セット分の適用を試みる
+            consumed, discount_amt = self._try_apply_bundle(rule, inventory)
+            
+            if consumed and discount_amt > 0:
+                applied.append(AppliedDiscount(
+                    rule_id=rule.id,
+                    name=rule.name,
+                    amount=-discount_amt,
+                    qty=1 # 1セット分
+                ))
+            else:
+                # これ以上セットが作れなければ終了
+                break
+                
+        return applied
+
+    def _try_apply_bundle(self, rule: DiscountRule, inventory: List[Dict]) -> Tuple[bool, int]:
+        """
+        在庫から1セット分の商品を確保できるかチェックし、確保できれば在庫を減らして割引額を返す。
+        Returns: (成功フラグ, 割引額)
+        """
         try:
-            target_json = json.loads(rule['target_value'])
-        except:
+            target_json = json.loads(rule.target_value)
+        except Exception:
             return False, 0
 
         mode = target_json.get('mode', 'combo')
+        
+        # 仮の消費記録（インデックス: 消費数）
+        # まだ確定ではないので一時辞書に記録する
         temp_consumption = {}
-        total_price_in_bundle = 0
+        total_price_in_bundle = 0 # ％割引計算用に対象商品の合計額を算出
 
+        # --- パターンA: 選択式 (例: 対象商品A, B, C から好きなものを3個) ---
         if mode == 'select':
-            targets = target_json.get('targets', [])
+            targets = target_json.get('targets', []) # 対象の商品名またはカテゴリ名のリスト
             required_qty = int(target_json.get('qty', 0))
             current_picked = 0
             
             for idx, item in enumerate(inventory):
+                # 既にこの試行で消費予定の分を除いた残数
                 remaining = item['qty'] - temp_consumption.get(idx, 0)
+                
+                # 対象リストに含まれているか (名前 or カテゴリ)
                 if remaining > 0 and (item['name'] in targets or item['category'] in targets):
+                    # 必要数まで取得
                     take = min(remaining, required_qty - current_picked)
                     if take > 0:
                         temp_consumption[idx] = temp_consumption.get(idx, 0) + take
                         current_picked += take
                         total_price_in_bundle += item['price'] * take
-                    if current_picked >= required_qty: break
+                    
+                    if current_picked >= required_qty:
+                        break
             
-            if current_picked < required_qty: return False, 0
+            # 数が足りなければ失敗
+            if current_picked < required_qty:
+                return False, 0
 
+        # --- パターンB: 組み合わせ (例: 商品Aを1個 ＋ カテゴリBを2個) ---
         elif mode == 'combo':
             conditions = target_json.get('conditions', [])
+            
             for cond in conditions:
-                cond_target = cond['target']
-                cond_type = cond.get('type', 'item')
+                cond_target = cond['target'] # 名前またはカテゴリ名
+                cond_type = cond.get('type', 'item') # 'item' or 'category'
                 needed = int(cond.get('qty', 1))
                 
+                # 在庫を走査して必要な分を集める
                 for idx, item in enumerate(inventory):
                     remaining = item['qty'] - temp_consumption.get(idx, 0)
                     if remaining > 0:
                         is_match = False
-                        if cond_type == 'item' and item['name'] == cond_target: is_match = True
-                        elif cond_type == 'category' and item['category'] == cond_target: is_match = True
+                        if cond_type == 'item' and item['name'] == cond_target:
+                            is_match = True
+                        elif cond_type == 'category' and item['category'] == cond_target:
+                            is_match = True
                         
                         if is_match:
                             take = min(remaining, needed)
                             temp_consumption[idx] = temp_consumption.get(idx, 0) + take
                             needed -= take
                             total_price_in_bundle += item['price'] * take
-                    if needed <= 0: break
+                            
+                            if needed <= 0:
+                                break
                 
-                if needed > 0: return False, 0
+                # 条件を一つでも満たせなければ失敗
+                if needed > 0:
+                    return False, 0
 
+        # --- 確定処理 ---
+        # ここまで到達したらセット成立。実際に在庫(inventory)を減らす
         for idx, qty in temp_consumption.items():
             inventory[idx]['qty'] -= qty
-            
+
+        # 割引額の計算
         discount_amt = 0
-        if rule['discount_type'] == 'fixed':
-            discount_amt = rule['discount_value']
+        if rule.discount_type == 'fixed':
+            discount_amt = rule.discount_value
         else:
-            discount_amt = math.floor(total_price_in_bundle * (rule['discount_value'] / 100))
+            # 対象商品の合計金額に対する割合
+            discount_amt = math.floor(total_price_in_bundle * (rule.discount_value / 100))
 
         return True, discount_amt
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\__init__.py
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\cart_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class CartDiscountStrategy(DiscountStrategy):
+    """
+    カート合計に対する割引ロジック
+    他の割引が適用された後の「小計 (current_net_total)」に対して計算を行う。
+    """
+
+    def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
+        discount_amt = 0
+        
+        if rule.discount_type == 'fixed':
+            discount_amt = rule.discount_value
+        else:
+            # 小計に対するパーセンテージ
+            discount_amt = math.floor(current_net_total * (rule.discount_value / 100))
+
+        # 計算結果が0より大きければ適用候補として返す
+        # ※ 最終的なマイナスチェック（割引額 > 合計額）はManager側で制御されるが、
+        #    ここでは純粋な計算値を返却する。
+        if discount_amt > 0:
+            return [AppliedDiscount(
+                rule_id=rule.id,
+                name=rule.name,
+                amount=-discount_amt, # 負の値
+                qty=1
+            )]
+            
+        return []
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\category_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class CategoryDiscountStrategy(DiscountStrategy):
+    """特定のカテゴリに対する割引ロジック"""
+
+    def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
+        applied = []
+        target_category = rule.target_value # 対象のカテゴリ名
+        
+        for inv_item in inventory:
+            if inv_item['qty'] <= 0:
+                continue
+            
+            if inv_item['category'] == target_category:
+                count = inv_item['qty']
+                unit_discount = 0
+                
+                if rule.discount_type == 'fixed':
+                    unit_discount = rule.discount_value
+                else:
+                    unit_discount = math.floor(inv_item['price'] * (rule.discount_value / 100))
+                
+                if unit_discount > 0:
+                    total_discount = unit_discount * count
+                    
+                    applied.append(AppliedDiscount(
+                        rule_id=rule.id,
+                        name=rule.name,
+                        amount=-total_discount,
+                        qty=count
+                    ))
+                    
+                    # 在庫消費
+                    inv_item['qty'] = 0
+                    
+        return applied
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\discount_strategy.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class DiscountStrategy(ABC):
+    """
+    割引計算の戦略インターフェース
+    SOLID原則のOCP（開放閉鎖の原則）に基づき、
+    新しい割引ルールが増えてもこのインターフェースを実装するだけで対応可能にします。
+    """
+    
+    @abstractmethod
+    def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
+        """
+        割引ルールを適用し、結果を返すメソッド。
+        
+        Args:
+            inventory: 計算用の在庫リスト（辞書形式）。
+                       {'qty': int, ...} の値を直接書き換えて在庫消費を行います。
+            rule: 適用する割引ルール定義 (DBモデル)
+            current_net_total: 現在の小計（カート全体割引の計算用）
+
+        Returns:
+            List[AppliedDiscount]: 適用された割引のリスト
+        """
+        pass
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\item_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class ItemDiscountStrategy(DiscountStrategy):
+    """特定の商品に対する割引ロジック"""
+
+    def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
+        applied = []
+        target_name = rule.target_value # 対象の商品名
+        
+        for inv_item in inventory:
+            # 在庫がない、または対象外の商品はスキップ
+            if inv_item['qty'] <= 0:
+                continue
+            
+            if inv_item['name'] == target_name:
+                count = inv_item['qty']
+                unit_discount = 0
+                
+                # 割引額の計算
+                if rule.discount_type == 'fixed':
+                    unit_discount = rule.discount_value
+                else:
+                    # %割引 (端数は切り捨て)
+                    unit_discount = math.floor(inv_item['price'] * (rule.discount_value / 100))
+                
+                if unit_discount > 0:
+                    total_discount = unit_discount * count
+                    
+                    applied.append(AppliedDiscount(
+                        rule_id=rule.id,
+                        name=rule.name,
+                        amount=-total_discount, # 割引額は負の値
+                        qty=count
+                    ))
+                    
+                    # 計算上の在庫を全て消費済みにする
+                    inv_item['qty'] = 0
+                    
+        return applied
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\__init__.py
 ==================================================
 
 
@@ -557,6 +772,33 @@ class Customer:
     def set_attributes(self, data: dict):
         """辞書からJSON文字列を設定するヘルパー"""
         self.attributes_json = json.dumps(data, ensure_ascii=False)
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\discount.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class DiscountRule:
+    """割引ルール定義 (DB: discount_rules)"""
+    id: Optional[int]
+    name: str
+    discount_type: str      # 'fixed' (円) or 'percent' (%)
+    discount_value: int
+    apply_type: str         # 'cart', 'category', 'item', 'bundle'
+    target_value: str       # 対象識別子 (JSON文字列 または カテゴリ名/商品名)
+    is_auto: bool = False   # 自動適用するか
+    is_active: bool = True
+
+@dataclass
+class AppliedDiscount:
+    """計算結果として適用された割引"""
+    rule_id: int
+    name: str
+    amount: int  # 割引額（負の値。例: -100）
+    qty: int     # 適用セット数
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\expense.py
@@ -947,68 +1189,93 @@ class CustomerRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
 ==================================================
 
-from typing import List, Dict, Any
-import sqlite3
+from typing import List, Optional
 from app.repositories.base_repo import BaseRepository
+from app.models.discount import DiscountRule
 
 class DiscountRepository(BaseRepository):
-    """割引ルールのCRUD"""
+    """割引ルールのCRUD (Dataclass対応版)"""
 
-    def fetch_all_rules(self) -> List[Dict[str, Any]]:
+    def fetch_all_rules(self) -> List[DiscountRule]:
         """設定画面用: 全ルール取得"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
-            FROM discount_rules 
-            ORDER BY id
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
+                FROM discount_rules 
+                ORDER BY id
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
 
-    def fetch_active_rules(self) -> List[Dict[str, Any]]:
+    def fetch_active_rules(self) -> List[DiscountRule]:
         """販売画面用: 有効なルールのみ取得"""
-        conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        # ★修正: is_active=1 のデータを取得する際、is_auto も取得するように追加
-        cursor.execute("""
-            SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto 
-            FROM discount_rules 
-            WHERE is_active=1
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-
-    def add_rule(self, name, d_type, d_value, a_type, target, is_auto) -> bool:
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
+        with self.transaction() as (conn, cursor):
             cursor.execute("""
-                INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-            """, (name, d_type, int(d_value), a_type, target, int(is_auto)))
-            conn.commit()
-            return True
-        except: return False
-        finally: conn.close()
+                SELECT id, name, discount_type, discount_value, apply_type, target_value, is_auto, is_active 
+                FROM discount_rules 
+                WHERE is_active=1
+            """)
+            rows = cursor.fetchall()
+            return [self._map_to_model(row) for row in rows]
 
-    def update_rule(self, rule_id, name, d_type, d_value, a_type, target, is_auto, is_active) -> bool:
-        conn = self.get_connection()
-        cursor = conn.cursor()
+    def add(self, rule: DiscountRule) -> bool:
+        """ルールの追加"""
         try:
-            cursor.execute("""
-                UPDATE discount_rules 
-                SET name=?, discount_type=?, discount_value=?, apply_type=?, target_value=?, is_auto=?, is_active=?
-                WHERE id=?
-            """, (name, d_type, int(d_value), a_type, target, int(is_auto), int(is_active), rule_id))
-            conn.commit()
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    rule.name, 
+                    rule.discount_type, 
+                    rule.discount_value, 
+                    rule.apply_type, 
+                    rule.target_value, 
+                    int(rule.is_auto), 
+                    int(rule.is_active)
+                ))
             return True
-        except: return False
-        finally: conn.close()
+        except Exception as e:
+            print(f"Error adding discount rule: {e}")
+            return False
+
+    def update(self, rule: DiscountRule) -> bool:
+        """ルールの更新"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("""
+                    UPDATE discount_rules 
+                    SET name=?, discount_type=?, discount_value=?, apply_type=?, target_value=?, is_auto=?, is_active=?
+                    WHERE id=?
+                """, (
+                    rule.name, 
+                    rule.discount_type, 
+                    rule.discount_value, 
+                    rule.apply_type, 
+                    rule.target_value, 
+                    int(rule.is_auto), 
+                    int(rule.is_active), 
+                    rule.id
+                ))
+            return True
+        except Exception as e:
+            print(f"Error updating discount rule: {e}")
+            return False
+    
+    # 以前の add_rule / update_rule は廃止し、add / update に統合しました。
+
+    def _map_to_model(self, row) -> DiscountRule:
+        if row is None: return None
+        return DiscountRule(
+            id=row[0],
+            name=row[1],
+            discount_type=row[2],
+            discount_value=row[3],
+            apply_type=row[4],
+            target_value=row[5] if row[5] else "",
+            is_auto=bool(row[6]),
+            is_active=bool(row[7])
+        )
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
@@ -1531,7 +1798,7 @@ class AnalyticsService:
         total_sales = stats['sales']
         customer_count = stats['customer_count']
         
-        total_expenses = self.expense_repo.get_total_amount()
+        total_expenses = self.expense_repo.get_total_expenses()
         
         profit = total_sales - total_expenses
         payments = self.ana_repo.get_payment_summary()
@@ -1680,7 +1947,9 @@ class AnalyticsService:
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\cart_service.py
 ==================================================
 
-from typing import List, Dict, Tuple, Optional
+from typing import List, Tuple, Optional
+import json
+import urllib.parse
 from PySide6.QtCore import QObject, Signal
 
 # Models
@@ -1688,6 +1957,7 @@ from app.models.product import Product
 from app.models.customer import Customer
 from app.models.cart_item import CartItem
 from app.models.transaction import Transaction, TransactionItem, TransactionPayment
+from app.models.discount import AppliedDiscount
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -1702,6 +1972,9 @@ from app.repositories.log_repo import LogRepository
 from app.logic.calculator import PriceCalculator
 from app.logic.discount_manager import DiscountManager
 
+# services
+from app.services.checkout_service import CheckoutService
+
 class CartService(QObject):
     cart_updated = Signal()
     message_updated = Signal(str, str)
@@ -1710,42 +1983,56 @@ class CartService(QObject):
     user_changed = Signal(str)
     customer_selected = Signal(object)
 
-    def __init__(self) -> None:
+    def __init__(self, 
+                 prod_repo: ProductRepository,
+                 disc_repo: DiscountRepository,
+                 discount_manager: DiscountManager,
+                 checkout_service: CheckoutService,
+                 user_repo: UserRepository,     # 必要なRepoは注入
+                 expense_repo: ExpenseRepository,
+                 payment_repo: PaymentRepository, # PaymentDialog呼び出し等で使う場合
+                 log_repo: LogRepository
+                 ) -> None:
         super().__init__()
-        self.trans_repo = TransactionRepository()
-        self.expense_repo = ExpenseRepository()
-        self.payment_repo = PaymentRepository()
+        self.expense_repo = expense_repo
+        self.payment_repo = payment_repo
 
-        self.user_repo = UserRepository()
-        self.prod_repo = ProductRepository()
-        self.disc_repo = DiscountRepository()
-        self.log_repo = LogRepository()
+        self.user_repo = user_repo
+        self.prod_repo = prod_repo
+        self.disc_repo = disc_repo
+        self.log_repo = log_repo
         
+        self.discount_manager = discount_manager
+        self.checkout_service = checkout_service
         self.calculator = PriceCalculator()
-        self.discount_manager = DiscountManager()
         
         self.cart_items: List[CartItem] = []
-        self.applied_discounts: List[Dict] = []
+        self.applied_discounts: List[AppliedDiscount] = []
         
         self.current_user_name: str = "Admin"
         self.current_user_role: str = "admin"
         self.selected_customer: Optional[Customer] = None
         
-        # 統計用キャッシュ
         self.total_sales_today = 0
         self.current_expenses = 0
-        self.avg_price_target = 0 # 初期化
+        self.avg_price_target = 0
         
+        self.trans_repo = None
+
         self._init_sales_data()
 
     def _init_sales_data(self):
-        """起動時に本日の売上・経費・目標単価を取得"""
-        self.total_sales_today = self.trans_repo.get_total_sales_today()
+        # TransactionRepoへの依存をCheckoutService経由または別途注入されたRepoから取得
+        # ここでは簡易的に self.checkout_service.trans_repo を参照するか、
+        # main_windowで初期値をセットする設計に変更が望ましいが、
+        # 今回は trans_repo が checkout_service 内にあるため、読み取り専用として別途注入が必要か、
+        # checkout_service に get_total_sales_today を持たせる。
+        # リファクタリングの範囲を広げすぎないよう、checkout_service.trans_repo を使う
+        self.total_sales_today = self.checkout_service.trans_repo.get_total_sales_today()
         self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
 
     def _calculate_avg_price(self) -> int:
-        """全商品の平均単価を計算（目標客単価の目安）"""
         products = self.prod_repo.fetch_all_as_models()
         if not products:
             return 1000
@@ -1753,15 +2040,75 @@ class CartService(QObject):
         count = sum(1 for p in products if p.is_active)
         return int(total_p / count) if count > 0 else 1000
 
-    def add_item(self, product: Product):
+    def get_applicable_rule_names(self, product: Product) -> List[str]:
+        """商品に適用可能な割引ルール名を取得"""
+        rules = self.disc_repo.fetch_active_rules()
+        names = []
+        
+        for r in rules:
+            t_val = r.target_value
+            is_match = False
+            
+            if r.apply_type == 'cart':
+                continue
+            
+            if r.apply_type == 'category':
+                if t_val == product.category: is_match = True
+            elif r.apply_type == 'item':
+                if t_val == product.name: is_match = True
+            elif r.apply_type == 'bundle':
+                try:
+                    data = json.loads(t_val)
+                    if data.get('mode') == 'select':
+                        targets = data.get('targets', [])
+                        if product.name in targets or product.category in targets:
+                            is_match = True
+                    elif data.get('mode') == 'combo':
+                        for cond in data.get('conditions', []):
+                            c_target = cond.get('target')
+                            if c_target == product.name or c_target == product.category:
+                                is_match = True
+                                break
+                except:
+                    if t_val and product.name in t_val: is_match = True
+            
+            if is_match:
+                names.append(r.name)
+        
+        return names
+
+    def add_product(self, product: Product):
+        """商品リストからの追加"""
+        
+        # UIメッセージ用
+        note_html = ""
+        if product.note:
+            note_html = f"<br><span style='color:#81d4fa'>※ {product.note}</span>"
+            
+        discount_html = ""
+        rule_names = self.get_applicable_rule_names(product)
+        if rule_names:
+            joined_names = "|".join(rule_names)
+            encoded_names = urllib.parse.quote(joined_names)
+            count = len(rule_names)
+            discount_html = (
+                f"<br><span style='color:#ffeb3b'>★ {count}件の割引対象 "
+                f"<a href='discount_details:{encoded_names}' style='color:#ffffff; text-decoration:underline; font-weight:bold;'>(詳細...)</a></span>"
+            )
+
         for item in self.cart_items:
-            if item.product_id == product.id:
+            if item.id == product.id:
                 item.qty += 1
                 self.recalculate()
+                
+                msg = f"<b>{item.name}</b> を追加しました (計{item.qty}個){note_html}{discount_html}"
+                self._notify_message(msg, "info")
+                # ★追加: DBログ
+                self.log_repo.add_log("info", f"カート追加: {item.name} (計{item.qty}個)")
                 return
         
         new_item = CartItem(
-            product_id=product.id,
+            id=product.id,
             name=product.name,
             price=product.price,
             qty=1,
@@ -1769,58 +2116,138 @@ class CartService(QObject):
         )
         self.cart_items.append(new_item)
         self.recalculate()
+        
+        msg = f"<b>{product.name}</b> をカートに入れました{note_html}{discount_html}"
+        self._notify_message(msg, "info")
+        # ★追加: DBログ
+        self.log_repo.add_log("info", f"カート追加: {product.name}")
+
+    def add_manual_item(self, price: int, name: str):
+        new_item = CartItem(
+            id=None,
+            name=name,
+            price=price,
+            qty=1,
+            category="手入力",
+            is_manual=True
+        )
+        self.cart_items.append(new_item)
+        self.recalculate()
+        
+        self._notify_message(f"手入力追加: {name} (¥{price})", "info")
+        # ★追加: DBログ
+        self.log_repo.add_log("info", f"手入力追加: {name} (¥{price})")
 
     def remove_item(self, index: int):
         if 0 <= index < len(self.cart_items):
-            self.cart_items.pop(index)
+            item = self.cart_items.pop(index)
+            self.recalculate()
+            
+            self._notify_message(f"削除: {item.name}", "warning")
+            # ★追加: DBログ
+            self.log_repo.add_log("info", f"カート削除: {item.name}")
+
+    def update_item_qty(self, index: int, qty: int):
+        if 0 <= index < len(self.cart_items):
+            item = self.cart_items[index]
+            old_qty = item.qty
+            if qty > 0:
+                item.qty = qty
+                self._notify_message(f"数量変更: {item.name} -> {qty}個", "info")
+                # ★追加: DBログ
+                self.log_repo.add_log("info", f"数量変更: {item.name} ({old_qty}->{qty})")
+            else:
+                self.cart_items.pop(index)
+                self._notify_message(f"削除: {item.name}", "warning")
+                self.log_repo.add_log("info", f"カート削除(数量0): {item.name}")
             self.recalculate()
 
-    def update_qty(self, index: int, delta: int):
+    def decrease_item_qty(self, index: int):
+        self._change_qty_delta(index, -1)
+
+    def _change_qty_delta(self, index: int, delta: int):
         if 0 <= index < len(self.cart_items):
             item = self.cart_items[index]
             new_qty = item.qty + delta
+            
             if new_qty > 0:
                 item.qty = new_qty
+                msg = "数量追加" if delta > 0 else "数量減少"
+                self._notify_message(f"{msg}: {item.name} (計{new_qty}個)", "info")
+                self.log_repo.add_log("info", f"{msg}: {item.name} (計{new_qty}個)")
             else:
                 self.cart_items.pop(index)
+                self._notify_message(f"削除: {item.name}", "warning")
+                self.log_repo.add_log("info", f"カート削除: {item.name}")
+                
+            self.recalculate()
+
+    def update_item_price(self, index: int, new_price: int):
+        if 0 <= index < len(self.cart_items):
+            item = self.cart_items[index]
+            old_price = item.price
+            item.price = new_price
             self.recalculate()
             
+            self._notify_message(f"単価変更: {item.name} (¥{old_price}→¥{new_price})", "info")
+            # ★追加: DBログ
+            self.log_repo.add_log("info", f"単価変更: {item.name} (¥{old_price}→¥{new_price})")
+
+    def refresh_prices(self, active_products: List[Product]):
+        product_map = {p.id: p.price for p in active_products}
+        updated = False
+        for item in self.cart_items:
+            if item.id is not None and item.id in product_map:
+                if item.price != product_map[item.id]:
+                    item.price = product_map[item.id]
+                    updated = True
+        if updated:
+            self.recalculate()
+            self._notify_message("商品マスタに合わせて価格を更新しました", "info")
+            self.log_repo.add_log("info", "カート内単価更新(マスタ同期)")
+
     def clear_cart(self):
         self.cart_items = []
         self.applied_discounts = []
         self.recalculate()
+        self._notify_message("カートをクリアしました", "warning")
+        self.log_repo.add_log("info", "カートクリア")
 
-    def set_user(self, user_name: str, role: str):
+    def set_user(self, user_name: str, role: str = "staff"):
         self.current_user_name = user_name
         self.current_user_role = role
         self.user_changed.emit(user_name)
+        self._notify_message(f"担当者変更: {user_name}", "info")
+        self.log_repo.add_log("info", f"担当者変更: {user_name}")
+
+    def set_current_user(self, user_name: str):
+        self.set_user(user_name)
 
     def set_customer(self, customer: Optional[Customer]):
         self.selected_customer = customer
         self.customer_selected.emit(customer)
         self.recalculate()
+        if customer:
+            self._notify_message(f"客層選択: {customer.label}", "info")
+            self.log_repo.add_log("info", f"客層選択: {customer.label}")
+        else:
+            self._notify_message("客層選択を解除しました", "info")
 
     def get_total_amount(self) -> int:
         sub_prod = sum(item.price * item.qty for item in self.cart_items)
-        sub_disc = sum(d['amount'] for d in self.applied_discounts) # amountは負数
+        sub_disc = sum(d.amount for d in self.applied_discounts) 
         return max(0, sub_prod + sub_disc)
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
-        """
-        会計確定処理（Dataclass対応版）
-        """
+        """会計確定処理"""
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
         
         total = self.get_total_amount()
         
-        # --- Transactionオブジェクトの構築 ---
-        
-        # 1. 明細リスト作成 (TransactionItem)
+        # 1. 明細リスト作成
         tx_items: List[TransactionItem] = []
-        
-        # 商品明細
         for item in self.cart_items:
             tx_items.append(TransactionItem(
                 id=None, 
@@ -1831,32 +2258,26 @@ class CartService(QObject):
                 subtotal=item.price * item.qty
             ))
             
-        # 割引明細
         for d in self.applied_discounts:
-            # ゼロ除算防止
-            qty = d['qty'] if d['qty'] > 0 else 1
-            total_disc = d['amount'] # これはマイナスの値 (例: -200)
-            
-            # ★修正: 単価を計算 (例: -200 / 2 = -100)
-            # これにより「単価×数量=小計」の整合性が保たれる
+            qty = d.qty if d.qty > 0 else 1
+            total_disc = d.amount
             unit_price = int(total_disc / qty)
 
             tx_items.append(TransactionItem(
                 id=None, 
                 transaction_id=None,
-                product_name=d['name'],
+                product_name=d.name,
                 unit_price=unit_price,
                 quantity=qty,
                 subtotal=total_disc
             ))
 
-        # 2. 決済リスト作成 (TransactionPayment)
+        # 2. 決済リスト作成
         tx_payments: List[TransactionPayment] = []
         remaining_change = change
         
         for method, amount in payments:
             actual_pay = amount
-            # お釣りの分を現金等から差し引くロジック
             if remaining_change > 0 and amount >= remaining_change:
                 actual_pay = amount - remaining_change
                 remaining_change = 0
@@ -1869,7 +2290,7 @@ class CartService(QObject):
                     amount=actual_pay
                 ))
 
-        # 3. ヘッダー作成 (Transaction)
+        # 3. ヘッダー作成 (キーワード引数で明示)
         current_customer_name = self.selected_customer.label
         
         transaction = Transaction(
@@ -1878,45 +2299,32 @@ class CartService(QObject):
             change=change,
             customer_label=current_customer_name,
             cashier_name=self.current_user_name,
+            status="completed",
             items=tx_items,
             payments=tx_payments
         )
 
-        # --- 保存実行 ---
-        # オブジェクトを受け取る新しいsaveメソッドを使用
-        self.trans_repo.save(transaction)
+        # 保存実行
+        self.checkout_service.process_checkout(transaction)
         
-        # 状態更新・リセット
+        # 状態更新
         self.total_sales_today += total
-        
-        # レシート表示用などに最終合計金額を保持
-        grand_total = self.calculator.calculate_grand_total(self.cart_items, self.applied_discounts)
 
         # カートクリア
         self.cart_items = []
         self.applied_discounts = []
         self.selected_customer = None
         
-        # シグナル発火 (UI更新)
-        self.checkout_completed.emit(grand_total, change, current_customer_name)
+        self.checkout_completed.emit(total, change, current_customer_name)
         self.recalculate()
         
-        self.log_repo.add_log("info", f"会計完了: ¥{total}")
 
     def recalculate(self):
-        """カート状態の再計算とシグナル発火"""
-        # 1. 割引適用計算
         rules = self.disc_repo.fetch_active_rules()
         self.applied_discounts = self.discount_manager.calculate_discounts(self.cart_items, rules)
-        
-        # 2. 合計計算
         grand_total = self.get_total_amount()
-        
-        # 3. カート更新通知
         self.cart_updated.emit()
         
-        # 4. 統計更新通知 (客単価分析など)
-        # self.avg_price_target は __init__ で計算済み
         est_profit, is_red, msg = self.calculator.calculate_profit_metrics(
             grand_total,
             self.total_sales_today,
@@ -1924,33 +2332,48 @@ class CartService(QObject):
             self.avg_price_target
         )
         self.stats_updated.emit(self.total_sales_today, self.current_expenses, est_profit, msg, is_red)
-    
+   
     def is_discount_target(self, product_id: int) -> bool:
-        """商品が何らかの割引対象になり得るか判定（UIのバッジ表示用など）"""
-        # 簡易判定: 全ルールを見て対象かチェック
-        # (厳密にはDiscountManagerに問い合わせるべきだが、ここでは簡易実装)
-        rules = self.disc_repo.fetch_active_rules()
+        """バッジ表示用"""
         product = self.prod_repo.get_product_by_id(product_id)
         if not product: return False
-        
-        for r in rules:
-            t_val = r['target_value']
-            # カテゴリ一致 or 商品名一致
-            if (r['apply_type'] == 'category' and t_val == product.category):
-                return True
-            if (r['apply_type'] == 'item' and t_val == product.name):
-                return True
-            if (r['apply_type'] == 'bundle'):
-                # バンドル対象に含まれるか...解析が必要だが一旦略
-                if t_val and product.name in t_val: 
-                    return True
-        return False
+        rule_names = self.get_applicable_rule_names(product)
+        return len(rule_names) > 0
 
     def _notify_message(self, text: str, msg_type: str) -> None:
         self.message_updated.emit(text, msg_type)
 
     def reset_message(self):
         self._notify_message("次の会計をお願いします", "info")
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\checkout_service.py
+==================================================
+
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.log_repo import LogRepository
+from app.models.transaction import Transaction
+
+class CheckoutService:
+    """会計確定処理を担当するサービス"""
+    
+    def __init__(self, trans_repo: TransactionRepository, log_repo: LogRepository):
+        self.trans_repo = trans_repo
+        self.log_repo = log_repo
+
+    def process_checkout(self, transaction: Transaction) -> int:
+        """
+        トランザクションを保存し、ログを記録する
+        Returns:
+            new_transaction_id (int)
+        """
+        # DB保存
+        new_id = self.trans_repo.save(transaction)
+        
+        # ログ記録
+        self.log_repo.add_log("info", f"会計完了: ID {new_id} ¥{transaction.total_amount}")
+        
+        return new_id
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\master_data_service.py
@@ -1971,8 +2394,7 @@ from app.models.user import User
 from app.models.customer import Customer
 from app.models.payment_method import PaymentMethod
 from app.models.expense import Expense
-# Discountモデルは辞書管理の可能性があるため、必要に応じてインポート
-# from app.models.discount import DiscountRule 
+from app.models.discount import DiscountRule  # ★追加
 
 # Repositories
 from app.repositories.product_repo import ProductRepository
@@ -2046,8 +2468,10 @@ class MasterDataService:
                 d = asdict(ex)
                 expenses.append(d)
 
-            # 割引ルール (Repositoryの実装に合わせて取得)
-            discount_rules = self.disc_repo.fetch_all_rules()
+            # 割引ルール
+            # ★修正: fetch_all_rules() はオブジェクトを返すようになったため、asdictで変換が必要
+            discount_rules_objs = self.disc_repo.fetch_all_rules()
+            discount_rules = [asdict(r) for r in discount_rules_objs]
 
             # データ構築
             master_data = {
@@ -2098,12 +2522,10 @@ class MasterDataService:
 
         # --- A. Products (商品) ---
         for p in data.get("products", []):
-            # 名前で重複チェック (IDが変わっている可能性も考慮し、名前を正とする運用の場合)
-            # もしIDベースで同期したい場合は logic を変更してください
             exists_id = self.prod_repo.find_id_by_name(p["name"])
             
             target_product = Product(
-                id=exists_id, # 既存があればそのIDを使う
+                id=exists_id, 
                 name=p["name"],
                 price=p["price"],
                 category=p["category"],
@@ -2112,7 +2534,7 @@ class MasterDataService:
                 is_active=p.get("is_active", True),
                 display_order=p.get("display_order", 0)
             )
-            # 商品コード(barcode)がある場合はここでセット
+            # barcode対応
             if "barcode" in p:
                 target_product.barcode = p["barcode"]
 
@@ -2123,10 +2545,8 @@ class MasterDataService:
         
         # --- B. Users (ユーザー) ---
         for u in data.get("users", []):
-            # ユーザーコード等で検索するメソッドがあればそれを使うが、
-            # ここでは upsert_user (IDなしなら追加、ありなら更新) を想定
             target_user = User(
-                id=u.get("id"), # JSONのIDを信じるか、Noneにして新規採番させるかは運用次第
+                id=u.get("id"),
                 name=u["name"],
                 user_code=u["user_code"],
                 role=u.get("role", "staff"),
@@ -2135,35 +2555,26 @@ class MasterDataService:
             self.user_repo.upsert_user(target_user)
 
         # --- C. Payment Methods (決済方法) ---
-        # ★修正: TransactionRepoではなくPaymentRepoを使用
         for pm in data.get("payment_methods", []):
-            # 決済種別はシステム上重要なので、基本的にJSONの定義を正とします
             target_pm = PaymentMethod(
                 id=pm.get("id"),
                 name=pm["name"],
                 is_cash=pm.get("is_cash", False),
-                is_active=pm.get("is_active", True),
-                display_order=pm.get("display_order", 0)
+                is_active=pm.get("is_active", True)
             )
-            
-            # PaymentRepositoryに upsert 的な機能がない場合の実装例:
-            # ID指定で更新を試み、失敗(対象なし)なら追加
-            # ※ Repositoryの実装に依存しますが、ここでは一般的な update/add パターンで記述します
+            # 簡易upsertロジック
             if target_pm.id:
-                success = self.pay_repo.update(target_pm)
-                if not success:
+                if not self.pay_repo.update(target_pm):
                     self.pay_repo.add(target_pm)
             else:
                 self.pay_repo.add(target_pm)
 
         # --- D. Customer Presets (客層) ---
         for c in data.get("customer_presets", []):
-            # JSONのattributes(dict) -> DB保存用のattributes_json(str)への変換は
-            # Repository/Model側で吸収させるか、ここで変換する
             target_cust = Customer(
                 id=c.get("id"),
                 label=c["label"],
-                attributes_json="", # set_attributesで設定
+                attributes_json="", 
                 color=c.get("color", "#ffffff"),
                 display_order=c.get("display_order", 0),
                 is_active=c.get("is_active", True)
@@ -2177,27 +2588,30 @@ class MasterDataService:
                 self.cust_repo.add(target_cust)
 
         # --- E. Initial Expenses (経費項目) ---
-        for ex in data.get("initial_expenses", []):
-            target_exp = Expense(
-                id=ex.get("id"),
-                name=ex["name"],
-                amount=ex.get("amount", 0),
-                is_active=ex.get("is_active", True)
-                # 必要に応じて他のフィールド
-            )
-            # 経費項目も同様に同期
-            # idを持っていればupdate、なければadd
-            # (ExpenseRepositoryの実装に合わせて調整してください)
-            # ここではaddのみの例（重複チェックなし）になりがちなので注意が必要ですが
-            # マスタとして管理されているなら update/add を行います
-            # self.exp_repo.upsert(target_exp) # 仮定
-            pass 
+        # 起動時にJSONにある経費を追加するかは運用次第だが、
+        # ここではマスタ定義的なものがもしあれば追加するロジック（今回は省略または最小限）
+        pass 
 
         # --- F. Discount Rules (割引) ---
-        # 割引ルールは複雑なため、単純な同期が難しい場合がありますが、
-        # 基本的には全消し＆全追加、あるいはIDマッチングで行います
-        # ここではスキップ、または DiscountRepo の実装に合わせて記述
-        pass
+        # ★修正: 新しい DiscountRule オブジェクトを使って同期
+        for r in data.get("discount_rules", []):
+            target_rule = DiscountRule(
+                id=r.get('id'),
+                name=r['name'],
+                discount_type=r['discount_type'],
+                discount_value=r['discount_value'],
+                apply_type=r['apply_type'],
+                target_value=r.get('target_value', ""),
+                is_auto=bool(r.get('is_auto', False)),
+                is_active=bool(r.get('is_active', True))
+            )
+            
+            # Repositoryの実装に合わせて upsert 的な処理
+            if target_rule.id:
+                if not self.disc_repo.update(target_rule):
+                    self.disc_repo.add(target_rule)
+            else:
+                self.disc_repo.add(target_rule)
 
         print("Sync completed.")
 
@@ -2487,17 +2901,33 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 ==================================================
 
 from typing import Dict
-from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QFrame, QLabel, QPushButton, QMessageBox, 
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                               QFrame, QLabel, QPushButton, QMessageBox,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
-from app.services.cart_service import CartService
+# Repositories
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.product_repo import ProductRepository
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
 
+# [cite_start]Service/Logic [cite: 159, 122, 20]
+from app.services.cart_service import CartService
+from app.services.checkout_service import CheckoutService
+from app.logic.discount_manager import DiscountManager
+
+# [cite_start]Strategies [cite: 25, 30, 32, 35]
+from app.logic.strategies.item_strategy import ItemDiscountStrategy
+from app.logic.strategies.category_strategy import CategoryDiscountStrategy
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
+from app.logic.strategies.cart_strategy import CartDiscountStrategy
+
+# Views
 from app.views.components.cart_widget import CartWidget
 from app.views.components.product_list_widget import ProductListWidget
 from app.views.components.customer_panel import CustomerPanel
@@ -2514,16 +2944,50 @@ class MainWindow(QMainWindow):
         self.resize(1280, 800)
         self.setStyleSheet("QMainWindow { background-color: #2b2b2b; } QWidget { color: #ffffff; }")
 
-        # サービス・リポジトリ
-        self.cart_service = CartService()
-        self.trans_repo = TransactionRepository()
-        self.payment_repo = PaymentRepository()
-        self.prod_repo = ProductRepository()
+        # --- 依存関係の構築 (Composition Root) ---
         
+        # 1. Repositories (データアクセス層)
+        self.trans_repo = TransactionRepository()
+        self.prod_repo = ProductRepository()
+        self.payment_repo = PaymentRepository()
+        self.disc_repo = DiscountRepository()
+        self.user_repo = UserRepository()
+        self.expense_repo = ExpenseRepository()
+        self.log_repo = LogRepository()
+
+        # 2. Strategies (割引ロジックの部品)
+        strategies = {
+            'item': ItemDiscountStrategy(),
+            'category': CategoryDiscountStrategy(),
+            'bundle': BundleDiscountStrategy(),
+            'cart': CartDiscountStrategy()
+        }
+        
+        # 3. Manager (ロジック統括)
+        # [cite_start]Strategyを注入してManagerを生成 [cite: 20]
+        self.discount_manager = DiscountManager(strategies)
+
+        # 4. Services (アプリケーション層)
+        # [cite_start]CheckoutServiceにRepoを注入 [cite: 122]
+        self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
+        
+        # [cite_start]CartServiceに全ての依存関係を注入 (DI) [cite: 103]
+        self.cart_service = CartService(
+            prod_repo=self.prod_repo,
+            disc_repo=self.disc_repo,
+            discount_manager=self.discount_manager,
+            checkout_service=self.checkout_service,
+            user_repo=self.user_repo,
+            expense_repo=self.expense_repo,
+            payment_repo=self.payment_repo,
+            log_repo=self.log_repo
+        )
+
+        # UI初期化
         self._init_ui()
         self._connect_signals()
         
-        # 初期表示
+        # 初期表示（ログイン）
         self._show_login_dialog()
 
     def _init_ui(self) -> None:
@@ -2545,7 +3009,7 @@ class MainWindow(QMainWindow):
             self.lbl_stats[key] = lbl
         
         header_layout.addStretch()
-        
+
         self.btn_cashier = QPushButton("担当: ---")
         self.btn_cashier.setFont(QFont("Meiryo", 10, QFont.Bold))
         self.btn_cashier.setStyleSheet("QPushButton { color: #bbb; background-color: transparent; border: 1px solid #555; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #444; color: white; }")
@@ -2553,7 +3017,7 @@ class MainWindow(QMainWindow):
         self.btn_cashier.setFocusPolicy(Qt.NoFocus)
         self.btn_cashier.clicked.connect(self._show_login_dialog)
         header_layout.addWidget(self.btn_cashier)
-        
+
         btn_admin = QPushButton("管理・分析")
         btn_admin.setFixedSize(100, 30)
         btn_admin.setStyleSheet("background-color: #607d8b; color: white; border: none; font-weight: bold;")
@@ -2566,7 +3030,7 @@ class MainWindow(QMainWindow):
         btn_settings.setStyleSheet("background-color: #546e7a; color: white; border: none;")
         btn_settings.clicked.connect(self._open_settings_window)
         header_layout.addWidget(btn_settings)
-           
+
         main_layout.addWidget(self.header_frame)
 
         # --- ボディ ---
@@ -2610,11 +3074,7 @@ class MainWindow(QMainWindow):
         self.cart_service.stats_updated.connect(self._update_stats)
         self.cart_service.checkout_completed.connect(self._on_checkout_completed)
         self.cart_service.user_changed.connect(lambda n: self.btn_cashier.setText(f"担当: {n}"))
-        
-        # カートの内容が変わったときにもボタン状態をチェック (客層選択済みでカートを空にした場合などのため)
         self.cart_service.cart_updated.connect(self._check_checkout_button)
-
-        # ★追加: 客層が選択されたら即座にボタン状態をチェック
         self.cart_service.customer_selected.connect(self._check_checkout_button)
 
     def _check_checkout_button(self):
@@ -2639,8 +3099,8 @@ class MainWindow(QMainWindow):
         if total <= 0: return
         
         methods = self.payment_repo.fetch_all()
-        
         dialog = PaymentDialog(total, methods, self)
+        
         if dialog.exec():
             payments, change = dialog.get_result()
             self.cart_service.finalize_checkout(payments, change)
@@ -2652,7 +3112,6 @@ class MainWindow(QMainWindow):
             f"お釣り: ¥{change:,}\n"
             f"客層: {customer_name}\n"
         )
-        
         QMessageBox.information(self, "完了", msg_text)
         self.cart_service.reset_message()
         self._check_checkout_button()
@@ -2676,15 +3135,16 @@ class MainWindow(QMainWindow):
         btns.accepted.connect(dialog.accept)
         btns.rejected.connect(dialog.reject)
         layout.addWidget(btns)
+        
         if dialog.exec():
             val = price_input.value()
             if val > 0:
                 self.cart_service.add_manual_item(val, name_input.text() or "手入力")
-    
+
     def _open_admin_window(self) -> None:
         admin = AdminWindow(self)
         admin.exec()
-    
+
     def _show_login_dialog(self):
         dialog = LoginDialog(self)
         if dialog.exec():
@@ -2692,27 +3152,16 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
-    
-    def _open_settings_window(self):
-        """設定画面を開く"""
-        win = SettingsWindow(self)
-        win.exec() # 画面が閉じられるまでここで待機
 
-        # ★追加: 設定画面が閉じられたら、データを最新化する
-        
-        # 1. 商品価格の更新（設定で価格が変わっているかもしれないため）
+    def _open_settings_window(self):
+        win = SettingsWindow(self)
+        win.exec()
+        # 設定画面から戻ったらデータをリフレッシュ
         active_products = self.prod_repo.fetch_active_products()
         self.cart_service.refresh_prices(active_products)
-        
-        # 2. 割引ルールの再適用（設定でルールが変わっているかもしれないため）
         self.cart_service.recalculate()
-
-        # 3. 商品リストと客層パネルのボタン再描画（色や名称の変更反映）
         self.product_list_widget.refresh_data()
-        self.customer_panel.refresh_data() # (CustomerPanel作成済みの場合)
-        
-        # 4. ログアウトされた場合に備えて担当者表示更新（もし設定画面でユーザー操作した場合）
-        # self.btn_cashier.setText(...) # 必要なら
+        self.customer_panel.refresh_data()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_window.py
@@ -2832,11 +3281,13 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\cart_widget.py
 ==================================================
 
+import urllib.parse
 from typing import List
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QLabel, QPushButton, QMessageBox)
+                               QHeaderView, QLabel, QPushButton, QMessageBox, 
+                               QDialog, QListWidget, QAbstractItemView) # ★追加
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
 from app.services.cart_service import CartService
 
 class CartWidget(QWidget):
@@ -2847,18 +3298,27 @@ class CartWidget(QWidget):
         self.cart_service = cart_service
         self.current_indices_map: List[int] = [] 
         self._init_ui()
-        
-        # シグナル接続
         self.cart_service.cart_updated.connect(self._render_cart)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. 案内ラベル
+        # 1. 案内ウィンドウ (HTMLリンク対応)
         self.info_box = QLabel("いらっしゃいませ")
-        self.info_box.setFixedHeight(40)
-        self.info_box.setStyleSheet("background-color: #37474f; color: #fff; border: 1px solid #90caf9; padding: 5px; font-weight: bold;")
+        self.info_box.setFixedHeight(85)
+        self.info_box.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.info_box.setWordWrap(True)
+        self.info_box.setOpenExternalLinks(False) # 外部ブラウザで開かせない
+        self.info_box.linkActivated.connect(self._on_link_activated) # ★リンクハンドラ接続
+        
+        self.info_box.setStyleSheet("""
+            background-color: #37474f; 
+            color: #fff; 
+            border: 2px solid #90caf9; 
+            padding: 8px; 
+            font-size: 14px;
+        """)
         layout.addWidget(self.info_box)
         
         self.cart_service.message_updated.connect(self._update_message)
@@ -2920,7 +3380,6 @@ class CartWidget(QWidget):
     def _render_cart(self):
         items = self.cart_service.cart_items
         
-        # ソート: マイナス価格(値引)は下に、それ以外は価格順
         indices = list(range(len(items)))
         indices.sort(key=lambda i: (items[i].price < 0, -items[i].price))
         self.current_indices_map = indices
@@ -2970,14 +3429,16 @@ class CartWidget(QWidget):
         discounts = self.cart_service.applied_discounts
         self.discount_table.setRowCount(len(discounts))
         for i, d in enumerate(discounts):
-            sub = d['amount'] * d['qty']
+            sub = d.amount
+            
             def create_disc_item(text):
                 it = QTableWidgetItem(str(text))
                 it.setForeground(QColor("#ff8a80"))
                 it.setFlags(it.flags() ^ Qt.ItemIsEditable)
                 return it
-            self.discount_table.setItem(i, 0, create_disc_item(d['name']))
-            self.discount_table.setItem(i, 1, create_disc_item(f"{d['qty']}回"))
+                
+            self.discount_table.setItem(i, 0, create_disc_item(d.name))
+            self.discount_table.setItem(i, 1, create_disc_item(f"{d.qty}回"))
             self.discount_table.setItem(i, 2, create_disc_item(f"¥{sub:,}"))
 
         # 合計更新
@@ -3000,17 +3461,59 @@ class CartWidget(QWidget):
             self._render_cart()
 
     def _update_message(self, text: str, msg_type: str) -> None:
-        base_style = "padding: 5px; border-radius: 4px; font-weight: bold;"
-        if msg_type == "info":
-            bg_color = "#37474f"
-            text_color = "#ffffff"
-            border = "1px solid #90caf9"
-        else:
-            bg_color = "#5d4037"
-            text_color = "#ff8a80"
-            border = "2px solid #ff5252"
+        border_color = "#90caf9" if msg_type == "info" else "#ff5252"
+        bg_color = "#37474f" if msg_type == "info" else "#5d4037"
+        
+        self.info_box.setStyleSheet(f"""
+            background-color: {bg_color}; 
+            color: #fff; 
+            border: 2px solid {border_color}; 
+            padding: 8px;
+            font-size: 14px;
+        """)
         self.info_box.setText(text)
-        self.info_box.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: {border}; {base_style}")
+
+    # ★追加: リンククリック時の処理
+    def _on_link_activated(self, link: str):
+        if link.startswith("discount_details:"):
+            # データをデコードしてリスト化
+            encoded_data = link.replace("discount_details:", "")
+            decoded_data = urllib.parse.unquote(encoded_data)
+            rules = decoded_data.split("|")
+            
+            self._show_discount_details(rules)
+
+    # ★追加: 詳細ポップアップ表示
+    def _show_discount_details(self, rules: List[str]):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("対象の割引ルール")
+        dlg.setFixedSize(300, 250)
+        dlg.setStyleSheet("background-color: #424242; color: white;")
+        
+        layout = QVBoxLayout(dlg)
+        
+        lbl = QLabel("この商品に適用可能な割引:")
+        lbl.setStyleSheet("font-weight: bold; margin-bottom: 5px;")
+        layout.addWidget(lbl)
+        
+        lst = QListWidget()
+        lst.addItems(rules)
+        lst.setStyleSheet("""
+            QListWidget { background-color: #333; border: 1px solid #666; font-size: 14px; }
+            QListWidget::item { padding: 5px; }
+        """)
+        lst.setSelectionMode(QAbstractItemView.NoSelection) # 選択不可
+        layout.addWidget(lst)
+        
+        btn = QPushButton("閉じる")
+        btn.setStyleSheet("""
+            QPushButton { background-color: #0277bd; color: white; padding: 8px; font-weight: bold; border-radius: 4px; }
+            QPushButton:hover { background-color: #039be5; }
+        """)
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn)
+        
+        dlg.exec()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\customer_panel.py
@@ -4593,117 +5096,176 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 
 
 ==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\base_setting_tab.py
+==================================================
+
+from typing import List, Optional
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
+                               QTableWidgetItem, QPushButton, QHeaderView, QLabel, QMessageBox)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+
+class BaseSettingTab(QWidget):
+    """
+    設定画面タブの基底クラス
+    共通のレイアウト（ボタン群 + テーブル）とヘルパーメソッドを提供する。
+    """
+    def __init__(self, title: str = ""):
+        super().__init__()
+        self.layout_main = QVBoxLayout(self)
+        self.layout_main.setContentsMargins(10, 10, 10, 10)
+        
+        # タイトルや説明文（任意）
+        if title:
+            self.layout_main.addWidget(QLabel(title))
+
+        self._setup_buttons()
+        self._setup_table()
+        
+    def _setup_buttons(self):
+        """上部の操作ボタンエリア構築"""
+        self.layout_btns = QHBoxLayout()
+        
+        # 追加ボタン
+        self.btn_add = QPushButton("＋ 新規追加")
+        self.btn_add.setFixedSize(120, 40)
+        self.btn_add.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold;")
+        self.btn_add.clicked.connect(self.on_add)
+        self.layout_btns.addWidget(self.btn_add)
+
+        # 編集ボタン
+        self.btn_edit = QPushButton("編集")
+        self.btn_edit.clicked.connect(self.on_edit_selected)
+        self.layout_btns.addWidget(self.btn_edit)
+
+        # 拡張用プレースホルダ（継承先でボタンを追加したい場合に使用）
+        self.layout_btns.addStretch()
+
+        # 削除ボタン
+        self.btn_delete = QPushButton("削除/無効化")
+        self.btn_delete.setStyleSheet("background-color: #c62828; color: white;")
+        self.btn_delete.clicked.connect(self.on_delete_selected)
+        self.layout_btns.addWidget(self.btn_delete)
+
+        self.layout_main.addLayout(self.layout_btns)
+
+    def _setup_table(self):
+        """テーブルの初期設定"""
+        self.table = QTableWidget()
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setStyleSheet("""
+            QTableWidget { background-color: #222; gridline-color: #444; color: white; }
+            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; }
+            QTableWidget::item:selected { background-color: #0d47a1; }
+        """)
+        # ダブルクリックで編集
+        self.table.doubleClicked.connect(self.on_edit_selected)
+        
+        self.layout_main.addWidget(self.table)
+
+    def set_columns(self, columns: List[str]):
+        """カラムヘッダーを設定"""
+        self.table.setColumnCount(len(columns))
+        self.table.setHorizontalHeaderLabels(columns)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch) # 2列目を伸縮
+
+    def create_item(self, text: str, text_color: str = "white", bg_color: str = None, align: int = None) -> QTableWidgetItem:
+        """テーブルアイテム作成ヘルパー"""
+        item = QTableWidgetItem(str(text))
+        item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled) # 編集不可
+        item.setForeground(QColor(text_color))
+        if bg_color:
+            item.setBackground(QColor(bg_color))
+        if align:
+            item.setTextAlignment(align)
+        return item
+
+    def get_selected_row_data(self, data_list: list):
+        """選択行に対応するデータリストの要素を取得"""
+        row = self.table.currentRow()
+        if row < 0 or row >= len(data_list):
+            return None
+        return data_list[row]
+
+    # --- 継承先で実装すべきメソッド ---
+    def load_data(self):
+        raise NotImplementedError
+
+    def on_add(self):
+        pass
+
+    def on_edit_selected(self):
+        pass
+
+    def on_delete_selected(self):
+        pass
+
+==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\customer_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel)
+from PySide6.QtWidgets import QPushButton, QHeaderView
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from dataclasses import asdict
+
+from app.models.customer import Customer
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
-from app.models.customer import Customer
-from dataclasses import asdict
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
-class CustomerSettingTab(QWidget):
+class CustomerSettingTab(BaseSettingTab):
     def __init__(self):
         super().__init__()
         self.repo = CustomerRepository()
         self.log_repo = LogRepository()
-        self._init_ui()
+        
+        self.set_columns(["ID", "ラベル", "属性 (詳細)", "状態"])
+        h = self.table.horizontalHeader()
+        h.setSectionResizeMode(1, QHeaderView.Stretch)
+        h.setSectionResizeMode(2, QHeaderView.Stretch)
+        
+        # 並び替えボタンの挿入
+        self.btn_up = QPushButton("▲ 上へ")
+        self.btn_up.clicked.connect(lambda: self._move(-1))
+        self.layout_btns.insertWidget(2, self.btn_up)
+
+        self.btn_down = QPushButton("▼ 下へ")
+        self.btn_down.clicked.connect(lambda: self._move(1))
+        self.layout_btns.insertWidget(3, self.btn_down)
+        
         self.load_data()
-
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        
-        # --- ボタン ---
-        btn_lay = QHBoxLayout()
-        add_btn = QPushButton("＋ 追加")
-        add_btn.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold; padding: 5px 15px;")
-        add_btn.clicked.connect(self._add)
-        btn_lay.addWidget(add_btn)
-        
-        edit_btn = QPushButton("編集")
-        edit_btn.setStyleSheet("padding: 5px 15px;")
-        edit_btn.clicked.connect(self._edit)
-        btn_lay.addWidget(edit_btn)
-
-        up_btn = QPushButton("▲ 上へ")
-        up_btn.clicked.connect(lambda: self._move(-1))
-        btn_lay.addWidget(up_btn)
-        
-        down_btn = QPushButton("▼ 下へ")
-        down_btn.clicked.connect(lambda: self._move(1))
-        btn_lay.addWidget(down_btn)
-        
-        btn_lay.addStretch()
-        layout.addLayout(btn_lay)
-
-        # --- テーブル ---
-        self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["ID", "ラベル", "属性 (詳細)", "状態"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.doubleClicked.connect(self._edit)
-        
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: #222; gridline-color: #444; color: white; }
-            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; padding: 4px; }
-            QTableWidget::item:selected { background-color: #0d47a1; }
-        """)
-        layout.addWidget(self.table)
-        layout.addWidget(QLabel("※ IDの順序でメイン画面に表示されます"))
 
     def load_data(self):
         self.customers = self.repo.fetch_all()
         self.table.setRowCount(len(self.customers))
-        for i, c in enumerate(self.customers):
+        
+        for row, c in enumerate(self.customers):
             is_active = c.is_active
-            
             text_col = "white" if is_active else "#757575"
             bg_col = None if is_active else "#2b2b2b"
 
-            def mk_item(txt):
-                it = QTableWidgetItem(str(txt))
-                it.setForeground(QColor(text_col))
-                if bg_col:
-                    it.setBackground(QColor(bg_col))
-                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                return it
-
-            # ID
-            self.table.setItem(i, 0, mk_item(c.id))
+            self.table.setItem(row, 0, self.create_item(c.id, text_col, bg_col))
             
-            # ラベル
-            label_item = mk_item(c.label)
-            if is_active:
-                label_item.setBackground(QColor(c.color))
-                label_item.setForeground(QColor("black"))
-            self.table.setItem(i, 1, label_item)
+            # ラベル (色付き)
+            label_item = self.create_item(c.label, text_color="black" if is_active else text_col, bg_color=c.color if is_active else bg_col)
+            self.table.setItem(row, 1, label_item)
 
-            # 属性
+            # 属性文字列化
             attrs = c.attributes
-            if attrs:
-                attr_str = ", ".join([f"{k}: {v}" for k, v in attrs.items()])
-            else:
-                attr_str = "-"
-            self.table.setItem(i, 2, mk_item(attr_str))
+            attr_str = ", ".join([f"{k}: {v}" for k, v in attrs.items()]) if attrs else "-"
+            self.table.setItem(row, 2, self.create_item(attr_str, text_col, bg_col))
             
-            # 状態
             status = "有効" if is_active else "無効"
-            self.table.setItem(i, 3, mk_item(status))
+            self.table.setItem(row, 3, self.create_item(status, text_col, bg_col))
 
-    def _add(self):
-        # Dialog用に辞書リストを作成
-        presets_as_dicts = []
-        for c in self.customers:
-            d = asdict(c)
-            d['attributes'] = c.attributes
-            presets_as_dicts.append(d)
+    def on_add(self):
+        # Dialog用に辞書リスト作成
+        presets_as_dicts = [asdict(c) for c in self.customers]
+        for i, c in enumerate(self.customers):
+            presets_as_dicts[i]['attributes'] = c.attributes
 
         dlg = CustomerEditDialog(all_presets=presets_as_dicts, parent=self)
         if dlg.exec():
@@ -4711,7 +5273,7 @@ class CustomerSettingTab(QWidget):
             new_customer = Customer(
                 id=None,
                 label=d['label'],
-                attributes_json="", # set_attributesで設定
+                attributes_json="",
                 color=d['color'],
                 is_active=d['is_active']
             )
@@ -4721,21 +5283,17 @@ class CustomerSettingTab(QWidget):
                 self.log_repo.add_log("info", f"客層追加: {d['label']}")
                 self.load_data()
 
-    def _edit(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.customers[row]
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.customers)
+        if not target: return
 
-        # Dialog用に辞書変換
+        # Dialog用データ準備
         target_dict = asdict(target)
         target_dict['attributes'] = target.attributes
         
-        presets_as_dicts = []
-        for c in self.customers:
-            pd = asdict(c)
-            pd['attributes'] = c.attributes
-            presets_as_dicts.append(pd)
+        presets_as_dicts = [asdict(c) for c in self.customers]
+        for i, c in enumerate(self.customers):
+            presets_as_dicts[i]['attributes'] = c.attributes
 
         dlg = CustomerEditDialog(data=target_dict, all_presets=presets_as_dicts, parent=self)
         if dlg.exec():
@@ -4754,13 +5312,22 @@ class CustomerSettingTab(QWidget):
                 self.log_repo.add_log("info", f"客層変更: {target.label}")
                 self.load_data()
 
+    def on_delete_selected(self):
+        # 客層は物理削除機能を提供していないため、無効化のみ行う
+        target = self.get_selected_row_data(self.customers)
+        if not target: return
+        
+        target.is_active = False
+        if self.repo.update(target):
+            self.log_repo.add_log("info", f"客層無効化: {target.label}")
+            self.load_data()
+
     def _move(self, direction):
         row = self.table.currentRow()
-        if row < 0:
-            return
+        if row < 0: return
+        
         new_row = row + direction
-        if new_row < 0 or new_row >= len(self.customers):
-            return
+        if new_row < 0 or new_row >= len(self.customers): return
         
         a, b = self.customers[row], self.customers[new_row]
         order_map = {a.id: b.display_order, b.id: a.display_order}
@@ -4773,210 +5340,152 @@ class CustomerSettingTab(QWidget):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\discount_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView, QLabel)
-from PySide6.QtCore import Qt
+from dataclasses import asdict
 from PySide6.QtGui import QColor
+
+from app.models.discount import DiscountRule
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
-class DiscountSettingTab(QWidget):
+class DiscountSettingTab(BaseSettingTab):
     def __init__(self):
         super().__init__()
         self.repo = DiscountRepository()
         self.log_repo = LogRepository()
-        self._init_ui()
+        
+        self.set_columns(["ID", "名称", "内容", "対象", "状態"])
+        # カラム幅調整 (対象列を見やすく)
+        self.table.horizontalHeader().setStretchLastSection(False) 
+        self.table.setColumnWidth(3, 250) 
+        
         self.load_data()
 
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        
-        btn_lay = QHBoxLayout()
-        add_btn = QPushButton("＋ ルール追加")
-        add_btn.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold; padding: 5px 15px;")
-        add_btn.clicked.connect(self._add)
-        btn_lay.addWidget(add_btn)
-
-        edit_btn = QPushButton("編集")
-        edit_btn.setStyleSheet("padding: 5px 15px;")
-        edit_btn.clicked.connect(self._edit)
-        btn_lay.addWidget(edit_btn)
-        
-        btn_lay.addStretch()
-        layout.addLayout(btn_lay)
-
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "名称", "内容", "対象", "状態"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch) # 対象も見やすく広げる
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.doubleClicked.connect(self._edit)
-        
-        # テーブル全体のスタイル
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: #222; color: white; gridline-color: #444; }
-            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; padding: 4px; }
-            QTableWidget::item:selected { background-color: #0d47a1; }
-        """)
-        layout.addWidget(self.table)
-
     def load_data(self):
-        rules = self.repo.fetch_all_rules()
-        self.table.setRowCount(len(rules))
-        self.rules = rules
+        self.rules = self.repo.fetch_all_rules()
+        self.table.setRowCount(len(self.rules))
         
-        for i, r in enumerate(rules):
-            is_active = bool(r['is_active'])
-            
-            # 基本色（無効ならグレー）
+        for row, r in enumerate(self.rules):
+            # r は DiscountRule オブジェクト
+            is_active = r.is_active
             base_col = "white" if is_active else "#757575"
             
-            def mk(txt, color=None):
-                it = QTableWidgetItem(str(txt))
-                # 指定がなければ基本色を使う
-                it.setForeground(QColor(color if color and is_active else base_col))
-                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                return it
-
-            self.table.setItem(i, 0, mk(r['id']))
-            self.table.setItem(i, 1, mk(r['name']))
+            self.table.setItem(row, 0, self.create_item(r.id, base_col))
+            self.table.setItem(row, 1, self.create_item(r.name, base_col))
             
-            # 内容 (例: 100円引, 10%引)
-            unit = "円引" if r['discount_type'] == 'fixed' else "%OFF"
-            val_text = f"{r['discount_value']}{unit}"
-            # 値引き内容は少し強調（黄色っぽい色）
-            self.table.setItem(i, 2, mk(val_text, "#ffeb3b"))
+            unit = "円引" if r.discount_type == 'fixed' else "%OFF"
+            val_text = f"{r.discount_value}{unit}"
+            self.table.setItem(row, 2, self.create_item(val_text, "#ffeb3b" if is_active else base_col))
             
-            # --- ★改善: 対象の見やすさ向上 ---
-            atype = r['apply_type']
-            target_val = r['target_value']
-            
+            # 対象の表示ロジック
             target_text = ""
             target_color = "white"
-
-            if atype == 'cart':
-                target_text = "■ カート全体"
-                target_color = "#81d4fa" # 水色
-            elif atype == 'category':
-                target_text = f"【カテゴリ】 {target_val}"
-                target_color = "#ffcc80" # オレンジ
-            elif atype == 'item':
-                target_text = f"【 商  品 】 {target_val}"
-                target_color = "#a5d6a7" # 薄緑
-            elif atype == 'bundle':
-                # ★追加: バンドルの中身を少し表示
-                target_text = "★ セット・バンドル"
-                target_color = "#e1bee7" # 紫系
-                # target_val (JSON) を簡易解析して表示しても良い
-                if "select" in target_val: target_text += " (まとめ買い)"
-                else: target_text += " (組合せ)"
-                
-            self.table.setItem(i, 3, mk(target_text, target_color))
-            # ------------------------------------
             
-            self.table.setItem(i, 4, mk("有効" if is_active else "無効"))
+            if r.apply_type == 'cart':
+                target_text = "■ カート全体"
+                target_color = "#81d4fa"
+            elif r.apply_type == 'category':
+                target_text = f"【カテゴリ】 {r.target_value}"
+                target_color = "#ffcc80"
+            elif r.apply_type == 'item':
+                target_text = f"【 商  品 】 {r.target_value}"
+                target_color = "#a5d6a7"
+            elif r.apply_type == 'bundle':
+                target_text = "★ セット・バンドル"
+                target_color = "#e1bee7"
+                if "select" in r.target_value: target_text += " (まとめ買い)"
+                else: target_text += " (組合せ)"
+            
+            self.table.setItem(row, 3, self.create_item(target_text, target_color if is_active else base_col))
+            self.table.setItem(row, 4, self.create_item("有効" if is_active else "無効", base_col))
 
-    def _add(self):
+    def on_add(self):
         dlg = DiscountEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add_rule(d['name'], d['discount_type'], d['discount_value'], 
-                                  d['apply_type'], d['target_value'], d['is_auto']):
+            new_rule = DiscountRule(
+                id=None,
+                name=d['name'],
+                discount_type=d['discount_type'],
+                discount_value=d['discount_value'],
+                apply_type=d['apply_type'],
+                target_value=d['target_value'],
+                is_auto=d['is_auto'],
+                is_active=d['is_active']
+            )
+            if self.repo.add(new_rule):
                 self.log_repo.add_log("info", f"割引ルール追加: {d['name']}")
                 self.load_data()
 
-    def _edit(self):
-        row = self.table.currentRow()
-        if row < 0: return
-        target = self.rules[row]
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.rules)
+        if not target: return
         
-        dlg = DiscountEditDialog(data=target, parent=self)
+        dlg = DiscountEditDialog(data=asdict(target), parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.update_rule(target['id'], d['name'], d['discount_type'], d['discount_value'], 
-                                     d['apply_type'], d['target_value'], d['is_auto'], d['is_active']):
-                self.log_repo.add_log("info", f"割引ルール更新: {target['name']}")
+            updated_rule = DiscountRule(
+                id=target.id,
+                name=d['name'],
+                discount_type=d['discount_type'],
+                discount_value=d['discount_value'],
+                apply_type=d['apply_type'],
+                target_value=d['target_value'],
+                is_auto=d['is_auto'],
+                is_active=d['is_active']
+            )
+            if self.repo.update(updated_rule):
+                self.log_repo.add_log("info", f"割引ルール更新: {target.name}")
                 self.load_data()
+
+    def on_delete_selected(self):
+        # 無効化のみ
+        target = self.get_selected_row_data(self.rules)
+        if not target: return
+        
+        target.is_active = False
+        if self.repo.update(target):
+            self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
+            self.load_data()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\expense_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView, QMessageBox)
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QMessageBox, QHeaderView
 from dataclasses import asdict
 
+from app.models.expense import Expense
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
-from app.models.expense import Expense
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
-class ExpenseSettingTab(QWidget):
+class ExpenseSettingTab(BaseSettingTab):
     def __init__(self):
         super().__init__()
         self.repo = ExpenseRepository()
         self.log_repo = LogRepository()
-        self._init_ui()
+        
+        self.set_columns(["ID", "日時", "項目名", "金額"])
+        h = self.table.horizontalHeader()
+        h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        h.setSectionResizeMode(2, QHeaderView.Stretch)
+        
         self.load_data()
-
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        
-        btn_lay = QHBoxLayout()
-        add_btn = QPushButton("＋ 経費登録")
-        add_btn.setStyleSheet("background-color: #0277bd; color: white;")
-        add_btn.clicked.connect(self._add)
-        btn_lay.addWidget(add_btn)
-
-        # 「編集」ボタンを追加
-        edit_btn = QPushButton("編集")
-        edit_btn.clicked.connect(self._edit)
-        btn_lay.addWidget(edit_btn)
-        
-        del_btn = QPushButton("削除")
-        del_btn.setStyleSheet("background-color: #c62828; color: white;")
-        del_btn.clicked.connect(self._delete)
-        btn_lay.addWidget(del_btn)
-        
-        btn_lay.addStretch()
-        layout.addLayout(btn_lay)
-
-        self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["ID", "日時", "項目名", "金額"])
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.setStyleSheet("background-color: #222; color: white; gridline-color: #444;")
-        
-        # ★追加: ダブルクリックで編集画面を開く
-        self.table.doubleClicked.connect(self._edit)
-        
-        layout.addWidget(self.table)
 
     def load_data(self):
         self.expenses = self.repo.fetch_all()
         self.table.setRowCount(len(self.expenses))
 
-        for i, ex in enumerate(self.expenses):
-            # 日時変換は簡易的に
-            ts = ex.timestamp
-            
-            def mk(txt):
-                it = QTableWidgetItem(str(txt))
-                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                return it
+        for row, ex in enumerate(self.expenses):
+            self.table.setItem(row, 0, self.create_item(ex.id))
+            self.table.setItem(row, 1, self.create_item(ex.timestamp))
+            self.table.setItem(row, 2, self.create_item(ex.title))
+            self.table.setItem(row, 3, self.create_item(f"¥{ex.amount:,}"))
 
-            self.table.setItem(i, 0, mk(ex.id))
-            self.table.setItem(i, 1, mk(ts))
-            self.table.setItem(i, 2, mk(ex.title))
-            self.table.setItem(i, 3, mk(f"¥{ex.amount:,}"))
-
-    def _add(self):
+    def on_add(self):
         dlg = ExpenseEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
@@ -4984,32 +5493,26 @@ class ExpenseSettingTab(QWidget):
                 self.log_repo.add_log("info", f"経費登録: {d['title']} ¥{d['amount']}")
                 self.load_data()
 
-    def _edit(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.expenses[row]
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.expenses)
+        if not target: return
 
-        target_dict = asdict(target)
-        
-        dlg = ExpenseEditDialog(data=target_dict, parent=self)
+        dlg = ExpenseEditDialog(data=asdict(target), parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_expense = Expense(
                 id=target.id,
                 title=d['title'],
                 amount=d['amount'],
-                timestamp=d["timestamp"] # 日時変更しない場合
+                timestamp=d["timestamp"]
             )
             if self.repo.update(updated_expense):
                 self.log_repo.add_log("info", f"経費編集: {target.title} -> {d['title']}")
                 self.load_data()
 
-    def _delete(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.expenses[row]
+    def on_delete_selected(self):
+        target = self.get_selected_row_data(self.expenses)
+        if not target: return
         
         if QMessageBox.question(self, "確認", f"「{target.title}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
             if self.repo.delete(target.id):
@@ -5020,111 +5523,73 @@ class ExpenseSettingTab(QWidget):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\payment_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView)
-from PySide6.QtGui import QColor
-from PySide6.QtCore import Qt
-from app.repositories.transaction_repo import TransactionRepository
-from app.repositories.log_repo import LogRepository
+from dataclasses import asdict
+from app.models.payment_method import PaymentMethod
 from app.repositories.payment_repo import PaymentRepository
+from app.repositories.log_repo import LogRepository
 from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
-class PaymentSettingTab(QWidget):
+class PaymentSettingTab(BaseSettingTab):
     def __init__(self):
         super().__init__()
         self.repo = PaymentRepository()
         self.log_repo = LogRepository()
-        self._init_ui()
+        
+        self.set_columns(["ID", "名称", "現金扱い", "状態"])
         self.load_data()
-
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        
-        btn_lay = QHBoxLayout()
-        add_btn = QPushButton("＋ 追加")
-        add_btn.setStyleSheet("background-color: #0277bd; color: white;")
-        add_btn.clicked.connect(self._add)
-        btn_lay.addWidget(add_btn)
-        
-        edit_btn = QPushButton("編集")
-        edit_btn.clicked.connect(self._edit)
-        btn_lay.addWidget(edit_btn)
-        
-        btn_lay.addStretch()
-        layout.addLayout(btn_lay)
-
-        self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["ID", "名称", "現金扱い", "状態"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.doubleClicked.connect(self._edit)
-        self.table.setStyleSheet("background-color: #222; color: white; gridline-color: #444;")
-        layout.addWidget(self.table)
 
     def load_data(self):
         self.methods = self.repo.fetch_all()
         self.table.setRowCount(len(self.methods))
-        for i, m in enumerate(self.methods):
+        for row, m in enumerate(self.methods):
             active = m.is_active
             col = "white" if active else "#757575"
             
-            def mk(txt):
-                it = QTableWidgetItem(str(txt))
-                it.setForeground(QColor(col))
-                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                return it
+            self.table.setItem(row, 0, self.create_item(m.id, col))
+            self.table.setItem(row, 1, self.create_item(m.name, col))
+            self.table.setItem(row, 2, self.create_item("Yes" if m.is_cash else "No", col))
+            self.table.setItem(row, 3, self.create_item("有効" if active else "無効", col))
 
-            self.table.setItem(i, 0, mk(m.id))
-            self.table.setItem(i, 1, mk(m.name))
-            self.table.setItem(i, 2, mk("Yes" if m.is_cash else "No"))
-            self.table.setItem(i, 3, mk("有効" if active else "無効"))
-
-    def _add(self):
+    def on_add(self):
         dlg = PaymentEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            from app.models.payment_method import PaymentMethod
-            # IDはAutoIncrementなのでダミー0を入れるか、Optionalにする
+            # IDはAutoIncrementなので0
             new_obj = PaymentMethod(0, d['name'], d['is_cash'], d['is_active'])
             
             if self.repo.add(new_obj):
                 self.log_repo.add_log("info", f"支払方法追加: {d['name']}")
                 self.load_data()
 
-    def _edit(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.methods[row]
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.methods)
+        if not target: return
 
-        from dataclasses import asdict
-        target_dict = asdict(target)
-
-        dlg = PaymentEditDialog(data=target_dict, parent=self)
-        
+        dlg = PaymentEditDialog(data=asdict(target), parent=self)
         if dlg.exec():
             d = dlg.get_data()
-
-            from app.models.payment_method import PaymentMethod
-            updated_obj = PaymentMethod(
-                id=target.id,
-                name=d['name'],
-                is_cash=d['is_cash'],
-                is_active=d['is_active']
-            )
+            updated_obj = PaymentMethod(target.id, d['name'], d['is_cash'], d['is_active'])
             
             if self.repo.update(updated_obj):
                 self.log_repo.add_log("info", f"支払方法更新: {target.name}")
                 self.load_data()
 
+    def on_delete_selected(self):
+        # 物理削除ではなく無効化を行う
+        target = self.get_selected_row_data(self.methods)
+        if not target: return
+        
+        target.is_active = False
+        if self.repo.update(target):
+            self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
+            self.load_data()
+
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\product_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel)
+from PySide6.QtWidgets import QMessageBox, QPushButton
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
@@ -5132,74 +5597,36 @@ from app.models.product import Product
 from app.repositories.product_repo import ProductRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.product_edit_dialog import ProductEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab # ★継承
 
-class ProductSettingTab(QWidget):
+class ProductSettingTab(BaseSettingTab): # ★継承
     """商品管理タブ"""
     def __init__(self):
+        # 基底クラスの初期化 (タイトルなし)
         super().__init__()
+        
         self.repo = ProductRepository()
-        # ★追加: ログリポジトリの初期化
         self.log_repo = LogRepository()
         
-        self._init_ui()
+        # カラム設定
+        self.set_columns(["ID", "商品名", "価格", "カテゴリ", "色", "状態", "メモ"])
+        
+        # ★追加ボタンのカスタマイズ (並び替えボタンを挿入)
+        # Baseクラスで作られた layout_btns に追加する
+        
+        # 一旦 stretch を削除してボタンを追加し、再度 stretch を入れる等の調整もできるが
+        # ここでは insertWidget を使って「編集」ボタンの後ろあたりに入れる
+        
+        self.btn_up = QPushButton("▲ 上へ")
+        self.btn_up.clicked.connect(lambda: self._move_row(-1))
+        self.layout_btns.insertWidget(2, self.btn_up) # index 2 は編集ボタンの次
+
+        self.btn_down = QPushButton("▼ 下へ")
+        self.btn_down.clicked.connect(lambda: self._move_row(1))
+        self.layout_btns.insertWidget(3, self.btn_down)
+        
+        # 初回ロード
         self.load_data()
-
-    # ... (_init_ui, load_data などは変更なし) ...
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # --- 操作ボタン群 ---
-        btn_layout = QHBoxLayout()
-        
-        btn_add = QPushButton("＋ 新規追加")
-        btn_add.setFixedSize(120, 40)
-        btn_add.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold;")
-        btn_add.clicked.connect(self._add_product)
-        btn_layout.addWidget(btn_add)
-
-        btn_edit = QPushButton("編集")
-        btn_edit.clicked.connect(self._edit_selected)
-        btn_layout.addWidget(btn_edit)
-
-        # 並び替えボタン
-        btn_up = QPushButton("▲ 上へ")
-        btn_up.clicked.connect(lambda: self._move_row(-1))
-        btn_layout.addWidget(btn_up)
-
-        btn_down = QPushButton("▼ 下へ")
-        btn_down.clicked.connect(lambda: self._move_row(1))
-        btn_layout.addWidget(btn_down)
-
-        btn_layout.addStretch()
-
-        btn_del = QPushButton("削除 (無効化)")
-        btn_del.setStyleSheet("background-color: #c62828; color: white;")
-        btn_del.clicked.connect(self._delete_selected)
-        btn_layout.addWidget(btn_del)
-
-        layout.addLayout(btn_layout)
-
-        # --- 一覧テーブル ---
-        self.table = QTableWidget()
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels(["ID", "商品名", "価格", "カテゴリ", "色", "状態", "メモ"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows) # 行選択
-        self.table.setSelectionMode(QTableWidget.SingleSelection) # 単一選択
-        self.table.doubleClicked.connect(self._edit_selected) # ダブルクリックで編集
-        
-        # スタイル設定
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: #222; gridline-color: #444; color: white; }
-            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; }
-            QTableWidget::item:selected { background-color: #0d47a1; }
-        """)
-
-        layout.addWidget(self.table)
-        
-        # ヒント
-        layout.addWidget(QLabel("※ 削除ボタンは物理削除ではなく「無効化」を推奨します。並び順は「上へ」「下へ」で変更可能です。"))
 
     def load_data(self):
         """DBから全データを読み込んで表示"""
@@ -5207,66 +5634,39 @@ class ProductSettingTab(QWidget):
         self.table.setRowCount(len(products))
         self.current_products = products
 
-        # ★追加: 現在使われているカテゴリの一覧を取得（ダイアログに渡すため）
+        # カテゴリリスト更新（ダイアログ用）
         self.existing_categories = sorted(list({p.category for p in products if p.category}))
-        if "フード" not in self.existing_categories:
-            self.existing_categories.insert(0, "フード")
-        if "ドリンク" not in self.existing_categories:
-            self.existing_categories.insert(1, "ドリンク")
+        for default_cat in ["ドリンク", "フード"]:
+            if default_cat not in self.existing_categories:
+                self.existing_categories.insert(0, default_cat)
 
         for row, p in enumerate(products):
-            # 共通のフラグ設定関数: 選択はできるが編集は不可
-            def create_readonly_item(text):
-                item = QTableWidgetItem(str(text))
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled) # Editable を外す
-                return item
-
             # ID
-            item_id = create_readonly_item(p.id)
-            item_id.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 0, item_id)
-
+            self.table.setItem(row, 0, self.create_item(p.id, align=Qt.AlignCenter))
             # Name
-            self.table.setItem(row, 1, create_readonly_item(p.name))
-
+            self.table.setItem(row, 1, self.create_item(p.name))
             # Price
-            item_price = create_readonly_item(f"¥{p.price:,}")
-            item_price.setTextAlignment(Qt.AlignRight)
-            self.table.setItem(row, 2, item_price)
-
+            self.table.setItem(row, 2, self.create_item(f"¥{p.price:,}", align=Qt.AlignRight))
             # Category
-            self.table.setItem(row, 3, create_readonly_item(p.category))
-
-            # Color
-            item_color = create_readonly_item(p.color)
-            item_color.setBackground(QColor(p.color))
-            item_color.setForeground(QColor("black"))
+            self.table.setItem(row, 3, self.create_item(p.category))
+            # Color (背景色付き)
+            item_color = self.create_item(p.color, text_color="black", bg_color=p.color)
             self.table.setItem(row, 4, item_color)
-
-            # Status (★見やすく変更)
-            # 文字色だけでなく、アイコンや記号で状態を示す
+            
+            # Status
             status_text = "● 販売中" if p.is_active else "× 停止中"
-            item_status = create_readonly_item(status_text)
-            if p.is_active:
-                item_status.setForeground(QColor("#69f0ae")) # 明るい緑
-                item_status.setBackground(QColor("#1b5e20")) # 背景を濃い緑に
-            else:
-                item_status.setForeground(QColor("#bdbdbd")) # グレー
-                item_status.setBackground(QColor("#424242")) # 背景も暗く
-            item_status.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(row, 5, item_status)
-
+            s_fg = "#69f0ae" if p.is_active else "#bdbdbd"
+            s_bg = "#1b5e20" if p.is_active else "#424242"
+            self.table.setItem(row, 5, self.create_item(status_text, text_color=s_fg, bg_color=s_bg, align=Qt.AlignCenter))
+            
             # Note
-            self.table.setItem(row, 6, create_readonly_item(p.note))
+            self.table.setItem(row, 6, self.create_item(p.note))
 
-    # _add_product / _edit_selected でダイアログを呼ぶ際にカテゴリリストを渡す
-    def _add_product(self):
+    def on_add(self):
         dialog = ProductEditDialog(parent=self)
         dialog.set_category_list(self.existing_categories)
         if dialog.exec():
             data = dialog.get_data()
-            
-            # オブジェクト作成 (IDはNone)
             new_product = Product(
                 id=None,
                 name=data["name"],
@@ -5276,30 +5676,21 @@ class ProductSettingTab(QWidget):
                 note=data["note"],
                 is_active=data["is_active"]
             )
-            
-            # Repositoryへオブジェクトを渡す
-            success = self.repo.add_product(new_product)
-            
-            if success:
+            if self.repo.add_product(new_product):
                 self.log_repo.add_log("info", f"商品追加: {new_product.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加に失敗しました")
 
-    def _edit_selected(self):
-        """選択行を編集"""
-        row = self.table.currentRow()
-        if row < 0:
-            return
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.current_products)
+        if not target: return
         
-        target = self.current_products[row]
         dialog = ProductEditDialog(target, parent=self)
         dialog.set_category_list(self.existing_categories)
         
         if dialog.exec():
             data = dialog.get_data()
-
-            # 更新用オブジェクト作成 (ID維持)
             updated_product = Product(
                 id=target.id,
                 name=data["name"],
@@ -5308,63 +5699,42 @@ class ProductSettingTab(QWidget):
                 color=data["color"],
                 note=data["note"],
                 is_active=data["is_active"],
-                display_order=target.display_order # 順序は維持
+                display_order=target.display_order
             )
-
-            success = self.repo.update_product(updated_product)
-            
-            if success:
+            if self.repo.update_product(updated_product):
                 self.log_repo.add_log("info", f"商品変更: {target.name} -> {updated_product.name}")
                 self.load_data()
-                self.table.selectRow(row)
+                # 選択位置を維持したい場合はここで再選択処理
 
-    def _delete_selected(self):
-        """論理削除（無効化）または物理削除"""
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.current_products[row]
+    def on_delete_selected(self):
+        target = self.get_selected_row_data(self.current_products)
+        if not target: return
 
-        msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除 (履歴等の整合性が壊れる可能性があります)\n「No」= 販売停止 (無効化) するのみ\n「Cancel」= やめる"
+        msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 販売停止 (無効化)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # 物理削除
             if self.repo.delete_product(target.id):
                 self.log_repo.add_log("warning", f"商品完全削除: {target.name}")
                 self.load_data()
         elif res == QMessageBox.No:
-            # 無効化
             target.is_active = False
             if self.repo.update_product(target):
                 self.log_repo.add_log("info", f"商品無効化: {target.name}")
                 self.load_data()
 
     def _move_row(self, direction):
-        """
-        表示順の入れ替え (display_orderをスワップする)
-        direction: -1 (Up), 1 (Down)
-        """
+        target = self.get_selected_row_data(self.current_products)
+        if not target: return
+        
         row = self.table.currentRow()
-        if row < 0:
-            return
         new_row = row + direction
-        if new_row < 0 or new_row >= len(self.current_products):
-            return
+        if new_row < 0 or new_row >= len(self.current_products): return
 
-        item_a = self.current_products[row]
         item_b = self.current_products[new_row]
-
-        # orderの値を入れ替え
-        # ※ DB上での一意性制約がない前提。あれば一時退避が必要だが今回は単純スワップ
-        new_order_map = {
-            item_a.id: item_b.display_order,
-            item_b.id: item_a.display_order
-        }
-
-        if self.repo.update_display_order(new_order_map):
-            # 並び替えは頻繁に行うのでログは出さないか、出すならレベルを下げる
-            # self.log_repo.add_log("info", "商品並び替え実施") 
+        order_map = {target.id: item_b.display_order, item_b.id: target.display_order}
+        
+        if self.repo.update_display_order(order_map):
             self.load_data()
             self.table.selectRow(new_row)
 
@@ -5372,116 +5742,51 @@ class ProductSettingTab(QWidget):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\user_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, 
-                               QTableWidgetItem, QPushButton, QHeaderView, QMessageBox, QLabel)
+from PySide6.QtWidgets import QMessageBox
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from dataclasses import asdict
 
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.repositories.log_repo import LogRepository
 from app.views.dialogs.user_edit_dialog import UserEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
-class UserSettingTab(QWidget):
+class UserSettingTab(BaseSettingTab):
     """ユーザー管理タブ"""
     def __init__(self):
         super().__init__()
         self.repo = UserRepository()
-        # ★追加
         self.log_repo = LogRepository()
         
-        self._init_ui()
+        self.set_columns(["ID", "名前", "コード", "権限", "状態"])
         self.load_data()
 
-    # ... (_init_ui, load_data は前回の修正のままでOK) ...
-    def _init_ui(self):
-        layout = QVBoxLayout(self)
-
-        # ボタンエリア
-        btn_layout = QHBoxLayout()
-        btn_add = QPushButton("＋ ユーザー追加")
-        btn_add.setStyleSheet("background-color: #0277bd; color: white; font-weight: bold; padding: 5px;")
-        btn_add.clicked.connect(self._add_user)
-        btn_layout.addWidget(btn_add)
-        
-        btn_edit = QPushButton("編集")
-        btn_edit.clicked.connect(self._edit_selected)
-        btn_layout.addWidget(btn_edit)
-        
-        btn_del = QPushButton("削除")
-        btn_del.setStyleSheet("background-color: #c62828; color: white; padding: 5px;")
-        btn_del.clicked.connect(self._delete_selected)
-        btn_layout.addWidget(btn_del)
-        
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
-
-        # テーブル
-        self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "名前", "コード", "権限", "状態"])
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SingleSelection)
-        self.table.doubleClicked.connect(self._edit_selected)
-        
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: #222; gridline-color: #444; color: white; }
-            QHeaderView::section { background-color: #333; color: white; border: 1px solid #444; }
-            QTableWidget::item:selected { background-color: #0d47a1; }
-        """)
-        layout.addWidget(self.table)
-        
-        layout.addWidget(QLabel("※ 無効化されたユーザーはグレーアウトされます（ログイン不可）。"))
-
     def load_data(self):
-        """全ユーザーを表示 (無効ユーザーはグレーアウト)"""
-        users = self.repo.fetch_all_users()
-        self.table.setRowCount(len(users))
-        self.current_users = users 
-
-        for i, u in enumerate(users):
+        self.current_users = self.repo.fetch_all_users()
+        self.table.setRowCount(len(self.current_users))
+        
+        for row, u in enumerate(self.current_users):
             is_active = u.is_active
             
-            # --- 色の決定 ---
-            if is_active:
-                text_color = "white"
-                bg_color = None
-                role_color = "#ffcc80" if u.role == 'admin' else "white"
-                status_text = "有効"
-                status_color = "#69f0ae" 
-            else:
-                text_color = "#757575" 
-                bg_color = "#2b2b2b"   
-                role_color = text_color
-                status_text = "無効"
-                status_color = text_color
+            # 色設定
+            text_col = "white" if is_active else "#757575"
+            bg_col = None if is_active else "#2b2b2b"
+            role_col = "#ffcc80" if u.role == 'admin' and is_active else text_col
+            status_text = "有効" if is_active else "無効"
+            status_col = "#69f0ae" if is_active else text_col
 
-            def create_item(text, color, bg=None):
-                it = QTableWidgetItem(str(text))
-                it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                it.setForeground(QColor(color))
-                if bg: it.setBackground(QColor(bg))
-                return it
+            self.table.setItem(row, 0, self.create_item(u.id, text_col, bg_col))
+            self.table.setItem(row, 1, self.create_item(u.name, text_col, bg_col))
+            self.table.setItem(row, 2, self.create_item(u.user_code, text_col, bg_col))
+            self.table.setItem(row, 3, self.create_item(u.role, role_col, bg_col))
+            self.table.setItem(row, 4, self.create_item(status_text, status_col, bg_col))
 
-            self.table.setItem(i, 0, create_item(u.id, text_color, bg_color))
-            self.table.setItem(i, 1, create_item(u.name, text_color, bg_color))
-            self.table.setItem(i, 2, create_item(u.user_code, text_color, bg_color))
-            self.table.setItem(i, 3, create_item(u.role, role_color, bg_color))
-            self.table.setItem(i, 4, create_item(status_text, status_color, bg_color))
-
-    def _add_user(self):
+    def on_add(self):
         dialog = UserEditDialog(parent=self)
         if dialog.exec():
             d = dialog.get_data()
-            
-            new_user = User(
-                id=None,
-                name=d['name'],
-                user_code=d['code'],
-                role=d['role'],
-                is_active=d['is_active']
-            )
+            new_user = User(None, d['name'], d['code'], d['role'], d['is_active'])
             
             if self.repo.add_user(new_user):
                 self.log_repo.add_log("info", f"ユーザー追加: {new_user.name}")
@@ -5489,26 +5794,14 @@ class UserSettingTab(QWidget):
             else:
                 QMessageBox.warning(self, "エラー", "追加失敗\nコードが重複している可能性があります。")
 
-    def _edit_selected(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.current_users[row]
+    def on_edit_selected(self):
+        target = self.get_selected_row_data(self.current_users)
+        if not target: return
         
-        from dataclasses import asdict
-        target_dict = asdict(target)
-        
-        dialog = UserEditDialog(target_dict, parent=self)
+        dialog = UserEditDialog(asdict(target), parent=self)
         if dialog.exec():
             d = dialog.get_data()
-            
-            updated_user = User(
-                id=target.id,
-                name=d['name'],
-                user_code=d['code'],
-                role=d['role'],
-                is_active=d['is_active']
-            )
+            updated_user = User(target.id, d['name'], d['code'], d['role'], d['is_active'])
             
             if self.repo.update_user(updated_user):
                 self.log_repo.add_log("info", f"ユーザー更新: {target.name} -> {updated_user.name}")
@@ -5516,26 +5809,21 @@ class UserSettingTab(QWidget):
             else:
                 QMessageBox.warning(self, "エラー", "更新失敗")
 
-    def _delete_selected(self):
-        row = self.table.currentRow()
-        if row < 0:
-            return
-        target = self.current_users[row]
+    def on_delete_selected(self):
+        target = self.get_selected_row_data(self.current_users)
+        if not target: return
         
-        # 削除確認メッセージ
         msg = f"{target.name} を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (推奨)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
         
         if res == QMessageBox.Yes:
-            # 物理削除
             if self.repo.delete_user(target.id):
-                # ★追加: ログ
                 self.log_repo.add_log("warning", f"ユーザー完全削除: {target.name}")
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
         elif res == QMessageBox.No:
-            # 無効化 (論理削除)
+            target.is_active = False
             if self.repo.update_user(target):
                 self.log_repo.add_log("info", f"ユーザー無効化: {target.name}")
                 self.load_data()

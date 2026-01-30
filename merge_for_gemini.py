@@ -5,11 +5,8 @@ TARGET_EXTENSIONS = ['.py', '.md', '.txt', '.json'] # .jsonも追加推奨
 # 無視するディレクトリ名
 IGNORE_DIRS = {'__pycache__', '.git', '.venv', 'venv', '.idea', '.vscode', 'data'} # dataフォルダ(DBなど)は除外推奨
 
-# 出力ファイル名 (連番生成)
-counter = 1
-while os.path.exists(f'all_code_context_{counter}.txt'):
-    counter += 1
-OUTPUT_FILE = f'all_code_context_{counter}.txt'
+# 出力ファイル名
+OUTPUT_FILE = f'all_code_context.txt'
 
 def read_file_content(file_path):
     """複数のエンコーディングを試してファイルを読み込む"""
@@ -38,7 +35,7 @@ def merge_files(start_path):
                     file_path = os.path.join(root, file)
                     
                     # 出力ファイル自身は読み込まないように除外
-                    if file.startswith("all_code_context_"):
+                    if file == OUTPUT_FILE:
                         continue
 
                     try:
