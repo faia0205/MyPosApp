@@ -1,19 +1,16 @@
-import json
 import math
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from app.models.cart_item import CartItem
 from app.models.discount import DiscountRule, AppliedDiscount
-from app.logic.strategies.discount_strategy import DiscountStrategy # 追加
+from app.logic.strategies.discount_strategy import DiscountStrategy
 
 class DiscountManager:
     """割引計算ロジック（Strategyパターン適用版）"""
 
     def __init__(self, strategies: Dict[str, DiscountStrategy]):
-        # Strategyを注入
         self.strategies = strategies
 
     def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
-        
         # 1. 計算用に在庫リストを作成
         inventory = []
         for item in cart_items:
@@ -51,34 +48,27 @@ class DiscountManager:
                 applied_discounts.extend(results)
 
         # 4. Cart全体割引の計算
-        
-        # 現在の小計を計算（定価合計 + 適用済み割引(マイナス値)）
         gross_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
         discount_sum_so_far = sum(d.amount for d in applied_discounts)
         net_total = max(0, gross_total + discount_sum_so_far)
 
-        # カート割引の適用
         cart_strategy = self.strategies.get('cart')
         if cart_strategy:
             for rule in sorted_rules:
                 if rule.apply_type == 'cart' and rule.is_auto:
-                    # Strategy適用
                     results = cart_strategy.apply(inventory, rule, current_net_total=net_total)
                     
-                    # カート割引の重複適用・残高チェック処理
                     for res in results:
                         current_disc_total = sum(d.amount for d in applied_discounts)
                         current_remaining = max(0, gross_total + current_disc_total)
                         
-                        # 割引額が残高を超えないように調整
                         actual_disc = min(abs(res.amount), current_remaining)
                         if actual_disc > 0:
                             res.amount = -actual_disc
                             applied_discounts.append(res)
-                            # ネット合計を更新して次のルールへ（累積適用の場合はここを調整）
                             net_total = max(0, net_total - actual_disc)
 
-        # 5. 合算処理 (AppliedDiscountオブジェクト同士をマージ)
+        # 5. 合算処理
         merged_map: Dict[int, AppliedDiscount] = {}
         for d in applied_discounts:
             rid = d.rule_id
@@ -89,5 +79,3 @@ class DiscountManager:
                 merged_map[rid] = d
 
         return list(merged_map.values())
-
-    # _try_apply_bundle メソッドは BundleDiscountStrategy に移動したため削除

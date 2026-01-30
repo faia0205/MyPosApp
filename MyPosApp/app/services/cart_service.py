@@ -42,7 +42,8 @@ class CartService(QObject):
                  user_repo: UserRepository,     # 必要なRepoは注入
                  expense_repo: ExpenseRepository,
                  payment_repo: PaymentRepository, # PaymentDialog呼び出し等で使う場合
-                 log_repo: LogRepository
+                 log_repo: LogRepository,
+                 trans_repo: TransactionRepository
                  ) -> None:
         super().__init__()
         self.expense_repo = expense_repo
@@ -52,6 +53,7 @@ class CartService(QObject):
         self.prod_repo = prod_repo
         self.disc_repo = disc_repo
         self.log_repo = log_repo
+        self.trans_repo = trans_repo
         
         self.discount_manager = discount_manager
         self.checkout_service = checkout_service
@@ -67,19 +69,11 @@ class CartService(QObject):
         self.total_sales_today = 0
         self.current_expenses = 0
         self.avg_price_target = 0
-        
-        self.trans_repo = None
 
         self._init_sales_data()
 
     def _init_sales_data(self):
-        # TransactionRepoへの依存をCheckoutService経由または別途注入されたRepoから取得
-        # ここでは簡易的に self.checkout_service.trans_repo を参照するか、
-        # main_windowで初期値をセットする設計に変更が望ましいが、
-        # 今回は trans_repo が checkout_service 内にあるため、読み取り専用として別途注入が必要か、
-        # checkout_service に get_total_sales_today を持たせる。
-        # リファクタリングの範囲を広げすぎないよう、checkout_service.trans_repo を使う
-        self.total_sales_today = self.checkout_service.trans_repo.get_total_sales_today()
+        self.total_sales_today = self.trans_repo.get_total_sales_today()
         self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
 

@@ -78,7 +78,8 @@ class MainWindow(QMainWindow):
             user_repo=self.user_repo,
             expense_repo=self.expense_repo,
             payment_repo=self.payment_repo,
-            log_repo=self.log_repo
+            log_repo=self.log_repo,
+            trans_repo=self.trans_repo
         )
 
         # UI初期化
