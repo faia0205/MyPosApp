@@ -14,7 +14,7 @@ class AdminWindow(QDialog):
     管理者・分析画面 (リファクタリング版)
     各タブの責務を別ファイルに委譲し、ここでは統合管理のみを行う。
     """
-    def __init__(self, parent=None):
+    def __init__(self, service: AnalyticsService, parent=None):
         super().__init__(parent)
         self.setWindowTitle("管理・分析ダッシュボード")
         self.resize(1100, 750)
@@ -32,7 +32,7 @@ class AdminWindow(QDialog):
             QSplitter::handle { background-color: #555; }
         """)
 
-        self.service = AnalyticsService()
+        self.service = service
         self._init_ui()
         self._load_data()
 

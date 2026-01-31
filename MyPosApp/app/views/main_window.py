@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from app.config import DB_PATH
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -14,12 +15,14 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.repositories.customer_repo import CustomerRepository
+from app.repositories.analytics_repo import AnalyticsRepository
 
 # Service/Logic
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
 from app.services.customer_service import CustomerService
+from app.services.analytics_service import AnalyticsService
 from app.logic.discount_manager import DiscountManager
 
 # Strategies
@@ -37,6 +40,7 @@ from app.views.admin_window import AdminWindow
 from app.views.dialogs.login_dialog import LoginDialog
 from app.views.settings_window import SettingsWindow
 from app.utils.style import StyleGenerator
+from app.utils.database import SQLiteProvider
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -46,16 +50,17 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("QMainWindow { background-color: #2b2b2b; } QWidget { color: #ffffff; }")
 
         # --- 依存関係の構築 (Composition Root) ---
-        
+        self.db_provider = SQLiteProvider(DB_PATH)
         # 1. Repositories (データアクセス層)
-        self.trans_repo = TransactionRepository()
-        self.prod_repo = ProductRepository()
-        self.payment_repo = PaymentRepository()
-        self.disc_repo = DiscountRepository()
-        self.user_repo = UserRepository()
-        self.expense_repo = ExpenseRepository()
-        self.log_repo = LogRepository()
-        self.cust_repo = CustomerRepository()
+        self.trans_repo = TransactionRepository(self.db_provider)
+        self.prod_repo = ProductRepository(self.db_provider)
+        self.payment_repo = PaymentRepository(self.db_provider)
+        self.disc_repo = DiscountRepository(self.db_provider)
+        self.user_repo = UserRepository(self.db_provider)
+        self.expense_repo = ExpenseRepository(self.db_provider)
+        self.log_repo = LogRepository(self.db_provider)
+        self.cust_repo = CustomerRepository(self.db_provider)
+        self.ana_repo = AnalyticsRepository(self.db_provider)
 
         # 2. Strategies (割引ロジックの部品)
         strategies = {
@@ -76,6 +81,14 @@ class MainWindow(QMainWindow):
         # UI用のデータ提供サービスを作成
         self.product_service = ProductService(self.prod_repo)
         self.customer_service = CustomerService(self.cust_repo)
+
+        # AnalyticsServiceにRepoを注入
+        self.analytics_service = AnalyticsService(
+            ana_repo=self.ana_repo,
+            trans_repo=self.trans_repo,
+            expense_repo=self.expense_repo,
+            log_repo=self.log_repo
+        )
 
         # CartServiceに全ての依存関係を注入 (DI)
         self.cart_service = CartService(
@@ -249,7 +262,7 @@ class MainWindow(QMainWindow):
                 self.cart_service.add_manual_item(val, name_input.text() or "手入力")
 
     def _open_admin_window(self) -> None:
-        admin = AdminWindow(self)
+        admin = AdminWindow(self.analytics_service, self)
         admin.exec()
 
     def _show_login_dialog(self):

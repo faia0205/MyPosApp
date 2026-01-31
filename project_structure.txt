@@ -43,10 +43,12 @@ Root: MyPosApp/
             cart_service.py
             checkout_service.py
             customer_service.py
+            excel_ecporter.py
             master_data_service.py
             product_service.py
         utils/
             __init__.py
+            database.py
             style.py
         views/
             __init__.py

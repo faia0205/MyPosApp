@@ -317,6 +317,7 @@ class DiscountManager:
     def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
         # 1. 計算用に在庫リストを作成
         inventory = []
+        gross_total = 0
         for item in cart_items:
             if item.id is not None and item.price > 0:
                 inventory.append({
@@ -327,52 +328,58 @@ class DiscountManager:
                     'qty': item.qty,
                     'original_item': item
                 })
+                gross_total += item.price * item.qty
 
         applied_discounts: List[AppliedDiscount] = []
 
         # 2. ルールの優先順位付け (バンドル > 商品 > カテゴリ > 全体)
-        type_priority = {'bundle': 0, 'item': 1, 'category': 2, 'cart': 3}
-        sorted_rules = sorted(rules, key=lambda r: (
-            type_priority.get(r.apply_type, 99),
-            -r.discount_value
-        ))
+        def get_sort_key(rule: DiscountRule):
+            strategy = self.strategies.get(rule.apply_type)
+            if not strategy:
+                # 戦略が見つからない場合は最後尾へ
+                return (999, 999, 0)
+            return (strategy.phase, strategy.priority, -rule.discount_value)
+
+        sorted_rules = sorted(rules, key=get_sort_key)
 
         # 3. ルール適用（バンドル・商品・カテゴリ）
         for rule in sorted_rules:
             if not rule.is_auto: continue
             
-            # カート全体割引は後回し
-            if rule.apply_type == 'cart':
-                continue
-
-            # Strategyの取得と実行
             strategy = self.strategies.get(rule.apply_type)
-            if strategy:
-                results = strategy.apply(inventory, rule)
+            if not strategy: continue
+
+            # コンテキスト準備
+            current_net_total = 0
+            
+            # POSTフェーズの場合のみ、現在の小計を計算して渡す
+            if strategy.phase == DiscountStrategy.PHASE_POST:
+                discount_sum_so_far = sum(d.amount for d in applied_discounts)
+                current_net_total = max(0, gross_total + discount_sum_so_far)
+
+            # Strategy実行
+            results = strategy.apply(inventory, rule, current_net_total=current_net_total)
+
+            # POSTフェーズの場合は、割引額が残高を超えないよう調整 (Capping)
+            if strategy.phase == DiscountStrategy.PHASE_POST and results:
+                # 再計算（念のため最新の状態を取得）
+                discount_sum_so_far = sum(d.amount for d in applied_discounts)
+                remaining = max(0, gross_total + discount_sum_so_far)
+                
+                valid_results = []
+                for res in results:
+                    actual_disc = min(abs(res.amount), remaining)
+                    if actual_disc > 0:
+                        res.amount = -actual_disc
+                        valid_results.append(res)
+                        remaining -= actual_disc
+                
+                applied_discounts.extend(valid_results)
+            else:
+                # STANDARDフェーズはそのまま追加
                 applied_discounts.extend(results)
 
-        # 4. Cart全体割引の計算
-        gross_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
-        discount_sum_so_far = sum(d.amount for d in applied_discounts)
-        net_total = max(0, gross_total + discount_sum_so_far)
-
-        cart_strategy = self.strategies.get('cart')
-        if cart_strategy:
-            for rule in sorted_rules:
-                if rule.apply_type == 'cart' and rule.is_auto:
-                    results = cart_strategy.apply(inventory, rule, current_net_total=net_total)
-                    
-                    for res in results:
-                        current_disc_total = sum(d.amount for d in applied_discounts)
-                        current_remaining = max(0, gross_total + current_disc_total)
-                        
-                        actual_disc = min(abs(res.amount), current_remaining)
-                        if actual_disc > 0:
-                            res.amount = -actual_disc
-                            applied_discounts.append(res)
-                            net_total = max(0, net_total - actual_disc)
-
-        # 5. 合算処理
+        # 4. 合算処理
         merged_map: Dict[int, AppliedDiscount] = {}
         for d in applied_discounts:
             rid = d.rule_id
@@ -405,7 +412,15 @@ class BundleDiscountStrategy(DiscountStrategy):
     バンドル（セット）割引ロジック
     JSON形式の target_value を解析し、条件に合う組み合わせがある限り適用を繰り返す。
     """
+    
+    @property
+    def phase(self) -> int:
+        return self.PHASE_STANDARD
 
+    @property
+    def priority(self) -> int:
+        return 10  # 最優先
+    
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         
@@ -532,6 +547,14 @@ class CartDiscountStrategy(DiscountStrategy):
     他の割引が適用された後の「小計 (current_net_total)」に対して計算を行う。
     """
 
+    @property
+    def phase(self) -> int:
+        return self.PHASE_POST  # 計算後のフェーズ
+
+    @property
+    def priority(self) -> int:
+        return 100
+
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         discount_amt = 0
         
@@ -565,6 +588,14 @@ from app.models.discount import DiscountRule, AppliedDiscount
 
 class CategoryDiscountStrategy(DiscountStrategy):
     """特定のカテゴリに対する割引ロジック"""
+
+    @property
+    def phase(self) -> int:
+        return self.PHASE_STANDARD
+
+    @property
+    def priority(self) -> int:
+        return 30
 
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
@@ -609,24 +640,24 @@ from app.models.discount import DiscountRule, AppliedDiscount
 class DiscountStrategy(ABC):
     """
     割引計算の戦略インターフェース
-    SOLID原則のOCP（開放閉鎖の原則）に基づき、
-    新しい割引ルールが増えてもこのインターフェースを実装するだけで対応可能にします。
     """
     
+    # 実行フェーズ定数
+    PHASE_STANDARD = 0  # 在庫消費型（バンドル、商品、カテゴリなど）
+    PHASE_POST = 1      # 最終計算型（カート全体割引など、小計確定後に実行）
+
+    @property
+    def phase(self) -> int:
+        """実行フェーズ（デフォルトは標準）"""
+        return self.PHASE_STANDARD
+
+    @property
+    def priority(self) -> int:
+        """同フェーズ内の優先順位（小さいほど優先）"""
+        return 50
+
     @abstractmethod
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
-        """
-        割引ルールを適用し、結果を返すメソッド。
-        
-        Args:
-            inventory: 計算用の在庫リスト（辞書形式）。
-                       {'qty': int, ...} の値を直接書き換えて在庫消費を行います。
-            rule: 適用する割引ルール定義 (DBモデル)
-            current_net_total: 現在の小計（カート全体割引の計算用）
-
-        Returns:
-            List[AppliedDiscount]: 適用された割引のリスト
-        """
         pass
 
 ==================================================
@@ -641,6 +672,14 @@ from app.models.discount import DiscountRule, AppliedDiscount
 class ItemDiscountStrategy(DiscountStrategy):
     """特定の商品に対する割引ロジック"""
 
+    @property
+    def phase(self) -> int:
+        return self.PHASE_STANDARD
+
+    @property
+    def priority(self) -> int:
+        return 20  # バンドルの次
+    
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         target_name = rule.target_value # 対象の商品名
@@ -1137,41 +1176,22 @@ class AnalyticsRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\base_repo.py
 ==================================================
 
-import sqlite3
-from contextlib import contextmanager
-from typing import Generator, Tuple
-from app.config import DB_PATH
+from app.utils.database import IDatabaseProvider
 
 class BaseRepository:
     """
     データベース接続とトランザクション管理を行う基底クラス
     """
+    def __init__(self, db_provider: IDatabaseProvider):
+        self.db = db_provider
 
-    def get_connection(self) -> sqlite3.Connection:
-        """従来の接続メソッド（互換性維持のため残す場合は利用可）"""
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row  # カラム名アクセスを可能に
-        return conn
+    def get_connection(self):
+        """プロバイダ経由で接続を取得"""
+        return self.db.get_connection()
 
-    @contextmanager
-    def transaction(self) -> Generator[Tuple[sqlite3.Connection, sqlite3.Cursor], None, None]:
-        """
-        【推奨】安全なトランザクション管理を行うコンテキストマネージャ
-        Usage:
-            with self.transaction() as (conn, cursor):
-                cursor.execute(...)
-        Error時は自動Rollback、終了時は自動Closeを行います。
-        """
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        try:
-            yield conn, cursor
-            conn.commit()
-        except Exception as e:
-            conn.rollback()
-            raise e
-        finally:
-            conn.close()
+    def transaction(self):
+        """プロバイダ経由でトランザクションを実行"""
+        return self.db.transaction()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\customer_repo.py
@@ -1284,12 +1304,25 @@ class CustomerRepository(BaseRepository):
         except Exception as e:
             print(f"Error deleting customer: {e}")
             return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (IDがあれば更新、なければ追加)"""
+        try:
+            cust = Customer.from_dict(data)
+            if cust.id:
+                if self.update(cust):
+                    return True
+                # 更新失敗(IDがない等)なら追加へフォールバック
+            return self.add(cust)
+        except Exception as e:
+            print(f"Error importing customer: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
 ==================================================
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.discount import DiscountRule
 
@@ -1384,12 +1417,24 @@ class DiscountRepository(BaseRepository):
         except Exception as e:
             print(f"Error deleting discount rule: {e}")
             return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み"""
+        try:
+            rule = DiscountRule.from_dict(data)
+            if rule.id:
+                if self.update(rule):
+                    return True
+            return self.add(rule)
+        except Exception as e:
+            print(f"Error importing discount rule: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
 ==================================================
 
-from typing import List
+from typing import List, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.expense import Expense
 
@@ -1435,6 +1480,11 @@ class ExpenseRepository(BaseRepository):
             return True
         except Exception:
             return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (常に追加)"""
+        # 初期データ取り込み用
+        return self.add(data.get('title'), data.get('amount'))
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\log_repo.py
@@ -1464,7 +1514,7 @@ class LogRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\payment_repo.py
 ==================================================
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.payment_method import PaymentMethod
 
@@ -1509,6 +1559,17 @@ class PaymentRepository(BaseRepository):
             with self.transaction() as (conn, cursor):
                 cursor.execute("DELETE FROM payment_methods WHERE id=?", (payment_id,))
             return True
+        except Exception:
+            return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み"""
+        try:
+            pm = PaymentMethod.from_dict(data)
+            if pm.id:
+                if self.update(pm):
+                    return True
+            return self.add(pm)
         except Exception:
             return False
 
@@ -1636,6 +1697,22 @@ class ProductRepository(BaseRepository):
             is_active=bool(row[7])
         )
 
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (名前で検索してUpsert)"""
+        try:
+            prod = Product.from_dict(data)
+            # 名前でIDを検索
+            exists_id = self.find_id_by_name(prod.name)
+            
+            if exists_id:
+                prod.id = exists_id
+                return self.update_product(prod)
+            else:
+                return self.add_product(prod)
+        except Exception as e:
+            print(f"Error importing product: {e}")
+            return False
+
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\transaction_repo.py
 ==================================================
@@ -1759,7 +1836,7 @@ class TransactionRepository(BaseRepository):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\user_repo.py
 ==================================================
 
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.user import User
 
@@ -1857,6 +1934,15 @@ class UserRepository(BaseRepository):
             role=row[3],
             is_active=bool(row[4])
         )
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (UserCodeでUpsert)"""
+        try:
+            user = User.from_dict(data)
+            return self.upsert_user(user)
+        except Exception as e:
+            print(f"Error importing user: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\__init__.py
@@ -1872,18 +1958,28 @@ import pandas as pd
 import datetime
 from dataclasses import asdict
 from typing import Tuple, Dict, Any, List
+
 from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 
+from app.services.excel_ecporter import ExcelReportExporter
+
 class AnalyticsService:
-    def __init__(self):
-        self.ana_repo = AnalyticsRepository()
-        self.trans_repo = TransactionRepository()
-        self.expense_repo = ExpenseRepository()
-        self.log_repo = LogRepository()
+    def __init__(
+            self,
+            ana_repo: AnalyticsRepository,
+            trans_repo: TransactionRepository,
+            expense_repo: ExpenseRepository,
+            log_repo: LogRepository
+        ):
+        self.ana_repo = ana_repo
+        self.trans_repo = trans_repo
+        self.expense_repo = expense_repo
+        self.log_repo = log_repo
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
+        self.excel_exporter = ExcelReportExporter()
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -2024,41 +2120,17 @@ class AnalyticsService:
         return f"売上レポート_{now_str}.xlsx"
 
     def export_to_excel(self, file_path: str) -> Tuple[bool, str]:
-        try:
-            tx_list = self.get_transaction_list()
-            logs = self.get_logs()
-            df_tx = pd.DataFrame(tx_list)
-            df_logs = pd.DataFrame(logs)
-            
-            if 'timestamp' in df_tx.columns:
-                df_tx = df_tx.drop(columns=['timestamp'])
-            
-            if not df_tx.empty:
-                df_tx.rename(columns={'id':'伝票ID', 'time':'日時', 'total':'合計', 'items':'点数', 'payment':'決済', 'customer':'客層'}, inplace=True)
-            if not df_logs.empty:
-                df_logs.rename(columns={'time':'日時', 'level':'レベル', 'msg':'内容'}, inplace=True)
-
-            pivots = self.get_pivot_data()
-
-            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                if df_tx.empty:
-                    pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
-                else:
-                    df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
-                    
-                if not df_logs.empty:
-                    df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
-                
-                if pivots:
-                    pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')
-                    pivots['cust_prod'].to_excel(writer, sheet_name='客層x商品(個数)')
-                    # シート名を変更
-                    pivots['time_cust'].to_excel(writer, sheet_name='時間x客層(客数)')
-                    pivots['cashier_payment'].to_excel(writer, sheet_name='担当者x決済(売上)')
-            
-            return True, "出力しました"
-        except Exception as e:
-            return False, str(e)
+        """
+        Excel出力処理
+        データの準備のみを行い、実際のファイル生成はExporterに任せる
+        """
+        # 1. データの準備 (Data Fetching / Analysis)
+        tx_list = self.get_transaction_list()
+        logs = self.get_logs()
+        pivots = self.get_pivot_data()
+        
+        # 2. 書き出しの委譲 (File Export)
+        return self.excel_exporter.export(file_path, tx_list, logs, pivots)
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\cart_service.py
@@ -2507,6 +2579,78 @@ class CustomerService:
         return self.repo.fetch_active()
 
 ==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\excel_ecporter.py
+==================================================
+
+import pandas as pd
+from typing import List, Dict, Tuple
+
+class ExcelReportExporter:
+    """
+    Excel帳票出力の責務を持つクラス
+    データ(List, Dict)を受け取り、フォーマットしてファイルに書き出す
+    """
+
+    def export(self, file_path: str, tx_list: List[Dict], logs: List[Dict], pivots: Dict[str, pd.DataFrame]) -> Tuple[bool, str]:
+        """
+        Excel出力実行
+        """
+        try:
+            # 1. データフレーム変換と整形
+            df_tx = pd.DataFrame(tx_list)
+            df_logs = pd.DataFrame(logs)
+
+            # タイムスタンプ列の調整 (表示用に time 列があるため timestamp は削除)
+            if 'timestamp' in df_tx.columns:
+                df_tx = df_tx.drop(columns=['timestamp'])
+            
+            # カラム名の日本語化 (帳票レイアウト定義)
+            if not df_tx.empty:
+                rename_map = {
+                    'id': '伝票ID', 
+                    'time': '日時', 
+                    'total': '合計', 
+                    'items': '点数', 
+                    'payment': '決済', 
+                    'customer': '客層',
+                    'change': 'お釣り'  # 追加: お釣りカラムも日本語化
+                }
+                df_tx.rename(columns=rename_map, inplace=True)
+
+            if not df_logs.empty:
+                df_logs.rename(columns={'time': '日時', 'level': 'レベル', 'msg': '内容'}, inplace=True)
+
+            # 2. Excelファイルへの書き込み
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                # 伝票一覧シート
+                if df_tx.empty:
+                    pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
+                else:
+                    df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
+
+                # 操作ログシート
+                if not df_logs.empty:
+                    df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
+                
+                # クロス集計シート (AnalysisTabの内容)
+                if pivots:
+                    if 'time_prod' in pivots:
+                        pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')
+                    if 'cust_prod' in pivots:
+                        pivots['cust_prod'].to_excel(writer, sheet_name='客層x商品(個数)')
+                    if 'time_cust' in pivots:
+                        pivots['time_cust'].to_excel(writer, sheet_name='時間x客層(客数)')
+                    if 'cashier_payment' in pivots:
+                        pivots['cashier_payment'].to_excel(writer, sheet_name='担当者x決済(売上)')
+
+            return True, "出力しました"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, str(e)
+
+==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\master_data_service.py
 ==================================================
 
@@ -2618,7 +2762,7 @@ class MasterDataService:
     def sync_json_to_db(self):
         """
         起動時用: JSONの内容をDBに反映（簡易同期）
-        モデルの from_dict() を使用してオブジェクトを生成し、リポジトリで保存
+        詳細な判定ロジックは各リポジトリの import_data に委譲
         """
         data = self._load_json_safe()
         if not data:
@@ -2628,54 +2772,27 @@ class MasterDataService:
 
         # --- A. Products (商品) ---
         for p_data in data.get("products", []):
-            prod = Product.from_dict(p_data)
-            # 名前でIDを検索して更新か新規かを判定
-            exists_id = self.prod_repo.find_id_by_name(prod.name)
-            prod.id = exists_id # IDがあればセット
-            
-            if exists_id:
-                self.prod_repo.update_product(prod)
-            else:
-                self.prod_repo.add_product(prod)
+            self.prod_repo.import_data(p_data)
 
         # --- B. Users (ユーザー) ---
         for u_data in data.get("users", []):
-            user = User.from_dict(u_data)
-            # user_code をキーに upsert
-            self.user_repo.upsert_user(user)
+            self.user_repo.import_data(u_data)
 
         # --- C. Payment Methods (決済方法) ---
         for pm_data in data.get("payment_methods", []):
-            pm = PaymentMethod.from_dict(pm_data)
-            if pm.id:
-                if not self.pay_repo.update(pm):
-                    self.pay_repo.add(pm)
-            else:
-                self.pay_repo.add(pm)
+            self.pay_repo.import_data(pm_data)
 
         # --- D. Customer Presets (客層) ---
         for c_data in data.get("customer_presets", []):
-            cust = Customer.from_dict(c_data)
-            if cust.id:
-                if not self.cust_repo.update(cust):
-                    self.cust_repo.add(cust)
-            else:
-                self.cust_repo.add(cust)
+            self.cust_repo.import_data(c_data)
 
         # --- E. Initial Expenses (経費項目) ---
-        # 起動時の初期経費登録などは運用に合わせて実装（今回はスキップまたは追加のみ）
-        # for e_data in data.get("initial_expenses", []):
-        #     self.exp_repo.add(e_data['title'], e_data['amount'])
-        pass
+        for e_data in data.get("initial_expenses", []):
+            self.exp_repo.import_data(e_data)
 
         # --- F. Discount Rules (割引) ---
         for r_data in data.get("discount_rules", []):
-            rule = DiscountRule.from_dict(r_data)
-            if rule.id:
-                if not self.disc_repo.update(rule):
-                    self.disc_repo.add(rule)
-            else:
-                self.disc_repo.add(rule)
+            self.disc_repo.import_data(r_data)
 
         print("Sync completed.")
 
@@ -2704,6 +2821,52 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\serv
 ==================================================
 
 
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\database.py
+==================================================
+
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+import sqlite3
+from typing import Generator, Tuple
+
+class IDatabaseProvider(ABC):
+    """データベース接続を提供する抽象インターフェース"""
+    
+    @abstractmethod
+    def get_connection(self):
+        pass
+
+    @abstractmethod
+    @contextmanager
+    def transaction(self):
+        pass
+
+class SQLiteProvider(IDatabaseProvider):
+    """SQLite用の具体的な接続プロバイダ"""
+    
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+
+    def get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row  # カラム名アクセスを有効化
+        return conn
+
+    @contextmanager
+    def transaction(self) -> Generator[Tuple[sqlite3.Connection, sqlite3.Cursor], None, None]:
+        """トランザクション管理付きのカーソルを提供"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            yield conn, cursor
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            raise e
+        finally:
+            conn.close()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\style.py
@@ -2897,7 +3060,7 @@ class AdminWindow(QDialog):
     管理者・分析画面 (リファクタリング版)
     各タブの責務を別ファイルに委譲し、ここでは統合管理のみを行う。
     """
-    def __init__(self, parent=None):
+    def __init__(self, service: AnalyticsService, parent=None):
         super().__init__(parent)
         self.setWindowTitle("管理・分析ダッシュボード")
         self.resize(1100, 750)
@@ -2915,7 +3078,7 @@ class AdminWindow(QDialog):
             QSplitter::handle { background-color: #555; }
         """)
 
-        self.service = AnalyticsService()
+        self.service = service
         self._init_ui()
         self._load_data()
 
@@ -2990,6 +3153,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from app.config import DB_PATH
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -3000,12 +3164,14 @@ from app.repositories.user_repo import UserRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.repositories.customer_repo import CustomerRepository
+from app.repositories.analytics_repo import AnalyticsRepository
 
 # Service/Logic
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
 from app.services.customer_service import CustomerService
+from app.services.analytics_service import AnalyticsService
 from app.logic.discount_manager import DiscountManager
 
 # Strategies
@@ -3023,6 +3189,7 @@ from app.views.admin_window import AdminWindow
 from app.views.dialogs.login_dialog import LoginDialog
 from app.views.settings_window import SettingsWindow
 from app.utils.style import StyleGenerator
+from app.utils.database import SQLiteProvider
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -3032,16 +3199,17 @@ class MainWindow(QMainWindow):
         self.setStyleSheet("QMainWindow { background-color: #2b2b2b; } QWidget { color: #ffffff; }")
 
         # --- 依存関係の構築 (Composition Root) ---
-        
+        self.db_provider = SQLiteProvider(DB_PATH)
         # 1. Repositories (データアクセス層)
-        self.trans_repo = TransactionRepository()
-        self.prod_repo = ProductRepository()
-        self.payment_repo = PaymentRepository()
-        self.disc_repo = DiscountRepository()
-        self.user_repo = UserRepository()
-        self.expense_repo = ExpenseRepository()
-        self.log_repo = LogRepository()
-        self.cust_repo = CustomerRepository()
+        self.trans_repo = TransactionRepository(self.db_provider)
+        self.prod_repo = ProductRepository(self.db_provider)
+        self.payment_repo = PaymentRepository(self.db_provider)
+        self.disc_repo = DiscountRepository(self.db_provider)
+        self.user_repo = UserRepository(self.db_provider)
+        self.expense_repo = ExpenseRepository(self.db_provider)
+        self.log_repo = LogRepository(self.db_provider)
+        self.cust_repo = CustomerRepository(self.db_provider)
+        self.ana_repo = AnalyticsRepository(self.db_provider)
 
         # 2. Strategies (割引ロジックの部品)
         strategies = {
@@ -3062,6 +3230,14 @@ class MainWindow(QMainWindow):
         # UI用のデータ提供サービスを作成
         self.product_service = ProductService(self.prod_repo)
         self.customer_service = CustomerService(self.cust_repo)
+
+        # AnalyticsServiceにRepoを注入
+        self.analytics_service = AnalyticsService(
+            ana_repo=self.ana_repo,
+            trans_repo=self.trans_repo,
+            expense_repo=self.expense_repo,
+            log_repo=self.log_repo
+        )
 
         # CartServiceに全ての依存関係を注入 (DI)
         self.cart_service = CartService(
@@ -3235,7 +3411,7 @@ class MainWindow(QMainWindow):
                 self.cart_service.add_manual_item(val, name_input.text() or "手入力")
 
     def _open_admin_window(self) -> None:
-        admin = AdminWindow(self)
+        admin = AdminWindow(self.analytics_service, self)
         admin.exec()
 
     def _show_login_dialog(self):

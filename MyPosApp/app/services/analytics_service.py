@@ -11,11 +11,17 @@ from app.repositories.log_repo import LogRepository
 from app.services.excel_ecporter import ExcelReportExporter
 
 class AnalyticsService:
-    def __init__(self):
-        self.ana_repo = AnalyticsRepository()
-        self.trans_repo = TransactionRepository()
-        self.expense_repo = ExpenseRepository()
-        self.log_repo = LogRepository()
+    def __init__(
+            self,
+            ana_repo: AnalyticsRepository,
+            trans_repo: TransactionRepository,
+            expense_repo: ExpenseRepository,
+            log_repo: LogRepository
+        ):
+        self.ana_repo = ana_repo
+        self.trans_repo = trans_repo
+        self.expense_repo = expense_repo
+        self.log_repo = log_repo
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
         self.excel_exporter = ExcelReportExporter()
 
