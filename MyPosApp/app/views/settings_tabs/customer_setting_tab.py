@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QPushButton, QHeaderView
+from PySide6.QtWidgets import QPushButton, QHeaderView, QMessageBox
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from dataclasses import asdict
@@ -106,14 +106,25 @@ class CustomerSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 客層は物理削除機能を提供していないため、無効化のみ行う
         target = self.get_selected_row_data(self.customers)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"客層無効化: {target.label}")
-            self.load_data()
+
+        # 確認ダイアログ
+        msg = f"客層「{target.label}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (非表示)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"客層完全削除: {target.label}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化 (既存ロジック)
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"客層無効化: {target.label}")
+                self.load_data()
 
     def _move(self, direction):
         row = self.table.currentRow()

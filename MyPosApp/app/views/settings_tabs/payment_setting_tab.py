@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from PySide6.QtWidgets import QMessageBox
 from app.models.payment_method import PaymentMethod
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.log_repo import LogRepository
@@ -51,11 +52,21 @@ class PaymentSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 物理削除ではなく無効化を行う
         target = self.get_selected_row_data(self.methods)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
-            self.load_data()
+
+        msg = f"支払方法「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (停止)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"支払方法完全削除: {target.name}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
+                self.load_data()

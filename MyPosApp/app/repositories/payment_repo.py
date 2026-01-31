@@ -36,3 +36,12 @@ class PaymentRepository(BaseRepository):
             return True
         except Exception:
             return False
+        
+    def delete(self, payment_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM payment_methods WHERE id=?", (payment_id,))
+            return True
+        except Exception:
+            return False

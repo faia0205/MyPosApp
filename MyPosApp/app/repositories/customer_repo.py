@@ -95,3 +95,13 @@ class CustomerRepository(BaseRepository):
             display_order=row[4],
             is_active=bool(row[5])
         )
+    
+    def delete(self, customer_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM customer_presets WHERE id=?", (customer_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting customer: {e}")
+            return False

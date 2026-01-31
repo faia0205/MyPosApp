@@ -42,7 +42,9 @@ Root: MyPosApp/
             analytics_service.py
             cart_service.py
             checkout_service.py
+            customer_service.py
             master_data_service.py
+            product_service.py
         utils/
             __init__.py
             style.py
@@ -122,3 +124,5 @@ Root: MyPosApp/
             master_backup_20260130_214334.json
             master_backup_20260130_214432.json
             master_backup_20260130_214443.json
+            master_backup_20260131_080909.json
+            master_backup_20260131_083044.json

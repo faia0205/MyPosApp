@@ -243,6 +243,12 @@
     ],
     "initial_expenses": [
         {
+            "id": 1,
+            "title": "追加買い出し",
+            "amount": 300,
+            "timestamp": "2026-01-24 18:41:14"
+        },
+        {
             "id": 2,
             "title": "買い出し",
             "amount": 500,
@@ -283,6 +289,16 @@
             "discount_value": 100,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"select\", \"qty\": 2, \"targets\": [\"たこ焼き\", \"焼きそば\", \"唐揚げ\"]}",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 4,
+            "name": "フード4個で100円引き",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"select\", \"qty\": 4, \"targets\": [\"フード\"]}",
             "is_auto": true,
             "is_active": false
         },

@@ -70,8 +70,6 @@ class DiscountRepository(BaseRepository):
         except Exception as e:
             print(f"Error updating discount rule: {e}")
             return False
-    
-    # 以前の add_rule / update_rule は廃止し、add / update に統合しました。
 
     def _map_to_model(self, row) -> DiscountRule:
         if row is None: return None
@@ -85,3 +83,13 @@ class DiscountRepository(BaseRepository):
             is_auto=bool(row[6]),
             is_active=bool(row[7])
         )
+    
+    def delete(self, rule_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM discount_rules WHERE id=?", (rule_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting discount rule: {e}")
+            return False

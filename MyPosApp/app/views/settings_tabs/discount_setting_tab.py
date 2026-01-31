@@ -1,5 +1,6 @@
 from dataclasses import asdict
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QMessageBox
 
 from app.models.discount import DiscountRule
 from app.repositories.discount_repo import DiscountRepository
@@ -98,11 +99,21 @@ class DiscountSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 無効化のみ
         target = self.get_selected_row_data(self.rules)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
-            self.load_data()
+
+        msg = f"割引ルール「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (停止)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"割引ルール完全削除: {target.name}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
+                self.load_data()

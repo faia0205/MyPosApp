@@ -709,7 +709,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\mode
 ==================================================
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 import json
 
 @dataclass
@@ -717,68 +717,137 @@ class Customer:
     """客層データモデル"""
     id: Optional[int]
     label: str
-    attributes_json: str = "{}" # DBのTEXTカラム(JSON文字列)に対応
+    attributes_json: str = "{}"
     color: str = "#ffffff"
     display_order: int = 0
     is_active: bool = True
 
     @property
     def attributes(self) -> dict:
-        """JSON文字列を辞書として取得（読み取り専用）"""
         try:
             return json.loads(self.attributes_json)
         except Exception:
             return {}
 
     def set_attributes(self, data: dict):
-        """辞書からJSON文字列を設定するヘルパー"""
         self.attributes_json = json.dumps(data, ensure_ascii=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON出力用辞書変換"""
+        return {
+            "id": self.id,
+            "label": self.label,
+            "attributes": self.attributes, # JSON文字列ではなく辞書を展開して返す
+            "color": self.color,
+            "display_order": self.display_order,
+            "is_active": self.is_active
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'Customer':
+        """辞書からモデル生成"""
+        c = Customer(
+            id=data.get("id"),
+            label=data["label"],
+            attributes_json="{}",
+            color=data.get("color", "#ffffff"),
+            display_order=data.get("display_order", 0),
+            is_active=data.get("is_active", True)
+        )
+        c.set_attributes(data.get("attributes", {}))
+        return c
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\discount.py
 ==================================================
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 @dataclass
 class DiscountRule:
     """割引ルール定義 (DB: discount_rules)"""
     id: Optional[int]
     name: str
-    discount_type: str      # 'fixed' (円) or 'percent' (%)
+    discount_type: str # 'fixed' (円) or 'percent' (%)
     discount_value: int
-    apply_type: str         # 'cart', 'category', 'item', 'bundle'
-    target_value: str       # 対象識別子 (JSON文字列 または カテゴリ名/商品名)
-    is_auto: bool = False   # 自動適用するか
+    apply_type: str # 'cart', 'category', 'item', 'bundle'
+    target_value: str # 対象識別子 (JSON文字列 または カテゴリ名/商品名)
+    is_auto: bool = False # 自動適用するか
     is_active: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "discount_type": self.discount_type,
+            "discount_value": self.discount_value,
+            "apply_type": self.apply_type,
+            "target_value": self.target_value,
+            "is_auto": self.is_auto,
+            "is_active": self.is_active
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'DiscountRule':
+        return DiscountRule(
+            id=data.get("id"),
+            name=data["name"],
+            discount_type=data.get("discount_type", "fixed"),
+            discount_value=data.get("discount_value", 0),
+            apply_type=data.get("apply_type", "cart"),
+            target_value=data.get("target_value", ""),
+            is_auto=data.get("is_auto", False),
+            is_active=data.get("is_active", True)
+        )
 
 @dataclass
 class AppliedDiscount:
     """計算結果として適用された割引"""
     rule_id: int
     name: str
-    amount: int  # 割引額（負の値。例: -100）
-    qty: int     # 適用セット数
+    amount: int # 割引額（負の値。例: -100）
+    qty: int # 適用セット数
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\expense.py
 ==================================================
 
 from dataclasses import dataclass
+from typing import Dict, Any
 
 @dataclass
 class Expense:
     id: int
     title: str
     amount: int
-    timestamp: str  # DBからは文字列で来るため
+    timestamp: str # DBからは文字列で来るため
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "amount": self.amount,
+            "timestamp": self.timestamp
+        }
+    
+    # 経費は通常マスタデータとしてインポート/エクスポートする対象としては優先度が低いですが
+    # 初期データ投入などで使う場合に備えて実装します
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'Expense':
+        return Expense(
+            id=data.get("id", 0),
+            title=data["title"],
+            amount=data["amount"],
+            timestamp=data.get("timestamp", "")
+        )
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\payment_method.py
 ==================================================
 
 from dataclasses import dataclass
+from typing import Dict, Any
 
 @dataclass
 class PaymentMethod:
@@ -787,17 +856,34 @@ class PaymentMethod:
     is_cash: bool
     is_active: bool
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "is_cash": self.is_cash,
+            "is_active": self.is_active
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'PaymentMethod':
+        return PaymentMethod(
+            id=data.get("id", 0),
+            name=data["name"],
+            is_cash=data.get("is_cash", False),
+            is_active=data.get("is_active", True)
+        )
+
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\product.py
 ==================================================
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 @dataclass
 class Product:
     """商品データモデル"""
-    id: Optional[int]  # 新規作成時はNoneを許容
+    id: Optional[int]
     name: str
     price: int
     category: str
@@ -808,8 +894,32 @@ class Product:
 
     @property
     def display_price(self) -> str:
-        """表示用の価格文字列（例: ¥500）"""
         return f"¥{self.price:,}"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "price": self.price,
+            "category": self.category,
+            "color": self.color,
+            "note": self.note,
+            "display_order": self.display_order,
+            "is_active": self.is_active
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'Product':
+        return Product(
+            id=data.get("id"),
+            name=data["name"],
+            price=data["price"],
+            category=data["category"],
+            color=data.get("color", "#ffffff"),
+            note=data.get("note", ""),
+            display_order=data.get("display_order", 0),
+            is_active=data.get("is_active", True)
+        )
     
     @property
     def is_discount(self) -> bool:
@@ -861,7 +971,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\mode
 ==================================================
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 @dataclass
 class User:
@@ -870,6 +980,25 @@ class User:
     user_code: str
     role: str
     is_active: bool
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "user_code": self.user_code,
+            "role": self.role,
+            "is_active": self.is_active
+        }
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'User':
+        return User(
+            id=data.get("id"),
+            name=data["name"],
+            user_code=data["user_code"],
+            role=data.get("role", "staff"),
+            is_active=data.get("is_active", True)
+        )
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\__init__.py
@@ -1145,6 +1274,16 @@ class CustomerRepository(BaseRepository):
             display_order=row[4],
             is_active=bool(row[5])
         )
+    
+    def delete(self, customer_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM customer_presets WHERE id=?", (customer_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting customer: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
@@ -1222,8 +1361,6 @@ class DiscountRepository(BaseRepository):
         except Exception as e:
             print(f"Error updating discount rule: {e}")
             return False
-    
-    # 以前の add_rule / update_rule は廃止し、add / update に統合しました。
 
     def _map_to_model(self, row) -> DiscountRule:
         if row is None: return None
@@ -1237,6 +1374,16 @@ class DiscountRepository(BaseRepository):
             is_auto=bool(row[6]),
             is_active=bool(row[7])
         )
+    
+    def delete(self, rule_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM discount_rules WHERE id=?", (rule_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting discount rule: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
@@ -1352,6 +1499,15 @@ class PaymentRepository(BaseRepository):
             with self.transaction() as (conn, cursor):
                 cursor.execute("UPDATE payment_methods SET name=?, is_cash=?, is_active=? WHERE id=?",
                                (method.name, int(method.is_cash), int(method.is_active), method.id))
+            return True
+        except Exception:
+            return False
+        
+    def delete(self, payment_id: int) -> bool:
+        """物理削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM payment_methods WHERE id=?", (payment_id,))
             return True
         except Exception:
             return False
@@ -2331,6 +2487,26 @@ class CheckoutService:
         return new_id
 
 ==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\customer_service.py
+==================================================
+
+from typing import List
+from app.repositories.customer_repo import CustomerRepository
+from app.models.customer import Customer
+
+class CustomerService:
+    def __init__(self, repo: CustomerRepository):
+        self.repo = repo
+
+    def get_all_customers(self) -> List[Customer]:
+        """全客層取得"""
+        return self.repo.fetch_all()
+
+    def get_active_customers(self) -> List[Customer]:
+        """有効な客層のみ取得"""
+        return self.repo.fetch_active()
+
+==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\master_data_service.py
 ==================================================
 
@@ -2338,10 +2514,13 @@ import json
 import shutil
 import os
 import datetime
-from typing import Dict, Any, List
-from dataclasses import asdict
+from typing import Dict
 
+# Config
 from app.config import DATA_DIR
+
+# 定数をここで定義
+MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
 
 # Models
 from app.models.product import Product
@@ -2349,7 +2528,7 @@ from app.models.user import User
 from app.models.customer import Customer
 from app.models.payment_method import PaymentMethod
 from app.models.expense import Expense
-from app.models.discount import DiscountRule  # ★追加
+from app.models.discount import DiscountRule
 
 # Repositories
 from app.repositories.product_repo import ProductRepository
@@ -2359,12 +2538,12 @@ from app.repositories.payment_repo import PaymentRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.discount_repo import DiscountRepository
 
-MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
-
 class MasterDataService:
     """
     マスターデータ(JSON)とデータベースの同期・変換を担当するサービス
+    SRP対応: データ変換ロジックは各Modelの to_dict / from_dict に委譲済み
     """
+
     def __init__(self):
         self.prod_repo = ProductRepository()
         self.user_repo = UserRepository()
@@ -2385,6 +2564,7 @@ class MasterDataService:
             if os.path.exists(MASTER_JSON_PATH):
                 now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_dir = os.path.join(DATA_DIR, "backups")
+                
                 if not os.path.exists(backup_dir):
                     os.makedirs(backup_dir)
                 
@@ -2392,52 +2572,16 @@ class MasterDataService:
                 shutil.copy(MASTER_JSON_PATH, backup_path)
                 print(f"Backup created: {backup_path}")
 
-            # 2. 各リポジトリからJSON用データを収集
-            
-            # 商品
-            products_objs = self.prod_repo.fetch_all_as_models()
-            products = [asdict(p) for p in products_objs]
-            
-            # ユーザー
-            users_objs = self.user_repo.fetch_all_users()
-            users = [asdict(u) for u in users_objs]
-            
-            # 客層 (Dataclass -> Dict変換と属性の整形)
-            customers_objs = self.cust_repo.fetch_all()
-            customers = []
-            for c in customers_objs:
-                c_dict = asdict(c)
-                # JSONファイル仕様では "attributes": {dict} が求められるため
-                # モデルのプロパティ(.attributes)を使って上書きし、不要な_jsonフィールドを消す
-                c_dict['attributes'] = c.attributes 
-                if 'attributes_json' in c_dict:
-                    del c_dict['attributes_json']
-                customers.append(c_dict)
-            
-            # 決済方法
-            payment_methods = [asdict(pm) for pm in self.pay_repo.fetch_all()]
-            
-            # 経費項目
-            expenses = []
-            for ex in self.exp_repo.fetch_all():
-                d = asdict(ex)
-                expenses.append(d)
-
-            # 割引ルール
-            # ★修正: fetch_all_rules() はオブジェクトを返すようになったため、asdictで変換が必要
-            discount_rules_objs = self.disc_repo.fetch_all_rules()
-            discount_rules = [asdict(r) for r in discount_rules_objs]
-
-            # データ構築
+            # 2. 各リポジトリからデータを収集し、モデルの to_dict() で変換
             master_data = {
-                "products": products,
-                "users": users,
-                "customer_presets": customers,
-                "payment_methods": payment_methods,
-                "initial_expenses": expenses, 
-                "discount_rules": discount_rules
+                "products": [p.to_dict() for p in self.prod_repo.fetch_all_as_models()],
+                "users": [u.to_dict() for u in self.user_repo.fetch_all_users()],
+                "customer_presets": [c.to_dict() for c in self.cust_repo.fetch_all()],
+                "payment_methods": [p.to_dict() for p in self.pay_repo.fetch_all()],
+                "initial_expenses": [e.to_dict() for e in self.exp_repo.fetch_all()],
+                "discount_rules": [r.to_dict() for r in self.disc_repo.fetch_all_rules()]
             }
-            
+
             # 3. JSON書き出し
             with open(MASTER_JSON_PATH, 'w', encoding='utf-8') as f:
                 json.dump(master_data, f, ensure_ascii=False, indent=4)
@@ -2467,7 +2611,7 @@ class MasterDataService:
     def sync_json_to_db(self):
         """
         起動時用: JSONの内容をDBに反映（簡易同期）
-        既にデータがある場合、IDが一致すれば更新、なければ追加を行います。
+        モデルの from_dict() を使用してオブジェクトを生成し、リポジトリで保存
         """
         data = self._load_json_safe()
         if not data:
@@ -2476,99 +2620,77 @@ class MasterDataService:
         print("Syncing JSON to DB...")
 
         # --- A. Products (商品) ---
-        for p in data.get("products", []):
-            exists_id = self.prod_repo.find_id_by_name(p["name"])
+        for p_data in data.get("products", []):
+            prod = Product.from_dict(p_data)
+            # 名前でIDを検索して更新か新規かを判定
+            exists_id = self.prod_repo.find_id_by_name(prod.name)
+            prod.id = exists_id # IDがあればセット
             
-            target_product = Product(
-                id=exists_id, 
-                name=p["name"],
-                price=p["price"],
-                category=p["category"],
-                color=p.get("color", "#ffcc80"),
-                note=p.get("note", ""),
-                is_active=p.get("is_active", True),
-                display_order=p.get("display_order", 0)
-            )
-            # barcode対応
-            if "barcode" in p:
-                target_product.barcode = p["barcode"]
-
             if exists_id:
-                self.prod_repo.update_product(target_product)
+                self.prod_repo.update_product(prod)
             else:
-                self.prod_repo.add_product(target_product)
-        
+                self.prod_repo.add_product(prod)
+
         # --- B. Users (ユーザー) ---
-        for u in data.get("users", []):
-            target_user = User(
-                id=u.get("id"),
-                name=u["name"],
-                user_code=u["user_code"],
-                role=u.get("role", "staff"),
-                is_active=u.get("is_active", True)
-            )
-            self.user_repo.upsert_user(target_user)
+        for u_data in data.get("users", []):
+            user = User.from_dict(u_data)
+            # user_code をキーに upsert
+            self.user_repo.upsert_user(user)
 
         # --- C. Payment Methods (決済方法) ---
-        for pm in data.get("payment_methods", []):
-            target_pm = PaymentMethod(
-                id=pm.get("id"),
-                name=pm["name"],
-                is_cash=pm.get("is_cash", False),
-                is_active=pm.get("is_active", True)
-            )
-            # 簡易upsertロジック
-            if target_pm.id:
-                if not self.pay_repo.update(target_pm):
-                    self.pay_repo.add(target_pm)
+        for pm_data in data.get("payment_methods", []):
+            pm = PaymentMethod.from_dict(pm_data)
+            if pm.id:
+                if not self.pay_repo.update(pm):
+                    self.pay_repo.add(pm)
             else:
-                self.pay_repo.add(target_pm)
+                self.pay_repo.add(pm)
 
         # --- D. Customer Presets (客層) ---
-        for c in data.get("customer_presets", []):
-            target_cust = Customer(
-                id=c.get("id"),
-                label=c["label"],
-                attributes_json="", 
-                color=c.get("color", "#ffffff"),
-                display_order=c.get("display_order", 0),
-                is_active=c.get("is_active", True)
-            )
-            target_cust.set_attributes(c.get("attributes", {}))
-
-            if target_cust.id:
-                if not self.cust_repo.update(target_cust):
-                     self.cust_repo.add(target_cust)
+        for c_data in data.get("customer_presets", []):
+            cust = Customer.from_dict(c_data)
+            if cust.id:
+                if not self.cust_repo.update(cust):
+                    self.cust_repo.add(cust)
             else:
-                self.cust_repo.add(target_cust)
+                self.cust_repo.add(cust)
 
         # --- E. Initial Expenses (経費項目) ---
-        # 起動時にJSONにある経費を追加するかは運用次第だが、
-        # ここではマスタ定義的なものがもしあれば追加するロジック（今回は省略または最小限）
-        pass 
+        # 起動時の初期経費登録などは運用に合わせて実装（今回はスキップまたは追加のみ）
+        # for e_data in data.get("initial_expenses", []):
+        #     self.exp_repo.add(e_data['title'], e_data['amount'])
+        pass
 
         # --- F. Discount Rules (割引) ---
-        # ★修正: 新しい DiscountRule オブジェクトを使って同期
-        for r in data.get("discount_rules", []):
-            target_rule = DiscountRule(
-                id=r.get('id'),
-                name=r['name'],
-                discount_type=r['discount_type'],
-                discount_value=r['discount_value'],
-                apply_type=r['apply_type'],
-                target_value=r.get('target_value', ""),
-                is_auto=bool(r.get('is_auto', False)),
-                is_active=bool(r.get('is_active', True))
-            )
-            
-            # Repositoryの実装に合わせて upsert 的な処理
-            if target_rule.id:
-                if not self.disc_repo.update(target_rule):
-                    self.disc_repo.add(target_rule)
+        for r_data in data.get("discount_rules", []):
+            rule = DiscountRule.from_dict(r_data)
+            if rule.id:
+                if not self.disc_repo.update(rule):
+                    self.disc_repo.add(rule)
             else:
-                self.disc_repo.add(target_rule)
+                self.disc_repo.add(rule)
 
         print("Sync completed.")
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\product_service.py
+==================================================
+
+from typing import List
+from app.repositories.product_repo import ProductRepository
+from app.models.product import Product
+
+class ProductService:
+    def __init__(self, repo: ProductRepository):
+        self.repo = repo
+
+    def get_active_products(self) -> List[Product]:
+        """販売画面用: 有効な商品を取得"""
+        return self.repo.fetch_active_products()
+
+    def get_all_products(self) -> List[Product]:
+        """商品一覧用"""
+        return self.repo.fetch_all_as_models()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\__init__.py
@@ -2870,13 +2992,16 @@ from app.repositories.discount_repo import DiscountRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.customer_repo import CustomerRepository
 
-# [cite_start]Service/Logic [cite: 159, 122, 20]
+# Service/Logic
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
+from app.services.product_service import ProductService
+from app.services.customer_service import CustomerService
 from app.logic.discount_manager import DiscountManager
 
-# [cite_start]Strategies [cite: 25, 30, 32, 35]
+# Strategies
 from app.logic.strategies.item_strategy import ItemDiscountStrategy
 from app.logic.strategies.category_strategy import CategoryDiscountStrategy
 from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
@@ -2909,6 +3034,7 @@ class MainWindow(QMainWindow):
         self.user_repo = UserRepository()
         self.expense_repo = ExpenseRepository()
         self.log_repo = LogRepository()
+        self.cust_repo = CustomerRepository()
 
         # 2. Strategies (割引ロジックの部品)
         strategies = {
@@ -2919,14 +3045,18 @@ class MainWindow(QMainWindow):
         }
         
         # 3. Manager (ロジック統括)
-        # [cite_start]Strategyを注入してManagerを生成 [cite: 20]
+        # Strategyを注入してManagerを生成
         self.discount_manager = DiscountManager(strategies)
 
         # 4. Services (アプリケーション層)
-        # [cite_start]CheckoutServiceにRepoを注入 [cite: 122]
+        # CheckoutServiceにRepoを注入
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
         
-        # [cite_start]CartServiceに全ての依存関係を注入 (DI) [cite: 103]
+        # UI用のデータ提供サービスを作成
+        self.product_service = ProductService(self.prod_repo)
+        self.customer_service = CustomerService(self.cust_repo)
+
+        # CartServiceに全ての依存関係を注入 (DI)
         self.cart_service = CartService(
             prod_repo=self.prod_repo,
             disc_repo=self.disc_repo,
@@ -2997,14 +3127,14 @@ class MainWindow(QMainWindow):
         body.addWidget(self.cart_widget, stretch=3)
 
         # 2. 商品リスト Widget
-        self.product_list_widget = ProductListWidget(self.cart_service)
+        self.product_list_widget = ProductListWidget(self.cart_service, self.product_service)
         body.addWidget(self.product_list_widget, stretch=5)
 
         # 3. 操作パネル (右側)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
-        self.customer_panel = CustomerPanel(self.cart_service)
+        self.customer_panel = CustomerPanel(self.cart_service, self.customer_service)
         right_layout.addWidget(self.customer_panel)
         
         right_layout.addStretch()
@@ -3113,7 +3243,7 @@ class MainWindow(QMainWindow):
         win = SettingsWindow(self)
         win.exec()
         # 設定画面から戻ったらデータをリフレッシュ
-        active_products = self.prod_repo.fetch_active_products()
+        active_products = self.product_service.get_active_products()
         self.cart_service.refresh_prices(active_products)
         self.cart_service.recalculate()
         self.product_list_widget.refresh_data()
@@ -3475,33 +3605,28 @@ class CartWidget(QWidget):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\customer_panel.py
 ==================================================
 
-import json
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QButtonGroup, 
-                               QPushButton)
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QButtonGroup)
 from app.services.cart_service import CartService
-from app.repositories.customer_repo import CustomerRepository
+from app.services.customer_service import CustomerService # ★追加
 from app.models.customer import Customer
 from app.views.components.custom_buttons import CustomerButton
 
 class CustomerPanel(QWidget):
     """客層選択パネル"""
-    def __init__(self, cart_service: CartService, parent=None):
+
+    def __init__(self, cart_service: CartService, customer_service: CustomerService, parent=None):
         super().__init__(parent)
         self.cart_service = cart_service
-        self.repo = CustomerRepository()
+        self.customer_service = customer_service # ★追加: RepoではなくService
         self._init_ui()
-        
         self.cart_service.checkout_completed.connect(self._reset_selection)
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
         self.cust_group = QButtonGroup(self)
         self.customer_grid = QGridLayout()
         layout.addLayout(self.customer_grid)
-        
         self.refresh_data()
 
     def refresh_data(self):
@@ -3509,34 +3634,32 @@ class CustomerPanel(QWidget):
         while self.customer_grid.count():
             item = self.customer_grid.takeAt(0)
             w = item.widget()
-            if w: 
+            if w:
                 self.cust_group.removeButton(w)
                 w.deleteLater()
+
+        # ★変更: Service経由で取得
+        all_customers = self.customer_service.get_all_customers()
         
-        # Repoからオブジェクトリストを取得
-        all_customers = self.repo.fetch_all() 
         current_selection_valid = False
 
         for i, c_model in enumerate(all_customers):
-            # c_model は既に Customer オブジェクト
-            
             btn = CustomerButton(c_model)
             self.cust_group.addButton(btn)
             self.customer_grid.addWidget(btn, i//2, i%2)
-            
+
             if not c_model.is_active:
                 btn.setEnabled(False)
                 btn.setStyleSheet("background-color: #424242; color: #757575; border: 1px solid #616161; border-radius: 8px; font-weight: bold;")
                 btn.setText(f"{c_model.label}\n(無効)")
             else:
                 btn.clicked.connect(lambda _, x=c_model: self._on_customer_selected(x))
-                
-                # 選択状態の復元
-                if self.cart_service.selected_customer and self.cart_service.selected_customer.id == c_model.id:
-                    btn.setChecked(True)
-                    current_selection_valid = True
 
-        # 無効になっていたら選択解除
+            # 選択状態の復元
+            if self.cart_service.selected_customer and self.cart_service.selected_customer.id == c_model.id:
+                btn.setChecked(True)
+                current_selection_valid = True
+
         if self.cart_service.selected_customer and not current_selection_valid:
             self.cart_service.set_customer(None)
             self._reset_selection()
@@ -3631,8 +3754,9 @@ from typing import List, Dict
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTabWidget, QScrollArea, 
                                QGridLayout, QLabel)
 from PySide6.QtCore import Qt
+
 from app.services.cart_service import CartService
-from app.repositories.product_repo import ProductRepository
+from app.services.product_service import ProductService # ★追加
 from app.views.components.custom_buttons import ProductButton
 from app.utils.style import StyleGenerator
 from app.models.product import Product
@@ -3640,72 +3764,66 @@ from app.models.product import Product
 class ProductListWidget(QWidget):
     """カテゴリ別商品タブを表示するウィジェット"""
 
-    def __init__(self, cart_service: CartService, parent=None):
+    def __init__(self, cart_service: CartService, product_service: ProductService, parent=None):
         super().__init__(parent)
         self.cart_service = cart_service
-        self.repo = ProductRepository()
+        self.product_service = product_service # ★追加: RepoではなくServiceを受け取る
         self._init_ui()
         self.refresh_data()
 
     def _init_ui(self):
+        # (変更なし)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(StyleGenerator.create_tab_style())
         layout.addWidget(self.tabs)
 
     def refresh_data(self):
-        """DBから商品を再取得して描画"""
+        """Serviceから商品を再取得して描画"""
         self.tabs.clear()
         
-        # ★修正1: 有効な商品だけでなく、全ての商品を取得する
-        products: List[Product] = self.repo.fetch_all_as_models() 
-
-        # カテゴリごとのグルーピング
+        # ★変更: Service経由で取得
+        products: List[Product] = self.product_service.get_all_products()
+        
+        # (以下、描画ロジックは変更なし)
         categorized: Dict[str, List[Product]] = {}
         cat_totals: Dict[str, int] = {}
 
         for p in products:
             cat = p.category or "その他"
-            if cat not in categorized: 
+            if cat not in categorized:
                 categorized[cat] = []
                 cat_totals[cat] = 0
             categorized[cat].append(p)
-            
-            # 並び順の目安として有効な商品の価格合計を使う（既存ロジック踏襲）
             if p.is_active:
                 cat_totals[cat] += p.price
 
         sorted_categories = sorted(cat_totals.keys(), key=lambda x: cat_totals[x], reverse=True)
-        
+
         for cat in sorted_categories:
             items = categorized[cat]
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
-            scroll.setStyleSheet("background-color: #424242;") 
+            scroll.setStyleSheet("background-color: #424242;")
             
             container = QWidget()
             container.setStyleSheet("background-color: #424242;")
             grid = QGridLayout(container)
             grid.setSpacing(10)
-            
+
             for i, p in enumerate(items):
                 btn = ProductButton(p)
-                
-                # ★修正2: 無効な商品はグレーアウト表示にし、クリック不可にはしない（または必要ならsetEnabled(False)）
                 if not p.is_active:
-                    btn.setEnabled(False) # クリック不可にする
-                    # グレーアウト用のスタイル適用
+                    btn.setEnabled(False)
                     btn.setStyleSheet("""
                         QPushButton {
-                            background-color: #616161; color: #9e9e9e; 
+                            background-color: #616161; color: #9e9e9e;
                             border: 1px solid #757575; border-radius: 8px;
                         }
                     """)
                     btn.setText(f"{p.name}\n(停止中)")
                 else:
-                    # 有効な商品はクリックでカート追加
                     btn.clicked.connect(lambda _, x=p: self.cart_service.add_product(x))
                 
                 grid.addWidget(btn, i//3, i%3)
@@ -5161,7 +5279,7 @@ class BaseSettingTab(QWidget):
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\customer_setting_tab.py
 ==================================================
 
-from PySide6.QtWidgets import QPushButton, QHeaderView
+from PySide6.QtWidgets import QPushButton, QHeaderView, QMessageBox
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from dataclasses import asdict
@@ -5269,14 +5387,25 @@ class CustomerSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 客層は物理削除機能を提供していないため、無効化のみ行う
         target = self.get_selected_row_data(self.customers)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"客層無効化: {target.label}")
-            self.load_data()
+
+        # 確認ダイアログ
+        msg = f"客層「{target.label}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (非表示)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"客層完全削除: {target.label}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化 (既存ロジック)
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"客層無効化: {target.label}")
+                self.load_data()
 
     def _move(self, direction):
         row = self.table.currentRow()
@@ -5298,6 +5427,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 
 from dataclasses import asdict
 from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QMessageBox
 
 from app.models.discount import DiscountRule
 from app.repositories.discount_repo import DiscountRepository
@@ -5396,14 +5526,24 @@ class DiscountSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 無効化のみ
         target = self.get_selected_row_data(self.rules)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
-            self.load_data()
+
+        msg = f"割引ルール「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (停止)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"割引ルール完全削除: {target.name}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
+                self.load_data()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\expense_setting_tab.py
@@ -5480,6 +5620,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 ==================================================
 
 from dataclasses import asdict
+from PySide6.QtWidgets import QMessageBox
 from app.models.payment_method import PaymentMethod
 from app.repositories.payment_repo import PaymentRepository
 from app.repositories.log_repo import LogRepository
@@ -5532,14 +5673,24 @@ class PaymentSettingTab(BaseSettingTab):
                 self.load_data()
 
     def on_delete_selected(self):
-        # 物理削除ではなく無効化を行う
         target = self.get_selected_row_data(self.methods)
         if not target: return
-        
-        target.is_active = False
-        if self.repo.update(target):
-            self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
-            self.load_data()
+
+        msg = f"支払方法「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (停止)\n「Cancel」= やめる"
+        res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 完全削除
+            if self.repo.delete(target.id):
+                self.log_repo.add_log("warning", f"支払方法完全削除: {target.name}")
+                self.load_data()
+
+        elif res == QMessageBox.No:
+            # 無効化
+            target.is_active = False
+            if self.repo.update(target):
+                self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
+                self.load_data()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\product_setting_tab.py
