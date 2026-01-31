@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
         admin.exec()
 
     def _show_login_dialog(self):
-        dialog = LoginDialog(self)
+        dialog = LoginDialog(self.user_repo, self)
         if dialog.exec():
             user_name = dialog.selected_user_name
             self.cart_service.set_current_user(user_name)
@@ -261,7 +261,16 @@ class MainWindow(QMainWindow):
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
 
     def _open_settings_window(self):
-        win = SettingsWindow(self)
+        win = SettingsWindow(
+            product_repo=self.prod_repo,
+            user_repo=self.user_repo,
+            customer_repo=self.cust_repo,
+            payment_repo=self.payment_repo,
+            expense_repo=self.expense_repo,
+            discount_repo=self.disc_repo,
+            log_repo=self.log_repo,
+            parent=self
+        )
         win.exec()
         # 設定画面から戻ったらデータをリフレッシュ
         active_products = self.product_service.get_active_products()

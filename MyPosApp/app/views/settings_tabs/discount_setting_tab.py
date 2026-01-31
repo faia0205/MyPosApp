@@ -5,14 +5,16 @@ from PySide6.QtWidgets import QMessageBox
 from app.models.discount import DiscountRule
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.product_repo import ProductRepository
 from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class DiscountSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, discount_repo: DiscountRepository, log_repo: LogRepository, prod_repo: ProductRepository):
         super().__init__()
-        self.repo = DiscountRepository()
-        self.log_repo = LogRepository()
+        self.repo = discount_repo
+        self.log_repo = log_repo
+        self.prod_repo = prod_repo
         
         self.set_columns(["ID", "名称", "内容", "対象", "状態"])
         # カラム幅調整 (対象列を見やすく)
@@ -60,7 +62,7 @@ class DiscountSettingTab(BaseSettingTab):
             self.table.setItem(row, 4, self.create_item("有効" if is_active else "無効", base_col))
 
     def on_add(self):
-        dlg = DiscountEditDialog(parent=self)
+        dlg = DiscountEditDialog(prod_repo=self.prod_repo, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             new_rule = DiscountRule(
@@ -81,7 +83,7 @@ class DiscountSettingTab(BaseSettingTab):
         target = self.get_selected_row_data(self.rules)
         if not target: return
         
-        dlg = DiscountEditDialog(data=asdict(target), parent=self)
+        dlg = DiscountEditDialog(data=asdict(target), prod_repo=self.prod_repo, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_rule = DiscountRule(

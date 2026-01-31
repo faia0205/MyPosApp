@@ -32,13 +32,20 @@ class MasterDataService:
     SRP対応: データ変換ロジックは各Modelの to_dict / from_dict に委譲済み
     """
 
-    def __init__(self):
-        self.prod_repo = ProductRepository()
-        self.user_repo = UserRepository()
-        self.cust_repo = CustomerRepository()
-        self.pay_repo = PaymentRepository()
-        self.exp_repo = ExpenseRepository()
-        self.disc_repo = DiscountRepository()
+    def __init__(self, 
+                 prod_repo: ProductRepository,
+                 user_repo: UserRepository,
+                 cust_repo: CustomerRepository,
+                 pay_repo: PaymentRepository,
+                 exp_repo: ExpenseRepository,
+                 disc_repo: DiscountRepository):
+        # 依存性の注入 (Dependency Injection)
+        self.prod_repo = prod_repo
+        self.user_repo = user_repo
+        self.cust_repo = cust_repo
+        self.pay_repo = pay_repo
+        self.exp_repo = exp_repo
+        self.disc_repo = disc_repo
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)

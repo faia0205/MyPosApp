@@ -8,10 +8,10 @@ from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class ExpenseSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, expense_repo: ExpenseRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = ExpenseRepository()
-        self.log_repo = LogRepository()
+        self.repo = expense_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "日時", "項目名", "金額"])
         h = self.table.horizontalHeader()

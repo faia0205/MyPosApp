@@ -10,12 +10,12 @@ from app.views.settings_tabs.base_setting_tab import BaseSettingTab # ★継承
 
 class ProductSettingTab(BaseSettingTab): # ★継承
     """商品管理タブ"""
-    def __init__(self):
+    def __init__(self, prod_repo: ProductRepository, log_repo: LogRepository):
         # 基底クラスの初期化 (タイトルなし)
         super().__init__()
         
-        self.repo = ProductRepository()
-        self.log_repo = LogRepository()
+        self.repo = prod_repo
+        self.log_repo = log_repo
         
         # カラム設定
         self.set_columns(["ID", "商品名", "価格", "カテゴリ", "色", "状態", "メモ"])

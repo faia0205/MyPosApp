@@ -10,10 +10,10 @@ from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class CustomerSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, customer_repo: CustomerRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = CustomerRepository()
-        self.log_repo = LogRepository()
+        self.repo = customer_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "ラベル", "属性 (詳細)", "状態"])
         h = self.table.horizontalHeader()

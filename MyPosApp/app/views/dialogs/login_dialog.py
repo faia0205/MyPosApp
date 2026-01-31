@@ -3,8 +3,12 @@ from PySide6.QtCore import Qt
 from app.repositories.user_repo import UserRepository
 
 class LoginDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(
+            self,
+            user_repo: UserRepository,
+            parent=None):
         super().__init__(parent)
+        self.user_repo = user_repo
         self.setWindowTitle("担当者選択")
         self.resize(400, 300)
         self.selected_user_name = "ゲスト"
@@ -43,8 +47,7 @@ class LoginDialog(QDialog):
         layout.addWidget(QLabel("レジ担当者を選択してください:"))
         layout.addSpacing(10)
 
-        repo = UserRepository()
-        users = repo.fetch_all_users()
+        users = self.user_repo.fetch_all_users()
 
         grid = QGridLayout()
         for i, user in enumerate(users):

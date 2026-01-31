@@ -7,10 +7,10 @@ from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class PaymentSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, payment_repo: PaymentRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = PaymentRepository()
-        self.log_repo = LogRepository()
+        self.repo = payment_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "名称", "現金扱い", "状態"])
         self.load_data()

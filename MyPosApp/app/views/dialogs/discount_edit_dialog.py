@@ -6,7 +6,7 @@ from app.utils.style import StyleGenerator
 from app.repositories.product_repo import ProductRepository
 
 class DiscountEditDialog(QDialog):
-    def __init__(self, data=None, parent=None):
+    def __init__(self, prod_repo: ProductRepository, data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("割引ルール編集")
         self.resize(500, 600)
@@ -24,7 +24,7 @@ class DiscountEditDialog(QDialog):
         """)
         
         self.data = data
-        self.prod_repo = ProductRepository()
+        self.prod_repo = prod_repo
         
         # バンドル設定用の一時データ
         self.bundle_conditions = [] # combo用

@@ -10,10 +10,10 @@ from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class UserSettingTab(BaseSettingTab):
     """ユーザー管理タブ"""
-    def __init__(self):
+    def __init__(self, user_repo: UserRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = UserRepository()
-        self.log_repo = LogRepository()
+        self.repo = user_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "名前", "コード", "権限", "状態"])
         self.load_data()
