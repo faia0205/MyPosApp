@@ -13,6 +13,7 @@ class DiscountManager:
     def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
         # 1. 計算用に在庫リストを作成
         inventory = []
+        gross_total = 0
         for item in cart_items:
             if item.id is not None and item.price > 0:
                 inventory.append({
@@ -23,6 +24,7 @@ class DiscountManager:
                     'qty': item.qty,
                     'original_item': item
                 })
+                gross_total += item.price * item.qty
 
         applied_discounts: List[AppliedDiscount] = []
 
