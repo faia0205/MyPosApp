@@ -28,7 +28,7 @@
             "color": "#ffcc80",
             "note": "",
             "display_order": 3,
-            "is_active": true
+            "is_active": false
         },
         {
             "id": 4,
@@ -159,66 +159,66 @@
         {
             "id": 1,
             "label": "男1",
+            "color": "#bbdefb",
+            "display_order": 1,
+            "is_active": true,
             "attributes": {
                 "sex": "male",
                 "count": 1
-            },
-            "color": "#bbdefb",
-            "display_order": 1,
-            "is_active": true
+            }
         },
         {
             "id": 2,
             "label": "女1",
+            "color": "#f8bbd0",
+            "display_order": 2,
+            "is_active": true,
             "attributes": {
                 "sex": "female",
                 "count": 1
-            },
-            "color": "#f8bbd0",
-            "display_order": 2,
-            "is_active": true
+            }
         },
         {
             "id": 3,
             "label": "男複数",
+            "color": "#90caf9",
+            "display_order": 3,
+            "is_active": true,
             "attributes": {
                 "sex": "male",
                 "count": "many"
-            },
-            "color": "#90caf9",
-            "display_order": 3,
-            "is_active": true
+            }
         },
         {
             "id": 4,
             "label": "女複数",
+            "color": "#f48fb1",
+            "display_order": 4,
+            "is_active": true,
             "attributes": {
                 "sex": "female",
                 "count": "many"
-            },
-            "color": "#f48fb1",
-            "display_order": 4,
-            "is_active": true
+            }
         },
         {
             "id": 5,
             "label": "家族連れ",
-            "attributes": {
-                "type": "family"
-            },
             "color": "#a5d6a7",
             "display_order": 5,
-            "is_active": true
+            "is_active": true,
+            "attributes": {
+                "type": "family"
+            }
         },
         {
             "id": 6,
             "label": "男女グループ",
-            "attributes": {
-                "type": "group"
-            },
             "color": "#a5d6a7",
             "display_order": 6,
-            "is_active": true
+            "is_active": true,
+            "attributes": {
+                "type": "group"
+            }
         }
     ],
     "payment_methods": [

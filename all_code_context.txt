@@ -274,60 +274,47 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\__in
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\calculator.py
 ==================================================
 
-from typing import List, Dict, Tuple
-from app.models.cart_item import CartItem
+from typing import Tuple
 
 class PriceCalculator:
-    """価格計算ロジック（オブジェクト対応版）"""
+    """
+    価格計算ロジック
+    ※ 割引計算は DiscountManager へ移行済み
+    """
 
-    def calculate_items_subtotal(self, items: List[CartItem]) -> int:
-        return sum(item.price * item.qty for item in items)
-
-
-    def calculate_grand_total(self, items: List[CartItem], discounts: List[Dict]) -> int:
-        subtotal = self.calculate_items_subtotal(items)
-        # discountsがオブジェクトの場合は .amount 属性、辞書の場合は ['amount'] キー
-        discount_total = 0
-        for d in discounts:
-            if hasattr(d, 'amount'):
-                discount_total += d["amount"] # d.qty は amountに含まれているか、個別に計算が必要か確認
-            else:
-                discount_total += d.get('amount', 0) * d.get('qty', 1)
-        return subtotal + discount_total
-
-    def calculate_profit_metrics(self, current_total: int, total_sales_today: int, 
-                                 current_expenses: int, avg_price_target: int) -> Tuple[int, bool, str]:
-        # このロジックは依存がないので変更なし
+    def calculate_profit_metrics(self, current_total: int, total_sales_today: int,
+                               current_expenses: int, avg_price_target: int) -> Tuple[int, bool, str]:
+        """利益目標までの残りなどを計算"""
+        
         estimated_profit = (total_sales_today + current_total) - current_expenses
         is_red = False
         msg = "黒字達成!"
+        
         if estimated_profit < 0:
             is_red = True
             target = avg_price_target if avg_price_target > 0 else 500
             needed = (abs(estimated_profit) // target) + 1
             msg = f"あと {needed} 個"
+
         return estimated_profit, is_red, msg
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\discount_manager.py
 ==================================================
 
-import json
 import math
-from typing import List, Dict, Tuple
+from typing import List, Dict
 from app.models.cart_item import CartItem
 from app.models.discount import DiscountRule, AppliedDiscount
-from app.logic.strategies.discount_strategy import DiscountStrategy # 追加
+from app.logic.strategies.discount_strategy import DiscountStrategy
 
 class DiscountManager:
     """割引計算ロジック（Strategyパターン適用版）"""
 
     def __init__(self, strategies: Dict[str, DiscountStrategy]):
-        # Strategyを注入
         self.strategies = strategies
 
     def calculate_discounts(self, cart_items: List[CartItem], rules: List[DiscountRule]) -> List[AppliedDiscount]:
-        
         # 1. 計算用に在庫リストを作成
         inventory = []
         for item in cart_items:
@@ -365,34 +352,27 @@ class DiscountManager:
                 applied_discounts.extend(results)
 
         # 4. Cart全体割引の計算
-        
-        # 現在の小計を計算（定価合計 + 適用済み割引(マイナス値)）
         gross_total = sum(item.price * item.qty for item in cart_items if item.price > 0)
         discount_sum_so_far = sum(d.amount for d in applied_discounts)
         net_total = max(0, gross_total + discount_sum_so_far)
 
-        # カート割引の適用
         cart_strategy = self.strategies.get('cart')
         if cart_strategy:
             for rule in sorted_rules:
                 if rule.apply_type == 'cart' and rule.is_auto:
-                    # Strategy適用
                     results = cart_strategy.apply(inventory, rule, current_net_total=net_total)
                     
-                    # カート割引の重複適用・残高チェック処理
                     for res in results:
                         current_disc_total = sum(d.amount for d in applied_discounts)
                         current_remaining = max(0, gross_total + current_disc_total)
                         
-                        # 割引額が残高を超えないように調整
                         actual_disc = min(abs(res.amount), current_remaining)
                         if actual_disc > 0:
                             res.amount = -actual_disc
                             applied_discounts.append(res)
-                            # ネット合計を更新して次のルールへ（累積適用の場合はここを調整）
                             net_total = max(0, net_total - actual_disc)
 
-        # 5. 合算処理 (AppliedDiscountオブジェクト同士をマージ)
+        # 5. 合算処理
         merged_map: Dict[int, AppliedDiscount] = {}
         for d in applied_discounts:
             rid = d.rule_id
@@ -403,8 +383,6 @@ class DiscountManager:
                 merged_map[rid] = d
 
         return list(merged_map.values())
-
-    # _try_apply_bundle メソッドは BundleDiscountStrategy に移動したため削除
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\__init__.py
@@ -1974,7 +1952,8 @@ class CartService(QObject):
                  user_repo: UserRepository,     # 必要なRepoは注入
                  expense_repo: ExpenseRepository,
                  payment_repo: PaymentRepository, # PaymentDialog呼び出し等で使う場合
-                 log_repo: LogRepository
+                 log_repo: LogRepository,
+                 trans_repo: TransactionRepository
                  ) -> None:
         super().__init__()
         self.expense_repo = expense_repo
@@ -1984,6 +1963,7 @@ class CartService(QObject):
         self.prod_repo = prod_repo
         self.disc_repo = disc_repo
         self.log_repo = log_repo
+        self.trans_repo = trans_repo
         
         self.discount_manager = discount_manager
         self.checkout_service = checkout_service
@@ -1999,19 +1979,11 @@ class CartService(QObject):
         self.total_sales_today = 0
         self.current_expenses = 0
         self.avg_price_target = 0
-        
-        self.trans_repo = None
 
         self._init_sales_data()
 
     def _init_sales_data(self):
-        # TransactionRepoへの依存をCheckoutService経由または別途注入されたRepoから取得
-        # ここでは簡易的に self.checkout_service.trans_repo を参照するか、
-        # main_windowで初期値をセットする設計に変更が望ましいが、
-        # 今回は trans_repo が checkout_service 内にあるため、読み取り専用として別途注入が必要か、
-        # checkout_service に get_total_sales_today を持たせる。
-        # リファクタリングの範囲を広げすぎないよう、checkout_service.trans_repo を使う
-        self.total_sales_today = self.checkout_service.trans_repo.get_total_sales_today()
+        self.total_sales_today = self.trans_repo.get_total_sales_today()
         self.current_expenses = self.expense_repo.get_total_expenses()
         self.avg_price_target = self._calculate_avg_price()
 
@@ -2963,7 +2935,8 @@ class MainWindow(QMainWindow):
             user_repo=self.user_repo,
             expense_repo=self.expense_repo,
             payment_repo=self.payment_repo,
-            log_repo=self.log_repo
+            log_repo=self.log_repo,
+            trans_repo=self.trans_repo
         )
 
         # UI初期化

@@ -13,13 +13,16 @@ from app.repositories.discount_repo import DiscountRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.customer_repo import CustomerRepository
 
-# [cite_start]Service/Logic [cite: 159, 122, 20]
+# Service/Logic
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
+from app.services.product_service import ProductService
+from app.services.customer_service import CustomerService
 from app.logic.discount_manager import DiscountManager
 
-# [cite_start]Strategies [cite: 25, 30, 32, 35]
+# Strategies
 from app.logic.strategies.item_strategy import ItemDiscountStrategy
 from app.logic.strategies.category_strategy import CategoryDiscountStrategy
 from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
@@ -52,6 +55,7 @@ class MainWindow(QMainWindow):
         self.user_repo = UserRepository()
         self.expense_repo = ExpenseRepository()
         self.log_repo = LogRepository()
+        self.cust_repo = CustomerRepository()
 
         # 2. Strategies (割引ロジックの部品)
         strategies = {
@@ -62,14 +66,18 @@ class MainWindow(QMainWindow):
         }
         
         # 3. Manager (ロジック統括)
-        # [cite_start]Strategyを注入してManagerを生成 [cite: 20]
+        # Strategyを注入してManagerを生成
         self.discount_manager = DiscountManager(strategies)
 
         # 4. Services (アプリケーション層)
-        # [cite_start]CheckoutServiceにRepoを注入 [cite: 122]
+        # CheckoutServiceにRepoを注入
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
         
-        # [cite_start]CartServiceに全ての依存関係を注入 (DI) [cite: 103]
+        # UI用のデータ提供サービスを作成
+        self.product_service = ProductService(self.prod_repo)
+        self.customer_service = CustomerService(self.cust_repo)
+
+        # CartServiceに全ての依存関係を注入 (DI)
         self.cart_service = CartService(
             prod_repo=self.prod_repo,
             disc_repo=self.disc_repo,
@@ -140,14 +148,14 @@ class MainWindow(QMainWindow):
         body.addWidget(self.cart_widget, stretch=3)
 
         # 2. 商品リスト Widget
-        self.product_list_widget = ProductListWidget(self.cart_service)
+        self.product_list_widget = ProductListWidget(self.cart_service, self.product_service)
         body.addWidget(self.product_list_widget, stretch=5)
 
         # 3. 操作パネル (右側)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         
-        self.customer_panel = CustomerPanel(self.cart_service)
+        self.customer_panel = CustomerPanel(self.cart_service, self.customer_service)
         right_layout.addWidget(self.customer_panel)
         
         right_layout.addStretch()
@@ -256,7 +264,7 @@ class MainWindow(QMainWindow):
         win = SettingsWindow(self)
         win.exec()
         # 設定画面から戻ったらデータをリフレッシュ
-        active_products = self.prod_repo.fetch_active_products()
+        active_products = self.product_service.get_active_products()
         self.cart_service.refresh_prices(active_products)
         self.cart_service.recalculate()
         self.product_list_widget.refresh_data()

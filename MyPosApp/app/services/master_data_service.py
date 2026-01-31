@@ -2,10 +2,13 @@ import json
 import shutil
 import os
 import datetime
-from typing import Dict, Any, List
-from dataclasses import asdict
+from typing import Dict
 
+# Config
 from app.config import DATA_DIR
+
+# 定数をここで定義
+MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
 
 # Models
 from app.models.product import Product
@@ -13,7 +16,7 @@ from app.models.user import User
 from app.models.customer import Customer
 from app.models.payment_method import PaymentMethod
 from app.models.expense import Expense
-from app.models.discount import DiscountRule  # ★追加
+from app.models.discount import DiscountRule
 
 # Repositories
 from app.repositories.product_repo import ProductRepository
@@ -23,12 +26,12 @@ from app.repositories.payment_repo import PaymentRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.discount_repo import DiscountRepository
 
-MASTER_JSON_PATH = os.path.join(DATA_DIR, 'master_data.json')
-
 class MasterDataService:
     """
     マスターデータ(JSON)とデータベースの同期・変換を担当するサービス
+    SRP対応: データ変換ロジックは各Modelの to_dict / from_dict に委譲済み
     """
+
     def __init__(self):
         self.prod_repo = ProductRepository()
         self.user_repo = UserRepository()
@@ -49,6 +52,7 @@ class MasterDataService:
             if os.path.exists(MASTER_JSON_PATH):
                 now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_dir = os.path.join(DATA_DIR, "backups")
+                
                 if not os.path.exists(backup_dir):
                     os.makedirs(backup_dir)
                 
@@ -56,52 +60,16 @@ class MasterDataService:
                 shutil.copy(MASTER_JSON_PATH, backup_path)
                 print(f"Backup created: {backup_path}")
 
-            # 2. 各リポジトリからJSON用データを収集
-            
-            # 商品
-            products_objs = self.prod_repo.fetch_all_as_models()
-            products = [asdict(p) for p in products_objs]
-            
-            # ユーザー
-            users_objs = self.user_repo.fetch_all_users()
-            users = [asdict(u) for u in users_objs]
-            
-            # 客層 (Dataclass -> Dict変換と属性の整形)
-            customers_objs = self.cust_repo.fetch_all()
-            customers = []
-            for c in customers_objs:
-                c_dict = asdict(c)
-                # JSONファイル仕様では "attributes": {dict} が求められるため
-                # モデルのプロパティ(.attributes)を使って上書きし、不要な_jsonフィールドを消す
-                c_dict['attributes'] = c.attributes 
-                if 'attributes_json' in c_dict:
-                    del c_dict['attributes_json']
-                customers.append(c_dict)
-            
-            # 決済方法
-            payment_methods = [asdict(pm) for pm in self.pay_repo.fetch_all()]
-            
-            # 経費項目
-            expenses = []
-            for ex in self.exp_repo.fetch_all():
-                d = asdict(ex)
-                expenses.append(d)
-
-            # 割引ルール
-            # ★修正: fetch_all_rules() はオブジェクトを返すようになったため、asdictで変換が必要
-            discount_rules_objs = self.disc_repo.fetch_all_rules()
-            discount_rules = [asdict(r) for r in discount_rules_objs]
-
-            # データ構築
+            # 2. 各リポジトリからデータを収集し、モデルの to_dict() で変換
             master_data = {
-                "products": products,
-                "users": users,
-                "customer_presets": customers,
-                "payment_methods": payment_methods,
-                "initial_expenses": expenses, 
-                "discount_rules": discount_rules
+                "products": [p.to_dict() for p in self.prod_repo.fetch_all_as_models()],
+                "users": [u.to_dict() for u in self.user_repo.fetch_all_users()],
+                "customer_presets": [c.to_dict() for c in self.cust_repo.fetch_all()],
+                "payment_methods": [p.to_dict() for p in self.pay_repo.fetch_all()],
+                "initial_expenses": [e.to_dict() for e in self.exp_repo.fetch_all()],
+                "discount_rules": [r.to_dict() for r in self.disc_repo.fetch_all_rules()]
             }
-            
+
             # 3. JSON書き出し
             with open(MASTER_JSON_PATH, 'w', encoding='utf-8') as f:
                 json.dump(master_data, f, ensure_ascii=False, indent=4)
@@ -131,7 +99,7 @@ class MasterDataService:
     def sync_json_to_db(self):
         """
         起動時用: JSONの内容をDBに反映（簡易同期）
-        既にデータがある場合、IDが一致すれば更新、なければ追加を行います。
+        モデルの from_dict() を使用してオブジェクトを生成し、リポジトリで保存
         """
         data = self._load_json_safe()
         if not data:
@@ -140,96 +108,54 @@ class MasterDataService:
         print("Syncing JSON to DB...")
 
         # --- A. Products (商品) ---
-        for p in data.get("products", []):
-            exists_id = self.prod_repo.find_id_by_name(p["name"])
+        for p_data in data.get("products", []):
+            prod = Product.from_dict(p_data)
+            # 名前でIDを検索して更新か新規かを判定
+            exists_id = self.prod_repo.find_id_by_name(prod.name)
+            prod.id = exists_id # IDがあればセット
             
-            target_product = Product(
-                id=exists_id, 
-                name=p["name"],
-                price=p["price"],
-                category=p["category"],
-                color=p.get("color", "#ffcc80"),
-                note=p.get("note", ""),
-                is_active=p.get("is_active", True),
-                display_order=p.get("display_order", 0)
-            )
-            # barcode対応
-            if "barcode" in p:
-                target_product.barcode = p["barcode"]
-
             if exists_id:
-                self.prod_repo.update_product(target_product)
+                self.prod_repo.update_product(prod)
             else:
-                self.prod_repo.add_product(target_product)
-        
+                self.prod_repo.add_product(prod)
+
         # --- B. Users (ユーザー) ---
-        for u in data.get("users", []):
-            target_user = User(
-                id=u.get("id"),
-                name=u["name"],
-                user_code=u["user_code"],
-                role=u.get("role", "staff"),
-                is_active=u.get("is_active", True)
-            )
-            self.user_repo.upsert_user(target_user)
+        for u_data in data.get("users", []):
+            user = User.from_dict(u_data)
+            # user_code をキーに upsert
+            self.user_repo.upsert_user(user)
 
         # --- C. Payment Methods (決済方法) ---
-        for pm in data.get("payment_methods", []):
-            target_pm = PaymentMethod(
-                id=pm.get("id"),
-                name=pm["name"],
-                is_cash=pm.get("is_cash", False),
-                is_active=pm.get("is_active", True)
-            )
-            # 簡易upsertロジック
-            if target_pm.id:
-                if not self.pay_repo.update(target_pm):
-                    self.pay_repo.add(target_pm)
+        for pm_data in data.get("payment_methods", []):
+            pm = PaymentMethod.from_dict(pm_data)
+            if pm.id:
+                if not self.pay_repo.update(pm):
+                    self.pay_repo.add(pm)
             else:
-                self.pay_repo.add(target_pm)
+                self.pay_repo.add(pm)
 
         # --- D. Customer Presets (客層) ---
-        for c in data.get("customer_presets", []):
-            target_cust = Customer(
-                id=c.get("id"),
-                label=c["label"],
-                attributes_json="", 
-                color=c.get("color", "#ffffff"),
-                display_order=c.get("display_order", 0),
-                is_active=c.get("is_active", True)
-            )
-            target_cust.set_attributes(c.get("attributes", {}))
-
-            if target_cust.id:
-                if not self.cust_repo.update(target_cust):
-                     self.cust_repo.add(target_cust)
+        for c_data in data.get("customer_presets", []):
+            cust = Customer.from_dict(c_data)
+            if cust.id:
+                if not self.cust_repo.update(cust):
+                    self.cust_repo.add(cust)
             else:
-                self.cust_repo.add(target_cust)
+                self.cust_repo.add(cust)
 
         # --- E. Initial Expenses (経費項目) ---
-        # 起動時にJSONにある経費を追加するかは運用次第だが、
-        # ここではマスタ定義的なものがもしあれば追加するロジック（今回は省略または最小限）
-        pass 
+        # 起動時の初期経費登録などは運用に合わせて実装（今回はスキップまたは追加のみ）
+        # for e_data in data.get("initial_expenses", []):
+        #     self.exp_repo.add(e_data['title'], e_data['amount'])
+        pass
 
         # --- F. Discount Rules (割引) ---
-        # ★修正: 新しい DiscountRule オブジェクトを使って同期
-        for r in data.get("discount_rules", []):
-            target_rule = DiscountRule(
-                id=r.get('id'),
-                name=r['name'],
-                discount_type=r['discount_type'],
-                discount_value=r['discount_value'],
-                apply_type=r['apply_type'],
-                target_value=r.get('target_value', ""),
-                is_auto=bool(r.get('is_auto', False)),
-                is_active=bool(r.get('is_active', True))
-            )
-            
-            # Repositoryの実装に合わせて upsert 的な処理
-            if target_rule.id:
-                if not self.disc_repo.update(target_rule):
-                    self.disc_repo.add(target_rule)
+        for r_data in data.get("discount_rules", []):
+            rule = DiscountRule.from_dict(r_data)
+            if rule.id:
+                if not self.disc_repo.update(rule):
+                    self.disc_repo.add(rule)
             else:
-                self.disc_repo.add(target_rule)
+                self.disc_repo.add(rule)
 
         print("Sync completed.")
