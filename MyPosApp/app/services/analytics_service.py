@@ -2,10 +2,13 @@ import pandas as pd
 import datetime
 from dataclasses import asdict
 from typing import Tuple, Dict, Any, List
+
 from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+
+from app.services.excel_ecporter import ExcelReportExporter
 
 class AnalyticsService:
     def __init__(self):
@@ -14,6 +17,7 @@ class AnalyticsService:
         self.expense_repo = ExpenseRepository()
         self.log_repo = LogRepository()
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
+        self.excel_exporter = ExcelReportExporter()
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -154,38 +158,14 @@ class AnalyticsService:
         return f"売上レポート_{now_str}.xlsx"
 
     def export_to_excel(self, file_path: str) -> Tuple[bool, str]:
-        try:
-            tx_list = self.get_transaction_list()
-            logs = self.get_logs()
-            df_tx = pd.DataFrame(tx_list)
-            df_logs = pd.DataFrame(logs)
-            
-            if 'timestamp' in df_tx.columns:
-                df_tx = df_tx.drop(columns=['timestamp'])
-            
-            if not df_tx.empty:
-                df_tx.rename(columns={'id':'伝票ID', 'time':'日時', 'total':'合計', 'items':'点数', 'payment':'決済', 'customer':'客層'}, inplace=True)
-            if not df_logs.empty:
-                df_logs.rename(columns={'time':'日時', 'level':'レベル', 'msg':'内容'}, inplace=True)
-
-            pivots = self.get_pivot_data()
-
-            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                if df_tx.empty:
-                    pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
-                else:
-                    df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
-                    
-                if not df_logs.empty:
-                    df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
-                
-                if pivots:
-                    pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')
-                    pivots['cust_prod'].to_excel(writer, sheet_name='客層x商品(個数)')
-                    # シート名を変更
-                    pivots['time_cust'].to_excel(writer, sheet_name='時間x客層(客数)')
-                    pivots['cashier_payment'].to_excel(writer, sheet_name='担当者x決済(売上)')
-            
-            return True, "出力しました"
-        except Exception as e:
-            return False, str(e)
+        """
+        Excel出力処理
+        データの準備のみを行い、実際のファイル生成はExporterに任せる
+        """
+        # 1. データの準備 (Data Fetching / Analysis)
+        tx_list = self.get_transaction_list()
+        logs = self.get_logs()
+        pivots = self.get_pivot_data()
+        
+        # 2. 書き出しの委譲 (File Export)
+        return self.excel_exporter.export(file_path, tx_list, logs, pivots)

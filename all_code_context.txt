@@ -2544,13 +2544,20 @@ class MasterDataService:
     SRP対応: データ変換ロジックは各Modelの to_dict / from_dict に委譲済み
     """
 
-    def __init__(self):
-        self.prod_repo = ProductRepository()
-        self.user_repo = UserRepository()
-        self.cust_repo = CustomerRepository()
-        self.pay_repo = PaymentRepository()
-        self.exp_repo = ExpenseRepository()
-        self.disc_repo = DiscountRepository()
+    def __init__(self, 
+                 prod_repo: ProductRepository,
+                 user_repo: UserRepository,
+                 cust_repo: CustomerRepository,
+                 pay_repo: PaymentRepository,
+                 exp_repo: ExpenseRepository,
+                 disc_repo: DiscountRepository):
+        # 依存性の注入 (Dependency Injection)
+        self.prod_repo = prod_repo
+        self.user_repo = user_repo
+        self.cust_repo = cust_repo
+        self.pay_repo = pay_repo
+        self.exp_repo = exp_repo
+        self.disc_repo = disc_repo
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)
@@ -3232,7 +3239,7 @@ class MainWindow(QMainWindow):
         admin.exec()
 
     def _show_login_dialog(self):
-        dialog = LoginDialog(self)
+        dialog = LoginDialog(self.user_repo, self)
         if dialog.exec():
             user_name = dialog.selected_user_name
             self.cart_service.set_current_user(user_name)
@@ -3240,7 +3247,16 @@ class MainWindow(QMainWindow):
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
 
     def _open_settings_window(self):
-        win = SettingsWindow(self)
+        win = SettingsWindow(
+            product_repo=self.prod_repo,
+            user_repo=self.user_repo,
+            customer_repo=self.cust_repo,
+            payment_repo=self.payment_repo,
+            expense_repo=self.expense_repo,
+            discount_repo=self.disc_repo,
+            log_repo=self.log_repo,
+            parent=self
+        )
         win.exec()
         # 設定画面から戻ったらデータをリフレッシュ
         active_products = self.product_service.get_active_products()
@@ -3266,10 +3282,35 @@ from app.views.settings_tabs.payment_setting_tab import PaymentSettingTab
 from app.views.settings_tabs.expense_setting_tab import ExpenseSettingTab
 from app.views.settings_tabs.discount_setting_tab import DiscountSettingTab
 
+from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.customer_repo import CustomerRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.log_repo import LogRepository
+
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
-    def __init__(self, parent=None):
+    def __init__(self,
+                 product_repo: ProductRepository,
+                 user_repo: UserRepository,
+                 customer_repo: CustomerRepository,
+                 payment_repo: PaymentRepository,
+                 expense_repo: ExpenseRepository,
+                 discount_repo: DiscountRepository,
+                 log_repo: LogRepository,
+                 parent=None):
         super().__init__(parent)
+
+        self.prod_repo = product_repo
+        self.user_repo = user_repo
+        self.cust_repo = customer_repo
+        self.pay_repo = payment_repo
+        self.exp_repo = expense_repo
+        self.disc_repo = discount_repo
+        self.log_repo = log_repo
+
         self.setWindowTitle("システム設定・マスタ管理")
         self.resize(1000, 700)
         
@@ -3282,7 +3323,14 @@ class SettingsWindow(QDialog):
             QLabel { color: white; }
         """)
 
-        self.master_service = MasterDataService()
+        self.master_service = MasterDataService(
+            prod_repo=self.prod_repo,
+            user_repo=self.user_repo,
+            cust_repo=self.cust_repo,
+            pay_repo=self.pay_repo,
+            exp_repo=self.exp_repo,
+            disc_repo=self.disc_repo
+        )
         self._init_ui()
 
     def _init_ui(self):
@@ -3321,27 +3369,27 @@ class SettingsWindow(QDialog):
         self.tabs = QTabWidget()
         
         # 1. 商品管理
-        self.tab_product = ProductSettingTab()
+        self.tab_product = ProductSettingTab(self.prod_repo, self.log_repo)
         self.tabs.addTab(self.tab_product, "商品管理")
 
         # 2. ユーザー管理
-        self.tab_user = UserSettingTab()
+        self.tab_user = UserSettingTab(self.user_repo, self.log_repo)
         self.tabs.addTab(self.tab_user, "ユーザー管理")
         
         # 3. 客層
-        self.tab_cust = CustomerSettingTab()
+        self.tab_cust = CustomerSettingTab(self.cust_repo, self.log_repo)
         self.tabs.addTab(self.tab_cust, "客層管理")
         
         # 4. 支払方法
-        self.tab_pay = PaymentSettingTab()
+        self.tab_pay = PaymentSettingTab(self.pay_repo, self.log_repo)
         self.tabs.addTab(self.tab_pay, "支払方法")
         
         # 5. 経費
-        self.tab_exp = ExpenseSettingTab()
+        self.tab_exp = ExpenseSettingTab(self.exp_repo, self.log_repo)
         self.tabs.addTab(self.tab_exp, "経費履歴")
 
         # 6. 割引設定
-        self.tab_disc = DiscountSettingTab()
+        self.tab_disc = DiscountSettingTab(self.disc_repo, self.log_repo, self.prod_repo)
         self.tabs.addTab(self.tab_disc, "割引設定")
 
         layout.addWidget(self.tabs)
@@ -4078,7 +4126,7 @@ from app.utils.style import StyleGenerator
 from app.repositories.product_repo import ProductRepository
 
 class DiscountEditDialog(QDialog):
-    def __init__(self, data=None, parent=None):
+    def __init__(self, prod_repo: ProductRepository, data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("割引ルール編集")
         self.resize(500, 600)
@@ -4096,7 +4144,7 @@ class DiscountEditDialog(QDialog):
         """)
         
         self.data = data
-        self.prod_repo = ProductRepository()
+        self.prod_repo = prod_repo
         
         # バンドル設定用の一時データ
         self.bundle_conditions = [] # combo用
@@ -4452,8 +4500,12 @@ from PySide6.QtCore import Qt
 from app.repositories.user_repo import UserRepository
 
 class LoginDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(
+            self,
+            user_repo: UserRepository,
+            parent=None):
         super().__init__(parent)
+        self.user_repo = user_repo
         self.setWindowTitle("担当者選択")
         self.resize(400, 300)
         self.selected_user_name = "ゲスト"
@@ -4492,8 +4544,7 @@ class LoginDialog(QDialog):
         layout.addWidget(QLabel("レジ担当者を選択してください:"))
         layout.addSpacing(10)
 
-        repo = UserRepository()
-        users = repo.fetch_all_users()
+        users = self.user_repo.fetch_all_users()
 
         grid = QGridLayout()
         for i, user in enumerate(users):
@@ -5291,10 +5342,10 @@ from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class CustomerSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, customer_repo: CustomerRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = CustomerRepository()
-        self.log_repo = LogRepository()
+        self.repo = customer_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "ラベル", "属性 (詳細)", "状態"])
         h = self.table.horizontalHeader()
@@ -5432,14 +5483,16 @@ from PySide6.QtWidgets import QMessageBox
 from app.models.discount import DiscountRule
 from app.repositories.discount_repo import DiscountRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.product_repo import ProductRepository
 from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class DiscountSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, discount_repo: DiscountRepository, log_repo: LogRepository, prod_repo: ProductRepository):
         super().__init__()
-        self.repo = DiscountRepository()
-        self.log_repo = LogRepository()
+        self.repo = discount_repo
+        self.log_repo = log_repo
+        self.prod_repo = prod_repo
         
         self.set_columns(["ID", "名称", "内容", "対象", "状態"])
         # カラム幅調整 (対象列を見やすく)
@@ -5487,7 +5540,7 @@ class DiscountSettingTab(BaseSettingTab):
             self.table.setItem(row, 4, self.create_item("有効" if is_active else "無効", base_col))
 
     def on_add(self):
-        dlg = DiscountEditDialog(parent=self)
+        dlg = DiscountEditDialog(prod_repo=self.prod_repo, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             new_rule = DiscountRule(
@@ -5508,7 +5561,7 @@ class DiscountSettingTab(BaseSettingTab):
         target = self.get_selected_row_data(self.rules)
         if not target: return
         
-        dlg = DiscountEditDialog(data=asdict(target), parent=self)
+        dlg = DiscountEditDialog(data=asdict(target), prod_repo=self.prod_repo, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_rule = DiscountRule(
@@ -5559,10 +5612,10 @@ from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class ExpenseSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, expense_repo: ExpenseRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = ExpenseRepository()
-        self.log_repo = LogRepository()
+        self.repo = expense_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "日時", "項目名", "金額"])
         h = self.table.horizontalHeader()
@@ -5628,10 +5681,10 @@ from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class PaymentSettingTab(BaseSettingTab):
-    def __init__(self):
+    def __init__(self, payment_repo: PaymentRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = PaymentRepository()
-        self.log_repo = LogRepository()
+        self.repo = payment_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "名称", "現金扱い", "状態"])
         self.load_data()
@@ -5708,12 +5761,12 @@ from app.views.settings_tabs.base_setting_tab import BaseSettingTab # ★継承
 
 class ProductSettingTab(BaseSettingTab): # ★継承
     """商品管理タブ"""
-    def __init__(self):
+    def __init__(self, prod_repo: ProductRepository, log_repo: LogRepository):
         # 基底クラスの初期化 (タイトルなし)
         super().__init__()
         
-        self.repo = ProductRepository()
-        self.log_repo = LogRepository()
+        self.repo = prod_repo
+        self.log_repo = log_repo
         
         # カラム設定
         self.set_columns(["ID", "商品名", "価格", "カテゴリ", "色", "状態", "メモ"])
@@ -5861,10 +5914,10 @@ from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class UserSettingTab(BaseSettingTab):
     """ユーザー管理タブ"""
-    def __init__(self):
+    def __init__(self, user_repo: UserRepository, log_repo: LogRepository):
         super().__init__()
-        self.repo = UserRepository()
-        self.log_repo = LogRepository()
+        self.repo = user_repo
+        self.log_repo = log_repo
         
         self.set_columns(["ID", "名前", "コード", "権限", "状態"])
         self.load_data()

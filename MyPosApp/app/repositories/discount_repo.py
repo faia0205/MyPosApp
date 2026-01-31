@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.discount import DiscountRule
 
@@ -92,4 +92,16 @@ class DiscountRepository(BaseRepository):
             return True
         except Exception as e:
             print(f"Error deleting discount rule: {e}")
+            return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み"""
+        try:
+            rule = DiscountRule.from_dict(data)
+            if rule.id:
+                if self.update(rule):
+                    return True
+            return self.add(rule)
+        except Exception as e:
+            print(f"Error importing discount rule: {e}")
             return False

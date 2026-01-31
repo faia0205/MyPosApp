@@ -117,3 +117,19 @@ class ProductRepository(BaseRepository):
             display_order=row[6],
             is_active=bool(row[7])
         )
+
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (名前で検索してUpsert)"""
+        try:
+            prod = Product.from_dict(data)
+            # 名前でIDを検索
+            exists_id = self.find_id_by_name(prod.name)
+            
+            if exists_id:
+                prod.id = exists_id
+                return self.update_product(prod)
+            else:
+                return self.add_product(prod)
+        except Exception as e:
+            print(f"Error importing product: {e}")
+            return False

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.payment_method import PaymentMethod
 
@@ -43,5 +43,16 @@ class PaymentRepository(BaseRepository):
             with self.transaction() as (conn, cursor):
                 cursor.execute("DELETE FROM payment_methods WHERE id=?", (payment_id,))
             return True
+        except Exception:
+            return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み"""
+        try:
+            pm = PaymentMethod.from_dict(data)
+            if pm.id:
+                if self.update(pm):
+                    return True
+            return self.add(pm)
         except Exception:
             return False

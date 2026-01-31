@@ -106,7 +106,7 @@ class MasterDataService:
     def sync_json_to_db(self):
         """
         起動時用: JSONの内容をDBに反映（簡易同期）
-        モデルの from_dict() を使用してオブジェクトを生成し、リポジトリで保存
+        詳細な判定ロジックは各リポジトリの import_data に委譲
         """
         data = self._load_json_safe()
         if not data:
@@ -116,53 +116,26 @@ class MasterDataService:
 
         # --- A. Products (商品) ---
         for p_data in data.get("products", []):
-            prod = Product.from_dict(p_data)
-            # 名前でIDを検索して更新か新規かを判定
-            exists_id = self.prod_repo.find_id_by_name(prod.name)
-            prod.id = exists_id # IDがあればセット
-            
-            if exists_id:
-                self.prod_repo.update_product(prod)
-            else:
-                self.prod_repo.add_product(prod)
+            self.prod_repo.import_data(p_data)
 
         # --- B. Users (ユーザー) ---
         for u_data in data.get("users", []):
-            user = User.from_dict(u_data)
-            # user_code をキーに upsert
-            self.user_repo.upsert_user(user)
+            self.user_repo.import_data(u_data)
 
         # --- C. Payment Methods (決済方法) ---
         for pm_data in data.get("payment_methods", []):
-            pm = PaymentMethod.from_dict(pm_data)
-            if pm.id:
-                if not self.pay_repo.update(pm):
-                    self.pay_repo.add(pm)
-            else:
-                self.pay_repo.add(pm)
+            self.pay_repo.import_data(pm_data)
 
         # --- D. Customer Presets (客層) ---
         for c_data in data.get("customer_presets", []):
-            cust = Customer.from_dict(c_data)
-            if cust.id:
-                if not self.cust_repo.update(cust):
-                    self.cust_repo.add(cust)
-            else:
-                self.cust_repo.add(cust)
+            self.cust_repo.import_data(c_data)
 
         # --- E. Initial Expenses (経費項目) ---
-        # 起動時の初期経費登録などは運用に合わせて実装（今回はスキップまたは追加のみ）
-        # for e_data in data.get("initial_expenses", []):
-        #     self.exp_repo.add(e_data['title'], e_data['amount'])
-        pass
+        for e_data in data.get("initial_expenses", []):
+            self.exp_repo.import_data(e_data)
 
         # --- F. Discount Rules (割引) ---
         for r_data in data.get("discount_rules", []):
-            rule = DiscountRule.from_dict(r_data)
-            if rule.id:
-                if not self.disc_repo.update(rule):
-                    self.disc_repo.add(rule)
-            else:
-                self.disc_repo.add(rule)
+            self.disc_repo.import_data(r_data)
 
         print("Sync completed.")

@@ -105,3 +105,16 @@ class CustomerRepository(BaseRepository):
         except Exception as e:
             print(f"Error deleting customer: {e}")
             return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (IDがあれば更新、なければ追加)"""
+        try:
+            cust = Customer.from_dict(data)
+            if cust.id:
+                if self.update(cust):
+                    return True
+                # 更新失敗(IDがない等)なら追加へフォールバック
+            return self.add(cust)
+        except Exception as e:
+            print(f"Error importing customer: {e}")
+            return False

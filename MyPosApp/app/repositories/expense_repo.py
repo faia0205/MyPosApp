@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.expense import Expense
 
@@ -44,3 +44,8 @@ class ExpenseRepository(BaseRepository):
             return True
         except Exception:
             return False
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (常に追加)"""
+        # 初期データ取り込み用
+        return self.add(data.get('title'), data.get('amount'))

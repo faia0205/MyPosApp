@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.user import User
 
@@ -96,3 +96,12 @@ class UserRepository(BaseRepository):
             role=row[3],
             is_active=bool(row[4])
         )
+    
+    def import_data(self, data: Dict) -> bool:
+        """辞書データを取り込み (UserCodeでUpsert)"""
+        try:
+            user = User.from_dict(data)
+            return self.upsert_user(user)
+        except Exception as e:
+            print(f"Error importing user: {e}")
+            return False
