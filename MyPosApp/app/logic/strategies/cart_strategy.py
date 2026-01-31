@@ -9,6 +9,14 @@ class CartDiscountStrategy(DiscountStrategy):
     他の割引が適用された後の「小計 (current_net_total)」に対して計算を行う。
     """
 
+    @property
+    def phase(self) -> int:
+        return self.PHASE_POST  # 計算後のフェーズ
+
+    @property
+    def priority(self) -> int:
+        return 100
+
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         discount_amt = 0
         

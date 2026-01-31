@@ -9,7 +9,15 @@ class BundleDiscountStrategy(DiscountStrategy):
     バンドル（セット）割引ロジック
     JSON形式の target_value を解析し、条件に合う組み合わせがある限り適用を繰り返す。
     """
+    
+    @property
+    def phase(self) -> int:
+        return self.PHASE_STANDARD
 
+    @property
+    def priority(self) -> int:
+        return 10  # 最優先
+    
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         

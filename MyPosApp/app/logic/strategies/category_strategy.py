@@ -6,6 +6,14 @@ from app.models.discount import DiscountRule, AppliedDiscount
 class CategoryDiscountStrategy(DiscountStrategy):
     """特定のカテゴリに対する割引ロジック"""
 
+    @property
+    def phase(self) -> int:
+        return self.PHASE_STANDARD
+
+    @property
+    def priority(self) -> int:
+        return 30
+
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         target_category = rule.target_value # 対象のカテゴリ名
