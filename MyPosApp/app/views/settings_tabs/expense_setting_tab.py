@@ -2,26 +2,25 @@ from PySide6.QtWidgets import QMessageBox, QHeaderView
 from dataclasses import asdict
 
 from app.models.expense import Expense
-from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.log_repo import LogRepository
+from app.services.expense_service import ExpenseService  # Serviceをインポート
 from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class ExpenseSettingTab(BaseSettingTab):
-    def __init__(self, expense_repo: ExpenseRepository, log_repo: LogRepository):
+    def __init__(self, service: ExpenseService):
         super().__init__()
-        self.repo = expense_repo
-        self.log_repo = log_repo
-        
+        self.service = service
+
         self.set_columns(["ID", "日時", "項目名", "金額"])
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
-        
+
         self.load_data()
 
     def load_data(self):
-        self.expenses = self.repo.fetch_all()
+        # Service経由で取得
+        self.expenses = self.service.get_all_expenses()
         self.table.setRowCount(len(self.expenses))
 
         for row, ex in enumerate(self.expenses):
@@ -34,8 +33,8 @@ class ExpenseSettingTab(BaseSettingTab):
         dlg = ExpenseEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add(d['title'], d['amount']):
-                self.log_repo.add_log("info", f"経費登録: {d['title']} ¥{d['amount']}")
+            # Service経由で追加
+            if self.service.add_expense(d['title'], d['amount']):
                 self.load_data()
 
     def on_edit_selected(self):
@@ -51,8 +50,8 @@ class ExpenseSettingTab(BaseSettingTab):
                 amount=d['amount'],
                 timestamp=d["timestamp"]
             )
-            if self.repo.update(updated_expense):
-                self.log_repo.add_log("info", f"経費編集: {target.title} -> {d['title']}")
+            # Service経由で更新
+            if self.service.update_expense(updated_expense):
                 self.load_data()
 
     def on_delete_selected(self):
@@ -60,6 +59,6 @@ class ExpenseSettingTab(BaseSettingTab):
         if not target: return
         
         if QMessageBox.question(self, "確認", f"「{target.title}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"経費削除: {target.title}")
+            # Service経由で削除
+            if self.service.delete_expense(target):
                 self.load_data()

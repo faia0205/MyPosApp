@@ -4,23 +4,21 @@ from PySide6.QtGui import QColor
 from dataclasses import asdict
 
 from app.models.customer import Customer
-from app.repositories.customer_repo import CustomerRepository
-from app.repositories.log_repo import LogRepository
+from app.services.customer_service import CustomerService  # Serviceをインポート
 from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class CustomerSettingTab(BaseSettingTab):
-    def __init__(self, customer_repo: CustomerRepository, log_repo: LogRepository):
+    def __init__(self, service: CustomerService):
         super().__init__()
-        self.repo = customer_repo
-        self.log_repo = log_repo
-        
+        self.service = service  # Repositoryの代わりにServiceを保持
+
         self.set_columns(["ID", "ラベル", "属性 (詳細)", "状態"])
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(1, QHeaderView.Stretch)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
-        
-        # 並び替えボタンの挿入
+
+        # 並び替えボタン
         self.btn_up = QPushButton("▲ 上へ")
         self.btn_up.clicked.connect(lambda: self._move(-1))
         self.layout_btns.insertWidget(2, self.btn_up)
@@ -28,13 +26,14 @@ class CustomerSettingTab(BaseSettingTab):
         self.btn_down = QPushButton("▼ 下へ")
         self.btn_down.clicked.connect(lambda: self._move(1))
         self.layout_btns.insertWidget(3, self.btn_down)
-        
+
         self.load_data()
 
     def load_data(self):
-        self.customers = self.repo.fetch_all()
+        # Service経由でデータ取得
+        self.customers = self.service.get_all_customers()
         self.table.setRowCount(len(self.customers))
-        
+
         for row, c in enumerate(self.customers):
             is_active = c.is_active
             text_col = "white" if is_active else "#757575"
@@ -50,7 +49,7 @@ class CustomerSettingTab(BaseSettingTab):
             attrs = c.attributes
             attr_str = ", ".join([f"{k}: {v}" for k, v in attrs.items()]) if attrs else "-"
             self.table.setItem(row, 2, self.create_item(attr_str, text_col, bg_col))
-            
+
             status = "有効" if is_active else "無効"
             self.table.setItem(row, 3, self.create_item(status, text_col, bg_col))
 
@@ -72,8 +71,8 @@ class CustomerSettingTab(BaseSettingTab):
             )
             new_customer.set_attributes(d['attributes'])
 
-            if self.repo.add(new_customer):
-                self.log_repo.add_log("info", f"客層追加: {d['label']}")
+            # Service経由で追加
+            if self.service.add_customer(new_customer):
                 self.load_data()
 
     def on_edit_selected(self):
@@ -101,41 +100,36 @@ class CustomerSettingTab(BaseSettingTab):
             )
             updated_customer.set_attributes(d['attributes'])
 
-            if self.repo.update(updated_customer):
-                self.log_repo.add_log("info", f"客層変更: {target.label}")
+            # Service経由で更新
+            if self.service.update_customer(updated_customer):
                 self.load_data()
 
     def on_delete_selected(self):
         target = self.get_selected_row_data(self.customers)
         if not target: return
 
-        # 確認ダイアログ
         msg = f"客層「{target.label}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (非表示)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # 完全削除
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"客層完全削除: {target.label}")
+            # Service経由で削除
+            if self.service.delete_customer(target):
                 self.load_data()
-
         elif res == QMessageBox.No:
-            # 無効化 (既存ロジック)
-            target.is_active = False
-            if self.repo.update(target):
-                self.log_repo.add_log("info", f"客層無効化: {target.label}")
+            # Service経由で無効化
+            if self.service.disable_customer(target):
                 self.load_data()
 
     def _move(self, direction):
         row = self.table.currentRow()
         if row < 0: return
-        
         new_row = row + direction
         if new_row < 0 or new_row >= len(self.customers): return
-        
+
         a, b = self.customers[row], self.customers[new_row]
         order_map = {a.id: b.display_order, b.id: a.display_order}
-        
-        if self.repo.update_display_order(order_map):
+
+        # Service経由で並び替え
+        if self.service.update_display_order(order_map):
             self.load_data()
             self.table.selectRow(new_row)

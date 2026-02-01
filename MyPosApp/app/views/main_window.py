@@ -18,6 +18,11 @@ from app.repositories.customer_repo import CustomerRepository
 from app.repositories.analytics_repo import AnalyticsRepository
 
 # Service/Logic
+from app.services.user_service import UserService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
+from app.services.master_data_service import MasterDataService
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
@@ -79,8 +84,20 @@ class MainWindow(QMainWindow):
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
         
         # UI用のデータ提供サービスを作成
-        self.product_service = ProductService(self.prod_repo)
-        self.customer_service = CustomerService(self.cust_repo)
+        self.product_service = ProductService(self.prod_repo, self.log_repo)
+        self.customer_service = CustomerService(self.cust_repo, self.log_repo)
+        self.payment_service = PaymentService(self.payment_repo, self.log_repo)
+        self.expense_service = ExpenseService(self.expense_repo, self.log_repo)
+        self.discount_service = DiscountService(self.disc_repo, self.log_repo)
+        self.user_service = UserService(self.user_repo, self.log_repo)
+        self.master_data_service = MasterDataService(
+            prod_repo=self.prod_repo,
+            user_repo=self.user_repo,
+            cust_repo=self.cust_repo,
+            pay_repo=self.payment_repo,
+            exp_repo=self.expense_repo,
+            disc_repo=self.disc_repo
+        )
 
         # AnalyticsServiceにRepoを注入
         self.analytics_service = AnalyticsService(
@@ -275,13 +292,13 @@ class MainWindow(QMainWindow):
 
     def _open_settings_window(self):
         win = SettingsWindow(
-            product_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            customer_repo=self.cust_repo,
-            payment_repo=self.payment_repo,
-            expense_repo=self.expense_repo,
-            discount_repo=self.disc_repo,
-            log_repo=self.log_repo,
+            product_service=self.product_service,
+            user_service=self.user_service,
+            customer_service=self.customer_service,
+            payment_service=self.payment_service,
+            expense_service=self.expense_service,
+            discount_service=self.discount_service,
+            master_service=self.master_data_service,
             parent=self
         )
         win.exec()

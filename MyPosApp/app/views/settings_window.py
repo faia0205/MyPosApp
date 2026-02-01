@@ -2,6 +2,12 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
                                QPushButton, QMessageBox, QLabel, QWidget)
 # from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
+from app.services.product_service import ProductService
+from app.services.user_service import UserService
+from app.services.customer_service import CustomerService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
 
 # 各設定タブをインポート
 from app.views.settings_tabs.product_setting_tab import ProductSettingTab
@@ -22,23 +28,23 @@ from app.repositories.log_repo import LogRepository
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
     def __init__(self,
-                 product_repo: ProductRepository,
-                 user_repo: UserRepository,
-                 customer_repo: CustomerRepository,
-                 payment_repo: PaymentRepository,
-                 expense_repo: ExpenseRepository,
-                 discount_repo: DiscountRepository,
-                 log_repo: LogRepository,
+                 product_service: ProductService,
+                 user_service: UserService,
+                 customer_service: CustomerService,
+                 payment_service: PaymentService,
+                 expense_service: ExpenseService,
+                 discount_service: DiscountService,
+                 master_service: MasterDataService,
                  parent=None):
         super().__init__(parent)
 
-        self.prod_repo = product_repo
-        self.user_repo = user_repo
-        self.cust_repo = customer_repo
-        self.pay_repo = payment_repo
-        self.exp_repo = expense_repo
-        self.disc_repo = discount_repo
-        self.log_repo = log_repo
+        self.product_service = product_service
+        self.user_service = user_service
+        self.customer_service = customer_service
+        self.payment_service = payment_service
+        self.expense_service = expense_service
+        self.discount_service = discount_service
+        self.master_service = master_service
 
         self.setWindowTitle("システム設定・マスタ管理")
         self.resize(1000, 700)
@@ -52,14 +58,6 @@ class SettingsWindow(QDialog):
             QLabel { color: white; }
         """)
 
-        self.master_service = MasterDataService(
-            prod_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            cust_repo=self.cust_repo,
-            pay_repo=self.pay_repo,
-            exp_repo=self.exp_repo,
-            disc_repo=self.disc_repo
-        )
         self._init_ui()
 
     def _init_ui(self):
@@ -98,27 +96,27 @@ class SettingsWindow(QDialog):
         self.tabs = QTabWidget()
         
         # 1. 商品管理
-        self.tab_product = ProductSettingTab(self.prod_repo, self.log_repo)
+        self.tab_product = ProductSettingTab(self.product_service)
         self.tabs.addTab(self.tab_product, "商品管理")
 
         # 2. ユーザー管理
-        self.tab_user = UserSettingTab(self.user_repo, self.log_repo)
+        self.tab_user = UserSettingTab(self.user_service)
         self.tabs.addTab(self.tab_user, "ユーザー管理")
         
         # 3. 客層
-        self.tab_cust = CustomerSettingTab(self.cust_repo, self.log_repo)
+        self.tab_cust = CustomerSettingTab(self.customer_service)
         self.tabs.addTab(self.tab_cust, "客層管理")
         
         # 4. 支払方法
-        self.tab_pay = PaymentSettingTab(self.pay_repo, self.log_repo)
+        self.tab_pay = PaymentSettingTab(self.payment_service)
         self.tabs.addTab(self.tab_pay, "支払方法")
         
         # 5. 経費
-        self.tab_exp = ExpenseSettingTab(self.exp_repo, self.log_repo)
+        self.tab_exp = ExpenseSettingTab(self.expense_service)
         self.tabs.addTab(self.tab_exp, "経費履歴")
 
         # 6. 割引設定
-        self.tab_disc = DiscountSettingTab(self.disc_repo, self.log_repo, self.prod_repo)
+        self.tab_disc = DiscountSettingTab(self.discount_service, self.product_service)
         self.tabs.addTab(self.tab_disc, "割引設定")
 
         layout.addWidget(self.tabs)
