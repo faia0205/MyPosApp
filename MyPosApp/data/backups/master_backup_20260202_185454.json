@@ -229,14 +229,14 @@
             "is_active": true
         },
         {
-            "id": 3,
-            "name": "クレジット",
+            "id": 2,
+            "name": "PayPay",
             "is_cash": false,
             "is_active": true
         },
         {
-            "id": 2,
-            "name": "PayPay",
+            "id": 3,
+            "name": "クレジット",
             "is_cash": false,
             "is_active": true
         }
@@ -249,7 +249,7 @@
             "timestamp": "2026-01-24 18:41:14"
         },
         {
-            "id": 1,
+            "id": 3,
             "title": "準備金",
             "amount": 15000,
             "timestamp": "2026-01-24 18:41:14"

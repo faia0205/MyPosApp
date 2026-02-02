@@ -119,7 +119,7 @@ class ProductSettingTab(BaseSettingTab): # ★継承
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            if self.service.delete_product(target.id):
+            if self.service.delete_product(target):
                 self.load_data()
         elif res == QMessageBox.No:
             target.is_active = False

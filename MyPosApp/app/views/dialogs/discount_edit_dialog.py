@@ -3,17 +3,19 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QRadioButton, QButtonGroup, QWidget, QListWidget, QPushButton, QMessageBox)
 import json
 from app.utils.style import StyleGenerator
-from app.repositories.product_repo import ProductRepository
+from app.services.product_service import ProductService
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
 
 class DiscountEditDialog(QDialog):
-    def __init__(self, prod_repo: ProductRepository, data=None, parent=None):
+    # コンストラクタの引数を ProductService に変更
+    def __init__(self, product_service: ProductService, data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("割引ルール編集")
         self.resize(500, 600)
         
         self.setStyleSheet(f"""
             QDialog {{ background-color: #333; color: white; }}
-            QLineEdit, QComboBox, QSpinBox {{ 
+            QLineEdit, QComboBox, QSpinBox {{
                 padding: 8px; color: black; background-color: white; border-radius: 4px;
             }}
             QLabel {{ font-weight: bold; margin-top: 10px; color: #ccc; }}
@@ -22,14 +24,13 @@ class DiscountEditDialog(QDialog):
             {StyleGenerator.get_checkbox_style()}
             {StyleGenerator.get_spinbox_style()}
         """)
-        
+
         self.data = data
-        self.prod_repo = prod_repo
-        
-        # バンドル設定用の一時データ
-        self.bundle_conditions = [] # combo用
-        self.bundle_targets = []    # select用
-        
+        self.product_service = product_service  # Serviceを保持
+
+        self.bundle_conditions = []
+        self.bundle_targets = []
+
         self._init_ui()
 
     def _init_ui(self):
@@ -162,7 +163,7 @@ class DiscountEditDialog(QDialog):
         layout.addWidget(btns)
 
     def _load_master_data(self):
-        self.products = self.prod_repo.fetch_active_products()
+        self.products = self.product_service.get_active_products()
         self.categories = sorted(list(set(p.category for p in self.products if p.category)))
         
         candidates = []
@@ -180,17 +181,17 @@ class DiscountEditDialog(QDialog):
             self.normal_widget.setVisible(True)
             self.bundle_widget.setVisible(False)
             
-            self.target_combo.clear()
-            self.target_combo.setEnabled(True)
-            if index == 0:
-                self.target_label.setText("対象: 全体")
-                self.target_combo.setEnabled(False)
-            elif index == 1:
-                self.target_label.setText("対象カテゴリ:")
-                self.target_combo.addItems(self.categories)
-            elif index == 2:
-                self.target_label.setText("対象商品:")
-                for p in self.products: self.target_combo.addItem(p.name)
+        self.target_combo.clear()
+        self.target_combo.setEnabled(True)
+        if index == 0:
+            self.target_label.setText("対象: 全体")
+            self.target_combo.setEnabled(False)
+        elif index == 1:
+            self.target_label.setText("対象カテゴリ:")
+            self.target_combo.addItems(self.categories)
+        elif index == 2:
+            self.target_label.setText("対象商品:")
+            for p in self.products: self.target_combo.addItem(p.name)
 
     def _on_bundle_mode_changed(self, index):
         if index == 0:
@@ -224,6 +225,7 @@ class DiscountEditDialog(QDialog):
         self.name_edit.setText(self.data['name'])
         if self.data['discount_type'] == 'percent': self.rb_percent.setChecked(True)
         else: self.rb_fixed.setChecked(True)
+        
         self.value_spin.setValue(self.data['discount_value'])
         self.active_chk.setChecked(bool(self.data['is_active']))
         
@@ -239,8 +241,11 @@ class DiscountEditDialog(QDialog):
                     self.bundle_mode_combo.setCurrentIndex(0)
                     self.select_qty_spin.setValue(b_data.get('qty', 2))
                     for t in b_data.get('targets', []):
-                        self.bundle_targets.append(t)
-                        self.select_list_widget.addItem(t)
+                        # 表示用にプレフィックス復元を試みる簡易ロジック
+                        disp = t
+                        if t in self.categories: disp = f"[カテゴリ] {t}"
+                        self.bundle_targets.append(disp)
+                        self.select_list_widget.addItem(disp)
                 else:
                     self.bundle_mode_combo.setCurrentIndex(1)
                     for c in b_data.get('conditions', []):
@@ -263,33 +268,31 @@ class DiscountEditDialog(QDialog):
         
         a_type = 'cart'
         target_value = ""
-        
-        if idx == 0: a_type = 'cart'
-        elif idx == 1: 
+
+        if idx == 0:
+            a_type = 'cart'
+        elif idx == 1:
             a_type = 'category'
             target_value = self.target_combo.currentText()
-        elif idx == 2: 
+        elif idx == 2:
             a_type = 'item'
             target_value = self.target_combo.currentText()
         elif idx == 3:
             a_type = 'bundle'
             mode_idx = self.bundle_mode_combo.currentIndex()
-            if mode_idx == 0: # Select
-                clean_targets = []
-                for t in self.bundle_targets:
-                    clean_targets.append(t.replace("[カテゴリ] ", ""))
-                
-                bundle_data = {
-                    'mode': 'select',
-                    'qty': self.select_qty_spin.value(),
-                    'targets': clean_targets
-                }
-            else: # Combo
-                bundle_data = {
-                    'mode': 'combo',
-                    'conditions': self.bundle_conditions
-                }
-            target_value = json.dumps(bundle_data, ensure_ascii=False)
+            
+            # ★ BundleDiscountStrategy の静的メソッドを使用してJSONを生成 (SRP対応)
+            if mode_idx == 0:
+                target_value = BundleDiscountStrategy.create_target_json(
+                    mode='select',
+                    targets=self.bundle_targets, # UI上の生の文字列を渡す
+                    qty=self.select_qty_spin.value()
+                )
+            else:
+                target_value = BundleDiscountStrategy.create_target_json(
+                    mode='combo',
+                    conditions=self.bundle_conditions
+                )
 
         return {
             "name": self.name_edit.text(),
@@ -297,6 +300,6 @@ class DiscountEditDialog(QDialog):
             "discount_value": self.value_spin.value(),
             "apply_type": a_type,
             "target_value": target_value,
-            "is_auto": True, # ★修正: 常に自動適用として保存
+            "is_auto": True,
             "is_active": self.active_chk.isChecked()
         }

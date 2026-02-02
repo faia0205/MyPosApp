@@ -3,8 +3,8 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMessageBox
 
 from app.models.discount import DiscountRule
-from app.services.discount_service import DiscountService  # Service
-from app.services.product_service import ProductService    # Service
+from app.services.discount_service import DiscountService
+from app.services.product_service import ProductService
 from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
@@ -12,17 +12,15 @@ class DiscountSettingTab(BaseSettingTab):
     def __init__(self, discount_service: DiscountService, product_service: ProductService):
         super().__init__()
         self.service = discount_service
-        self.product_service = product_service # Dialogで使用するために保持
+        self.product_service = product_service
 
         self.set_columns(["ID", "名称", "内容", "対象", "状態"])
-        # カラム幅調整 (対象列を見やすく)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.setColumnWidth(3, 250)
 
         self.load_data()
 
     def load_data(self):
-        # Service経由で取得
         self.rules = self.service.get_all_rules()
         self.table.setRowCount(len(self.rules))
 
@@ -37,7 +35,6 @@ class DiscountSettingTab(BaseSettingTab):
             val_text = f"{r.discount_value}{unit}"
             self.table.setItem(row, 2, self.create_item(val_text, "#ffeb3b" if is_active else base_col))
 
-            # 対象の表示ロジック
             target_text = ""
             target_color = "white"
             if r.apply_type == 'cart':
@@ -57,16 +54,10 @@ class DiscountSettingTab(BaseSettingTab):
             
             self.table.setItem(row, 3, self.create_item(target_text, target_color if is_active else base_col))
             self.table.setItem(row, 4, self.create_item("有効" if is_active else "無効", base_col))
-
+    
     def on_add(self):
-        # Dialogには本来Repoを渡していましたが、ViewからはServiceを渡す形にするか、
-        # Dialog内部ロジックも修正が必要ですが、今回はDialogのコンストラクタが
-        # prod_repo を期待している箇所を product_service.repo で暫定対応するか、
-        # Dialog側もService対応するのが理想です。
-        # ここでは暫定的に、ProductServiceが内部にrepoを持っていればそれを渡す形にします。
-        # ※本来はDialogもService依存にリファクタすべきです
-        
-        dlg = DiscountEditDialog(prod_repo=self.product_service.repo, parent=self)
+        # DialogにProductServiceを渡す (DI)
+        dlg = DiscountEditDialog(product_service=self.product_service, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             new_rule = DiscountRule(
@@ -79,7 +70,6 @@ class DiscountSettingTab(BaseSettingTab):
                 is_auto=d['is_auto'],
                 is_active=d['is_active']
             )
-            # Service経由で追加
             if self.service.add_rule(new_rule):
                 self.load_data()
 
@@ -87,7 +77,8 @@ class DiscountSettingTab(BaseSettingTab):
         target = self.get_selected_row_data(self.rules)
         if not target: return
 
-        dlg = DiscountEditDialog(data=asdict(target), prod_repo=self.product_service.repo, parent=self)
+        # DialogにProductServiceを渡す (DI)
+        dlg = DiscountEditDialog(data=asdict(target), product_service=self.product_service, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_rule = DiscountRule(
@@ -100,7 +91,6 @@ class DiscountSettingTab(BaseSettingTab):
                 is_auto=d['is_auto'],
                 is_active=d['is_active']
             )
-            # Service経由で更新
             if self.service.update_rule(updated_rule):
                 self.load_data()
 
@@ -112,10 +102,8 @@ class DiscountSettingTab(BaseSettingTab):
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # Service経由で削除
             if self.service.delete_rule(target):
                 self.load_data()
         elif res == QMessageBox.No:
-            # Service経由で無効化
             if self.service.disable_rule(target):
                 self.load_data()

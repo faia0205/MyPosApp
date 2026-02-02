@@ -28,7 +28,7 @@ class ExpenseEditDialog(QDialog):
         self.date_edit.setCalendarPopup(True)
         
         # データがあればその時間を、なければ現在時刻を設定
-        if self.data.get('timestamp'):
+        if self.data and self.data.get('timestamp'):
             # 文字列 "yyyy-MM-dd HH:mm:ss" を QDateTime に変換
             dt = QDateTime.fromString(self.data['timestamp'], "yyyy-MM-dd HH:mm:ss")
             self.date_edit.setDateTime(dt)
@@ -39,13 +39,13 @@ class ExpenseEditDialog(QDialog):
 
         # 項目名
         self.title_edit = QLineEdit()
-        self.title_edit.setText(self.data.get('title', ''))
+        self.title_edit.setText(self.data.get('title', '') if self.data else '')
         form.addRow("項目名:", self.title_edit)
 
         # 金額
         self.amount_edit = QSpinBox()
         self.amount_edit.setRange(1, 9999999)
-        self.amount_edit.setValue(self.data.get('amount', 0))
+        self.amount_edit.setValue(self.data.get('amount', 0) if self.data else 0)
         form.addRow("金額:", self.amount_edit)
 
         layout.addLayout(form)

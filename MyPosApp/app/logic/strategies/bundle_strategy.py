@@ -18,6 +18,34 @@ class BundleDiscountStrategy(DiscountStrategy):
     def priority(self) -> int:
         return 10  # 最優先
     
+    # --- Static Helper for JSON Generation (SRP対応) ---
+    @staticmethod
+    def create_target_json(mode: str, targets: List[str] = None, qty: int = 0, conditions: List[Dict] = None) -> str:
+        """
+        バンドル割引のターゲット定義JSONを生成する
+        UI側での手動組み立てを排除し、フォーマット定義をここに集約する。
+        """
+        data = {}
+        if mode == 'select':
+            # "[カテゴリ] " などのプレフィックス除去もここで行い、純粋なデータのみをJSONにする
+            clean_targets = []
+            if targets:
+                for t in targets:
+                    clean_targets.append(t.replace("[カテゴリ] ", ""))
+            
+            data = {
+                'mode': 'select',
+                'qty': qty,
+                'targets': clean_targets
+            }
+        elif mode == 'combo':
+            data = {
+                'mode': 'combo',
+                'conditions': conditions or []
+            }
+        
+        return json.dumps(data, ensure_ascii=False)
+
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         

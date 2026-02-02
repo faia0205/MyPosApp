@@ -69,7 +69,7 @@ class UserSettingTab(BaseSettingTab):
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
         
         if res == QMessageBox.Yes:
-            if self.service.delete_user(target.id):
+            if self.service.delete_user(target):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
