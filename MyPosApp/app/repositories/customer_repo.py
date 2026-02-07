@@ -2,8 +2,9 @@ from typing import List, Dict, Optional
 import json
 from app.repositories.base_repo import BaseRepository
 from app.models.customer import Customer
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class CustomerRepository(BaseRepository):
+class CustomerRepository(BaseRepository, IMasterDataRepository):
     """客層データのCRUD（Dataclass対応版）"""
 
     def fetch_all(self) -> List[Customer]:
@@ -118,3 +119,18 @@ class CustomerRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing customer: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "customers_presets"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success

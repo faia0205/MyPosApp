@@ -8,7 +8,7 @@ from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 
-from MyPosApp.app.services.interfaces.report_exporter import IReportExporter
+from app.services.interfaces.report_exporter import IReportExporter
 
 class AnalyticsService:
     def __init__(

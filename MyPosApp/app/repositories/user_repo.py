@@ -1,8 +1,9 @@
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.user import User
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class UserRepository(BaseRepository):
+class UserRepository(BaseRepository, IMasterDataRepository):
     """
     ユーザーデータのCRUD。
     transaction() を使用して安全にDB操作を行います。
@@ -105,3 +106,18 @@ class UserRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing user: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "users"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_users()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success

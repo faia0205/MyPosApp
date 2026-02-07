@@ -16,6 +16,7 @@ from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.analytics_repo import AnalyticsRepository
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
 # Service/Logic
 from app.services.user_service import UserService
@@ -91,14 +92,21 @@ class MainWindow(QMainWindow):
         self.expense_service = ExpenseService(self.expense_repo, self.log_repo)
         self.discount_service = DiscountService(self.disc_repo, self.log_repo)
         self.user_service = UserService(self.user_repo, self.log_repo)
+        
+        master_repos: list[IMasterDataRepository] = [
+            self.prod_repo,
+            self.user_repo,
+            self.cust_repo,
+            self.payment_repo,
+            self.expense_repo,
+            self.disc_repo
+        ]
+
         self.master_data_service = MasterDataService(
-            prod_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            cust_repo=self.cust_repo,
-            pay_repo=self.payment_repo,
-            exp_repo=self.expense_repo,
-            disc_repo=self.disc_repo
+            repositories=master_repos
         )
+
+        self.master_data_service.sync_json_to_db()
 
         # AnalyticsServiceにRepoを注入
         self.analytics_service = AnalyticsService(

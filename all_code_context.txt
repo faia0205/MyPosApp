@@ -1229,8 +1229,9 @@ from typing import List, Dict, Optional
 import json
 from app.repositories.base_repo import BaseRepository
 from app.models.customer import Customer
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class CustomerRepository(BaseRepository):
+class CustomerRepository(BaseRepository, IMasterDataRepository):
     """客層データのCRUD（Dataclass対応版）"""
 
     def fetch_all(self) -> List[Customer]:
@@ -1345,6 +1346,21 @@ class CustomerRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing customer: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "customers_presets"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
@@ -1353,8 +1369,9 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.discount import DiscountRule
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class DiscountRepository(BaseRepository):
+class DiscountRepository(BaseRepository, IMasterDataRepository):
     """割引ルールのCRUD (Dataclass対応版)"""
 
     def fetch_all_rules(self) -> List[DiscountRule]:
@@ -1457,6 +1474,21 @@ class DiscountRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing discount rule: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "discount_rules"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_rules()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
@@ -1465,8 +1497,9 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 from typing import List, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.expense import Expense
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class ExpenseRepository(BaseRepository):
+class ExpenseRepository(BaseRepository, IMasterDataRepository):
     """経費データのCRUDを担当"""
 
     def fetch_all(self) -> List[Expense]:
@@ -1513,6 +1546,20 @@ class ExpenseRepository(BaseRepository):
         """辞書データを取り込み (常に追加)"""
         # 初期データ取り込み用
         return self.add(data.get('title'), data.get('amount'))
+    
+    def get_master_key(self) -> str:
+        return "initial_expenses"
+
+    def export_all_data(self) -> List[Dict]:
+        models = self.fetch_all()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\log_repo.py
@@ -1545,8 +1592,9 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.payment_method import PaymentMethod
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class PaymentRepository(BaseRepository):
+class PaymentRepository(BaseRepository, IMasterDataRepository):
     """決済方法の設定・取得に関する責務を持つ"""
 
     def fetch_all(self) -> List[PaymentMethod]:
@@ -1601,6 +1649,20 @@ class PaymentRepository(BaseRepository):
         except Exception:
             return False
 
+    def get_master_key(self) -> str:
+        return "payment_methods"
+
+    def export_all_data(self) -> List[Dict]:
+        models = self.fetch_all()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
+
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\product_repo.py
 ==================================================
@@ -1608,8 +1670,9 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.product import Product
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class ProductRepository(BaseRepository):
+class ProductRepository(BaseRepository, IMasterDataRepository):
     """
     商品データのCRUD操作を担当するリポジトリ
     """
@@ -1740,6 +1803,21 @@ class ProductRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing product: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "products"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_as_models()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\transaction_repo.py
@@ -1867,8 +1945,9 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.user import User
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class UserRepository(BaseRepository):
+class UserRepository(BaseRepository, IMasterDataRepository):
     """
     ユーザーデータのCRUD。
     transaction() を使用して安全にDB操作を行います。
@@ -1971,12 +2050,60 @@ class UserRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing user: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "users"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_users()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\__init__.py
 ==================================================
 
 
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\interfaces\master_data_repo.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+
+class IMasterDataRepository(ABC):
+    """
+    マスタデータ同期（JSON Import/Export）に対応するためのインターフェース
+    """
+
+    @abstractmethod
+    def get_master_key(self) -> str:
+        """
+        JSONファイル内のキー名 (例: 'products', 'users') を返す
+        """
+        pass
+
+    @abstractmethod
+    def export_all_data(self) -> List[Dict[str, Any]]:
+        """
+        全データを辞書リスト形式で返す (JSON出力用)
+        """
+        pass
+
+    @abstractmethod
+    def import_all_data(self, data_list: List[Dict[str, Any]]) -> bool:
+        """
+        辞書リストを受け取り、DBに反映させる
+        """
+        pass
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics_service.py
@@ -1992,7 +2119,7 @@ from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 
-from app.services.excel_ecporter import ExcelReportExporter
+from app.services.interfaces.report_exporter import IReportExporter
 
 class AnalyticsService:
     def __init__(
@@ -2000,14 +2127,15 @@ class AnalyticsService:
             ana_repo: AnalyticsRepository,
             trans_repo: TransactionRepository,
             expense_repo: ExpenseRepository,
-            log_repo: LogRepository
+            log_repo: LogRepository,
+            exporter: IReportExporter
         ):
         self.ana_repo = ana_repo
         self.trans_repo = trans_repo
         self.expense_repo = expense_repo
         self.log_repo = log_repo
+        self.exporter = exporter
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
-        self.excel_exporter = ExcelReportExporter()
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -2158,7 +2286,7 @@ class AnalyticsService:
         pivots = self.get_pivot_data()
         
         # 2. 書き出しの委譲 (File Export)
-        return self.excel_exporter.export(file_path, tx_list, logs, pivots)
+        return self.exporter.export(file_path, tx_list, logs, pivots)
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\cart_service.py
@@ -2681,41 +2809,39 @@ class DiscountService:
         return False
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\excel_ecporter.py
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\excel_exporter.py
 ==================================================
 
 import pandas as pd
 from typing import List, Dict, Tuple
+from app.services.interfaces.report_exporter import IReportExporter
 
-class ExcelReportExporter:
+class ExcelReportExporter(IReportExporter):
     """
     Excel帳票出力の責務を持つクラス
-    データ(List, Dict)を受け取り、フォーマットしてファイルに書き出す
+    IReportExporter インターフェースを実装
     """
 
     def export(self, file_path: str, tx_list: List[Dict], logs: List[Dict], pivots: Dict[str, pd.DataFrame]) -> Tuple[bool, str]:
-        """
-        Excel出力実行
-        """
         try:
             # 1. データフレーム変換と整形
             df_tx = pd.DataFrame(tx_list)
             df_logs = pd.DataFrame(logs)
 
-            # タイムスタンプ列の調整 (表示用に time 列があるため timestamp は削除)
+            # タイムスタンプ列の調整
             if 'timestamp' in df_tx.columns:
                 df_tx = df_tx.drop(columns=['timestamp'])
-            
-            # カラム名の日本語化 (帳票レイアウト定義)
+
+            # カラム名の日本語化
             if not df_tx.empty:
                 rename_map = {
-                    'id': '伝票ID', 
-                    'time': '日時', 
-                    'total': '合計', 
-                    'items': '点数', 
-                    'payment': '決済', 
+                    'id': '伝票ID',
+                    'time': '日時',
+                    'total': '合計',
+                    'items': '点数',
+                    'payment': '決済',
                     'customer': '客層',
-                    'change': 'お釣り'  # 追加: お釣りカラムも日本語化
+                    'change': 'お釣り'
                 }
                 df_tx.rename(columns=rename_map, inplace=True)
 
@@ -2729,12 +2855,12 @@ class ExcelReportExporter:
                     pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
                 else:
                     df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
-
+                
                 # 操作ログシート
                 if not df_logs.empty:
                     df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
-                
-                # クロス集計シート (AnalysisTabの内容)
+
+                # クロス集計シート
                 if pivots:
                     if 'time_prod' in pivots:
                         pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')
@@ -2812,12 +2938,7 @@ from app.models.expense import Expense
 from app.models.discount import DiscountRule
 
 # Repositories
-from app.repositories.product_repo import ProductRepository
-from app.repositories.user_repo import UserRepository
-from app.repositories.customer_repo import CustomerRepository
-from app.repositories.payment_repo import PaymentRepository
-from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.discount_repo import DiscountRepository
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
 class MasterDataService:
     """
@@ -2826,19 +2947,14 @@ class MasterDataService:
     """
 
     def __init__(self, 
-                 prod_repo: ProductRepository,
-                 user_repo: UserRepository,
-                 cust_repo: CustomerRepository,
-                 pay_repo: PaymentRepository,
-                 exp_repo: ExpenseRepository,
-                 disc_repo: DiscountRepository):
+                 repositories: list[IMasterDataRepository]):
+        """
+        Args:
+            repositories (list[IMasterDataRepository]): 同期対象のリポジトリ群(順序が重要ならその順で渡す)
+        """
+
         # 依存性の注入 (Dependency Injection)
-        self.prod_repo = prod_repo
-        self.user_repo = user_repo
-        self.cust_repo = cust_repo
-        self.pay_repo = pay_repo
-        self.exp_repo = exp_repo
-        self.disc_repo = disc_repo
+        self.repositories = repositories
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)
@@ -2861,14 +2977,11 @@ class MasterDataService:
                 print(f"Backup created: {backup_path}")
 
             # 2. 各リポジトリからデータを収集し、モデルの to_dict() で変換
-            master_data = {
-                "products": [p.to_dict() for p in self.prod_repo.fetch_all_as_models()],
-                "users": [u.to_dict() for u in self.user_repo.fetch_all_users()],
-                "customer_presets": [c.to_dict() for c in self.cust_repo.fetch_all()],
-                "payment_methods": [p.to_dict() for p in self.pay_repo.fetch_all()],
-                "initial_expenses": [e.to_dict() for e in self.exp_repo.fetch_all()],
-                "discount_rules": [r.to_dict() for r in self.disc_repo.fetch_all_rules()]
-            }
+            master_data = {}
+            for repo in self.repositories:
+                key = repo.get_master_key()
+                data = repo.export_all_data()
+                master_data[key] = data
 
             # 3. JSON書き出し
             with open(MASTER_JSON_PATH, 'w', encoding='utf-8') as f:
@@ -2907,30 +3020,11 @@ class MasterDataService:
 
         print("Syncing JSON to DB...")
 
-        # --- A. Products (商品) ---
-        for p_data in data.get("products", []):
-            self.prod_repo.import_data(p_data)
-
-        # --- B. Users (ユーザー) ---
-        for u_data in data.get("users", []):
-            self.user_repo.import_data(u_data)
-
-        # --- C. Payment Methods (決済方法) ---
-        for pm_data in data.get("payment_methods", []):
-            self.pay_repo.import_data(pm_data)
-
-        # --- D. Customer Presets (客層) ---
-        for c_data in data.get("customer_presets", []):
-            self.cust_repo.import_data(c_data)
-
-        # --- E. Initial Expenses (経費項目) ---
-        for e_data in data.get("initial_expenses", []):
-            self.exp_repo.import_data(e_data)
-
-        # --- F. Discount Rules (割引) ---
-        for r_data in data.get("discount_rules", []):
-            self.disc_repo.import_data(r_data)
-
+        for repo in self.repositories:
+            key = repo.get_master_key()
+            target_data = data.get(key, [])
+            if target_data:
+                repo.import_all_data(target_data)
         print("Sync completed.")
 
 ==================================================
@@ -3073,6 +3167,25 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\serv
 ==================================================
 
 
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\interfaces\report_exporter.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict, Tuple
+import pandas as pd
+
+class IReportExporter(ABC):
+    """帳票出力の抽象インターフェース"""
+
+    @abstractmethod
+    def export(self, file_path: str, tx_list: List[Dict], logs: List[Dict], pivots: Dict[str, pd.DataFrame]) -> Tuple[bool, str]:
+        """
+        データを指定されたパスに出力する
+        Returns: (成功フラグ, メッセージ)
+        """
+        pass
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\database.py
@@ -3417,6 +3530,7 @@ from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 from app.repositories.customer_repo import CustomerRepository
 from app.repositories.analytics_repo import AnalyticsRepository
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
 # Service/Logic
 from app.services.user_service import UserService
@@ -3429,6 +3543,7 @@ from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
 from app.services.customer_service import CustomerService
 from app.services.analytics_service import AnalyticsService
+from app.services.excel_exporter import ExcelReportExporter
 from app.logic.discount_manager import DiscountManager
 
 # Strategies
@@ -3483,7 +3598,7 @@ class MainWindow(QMainWindow):
         # 4. Services (アプリケーション層)
         # CheckoutServiceにRepoを注入
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
-        
+        self.excel_exporter = ExcelReportExporter()
         # UI用のデータ提供サービスを作成
         self.product_service = ProductService(self.prod_repo, self.log_repo)
         self.customer_service = CustomerService(self.cust_repo, self.log_repo)
@@ -3491,21 +3606,28 @@ class MainWindow(QMainWindow):
         self.expense_service = ExpenseService(self.expense_repo, self.log_repo)
         self.discount_service = DiscountService(self.disc_repo, self.log_repo)
         self.user_service = UserService(self.user_repo, self.log_repo)
+        
+        master_repos: list[IMasterDataRepository] = [
+            self.prod_repo,
+            self.user_repo,
+            self.cust_repo,
+            self.payment_repo,
+            self.expense_repo,
+            self.disc_repo
+        ]
+
         self.master_data_service = MasterDataService(
-            prod_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            cust_repo=self.cust_repo,
-            pay_repo=self.payment_repo,
-            exp_repo=self.expense_repo,
-            disc_repo=self.disc_repo
+            repositories=master_repos
         )
+        
 
         # AnalyticsServiceにRepoを注入
         self.analytics_service = AnalyticsService(
             ana_repo=self.ana_repo,
             trans_repo=self.trans_repo,
             expense_repo=self.expense_repo,
-            log_repo=self.log_repo
+            log_repo=self.log_repo,
+            exporter=self.excel_exporter
         )
 
         # CartServiceに全ての依存関係を注入 (DI)
@@ -6854,6 +6976,16 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "note": "",
             "display_order": 100,
             "is_active": true
+        },
+        {
+            "id": 13,
+            "name": "テストA",
+            "price": 9999,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 101,
+            "is_active": true
         }
     ],
     "users": [
@@ -6900,7 +7032,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         }
     ],
-    "customer_presets": [
+    "customers_presets": [
         {
             "id": 1,
             "label": "男1",
@@ -6980,8 +7112,14 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         },
         {
-            "id": 2,
+            "id": 4,
             "name": "PayPay",
+            "is_cash": false,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "交通系IC",
             "is_cash": false,
             "is_active": true
         }
@@ -6994,7 +7132,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "timestamp": "2026-01-24 18:41:14"
         },
         {
-            "id": 1,
+            "id": 3,
             "title": "準備金",
             "amount": 15000,
             "timestamp": "2026-01-24 18:41:14"

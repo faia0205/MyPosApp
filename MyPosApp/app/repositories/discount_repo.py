@@ -1,8 +1,9 @@
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.discount import DiscountRule
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class DiscountRepository(BaseRepository):
+class DiscountRepository(BaseRepository, IMasterDataRepository):
     """割引ルールのCRUD (Dataclass対応版)"""
 
     def fetch_all_rules(self) -> List[DiscountRule]:
@@ -105,3 +106,18 @@ class DiscountRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing discount rule: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "discount_rules"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_rules()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success

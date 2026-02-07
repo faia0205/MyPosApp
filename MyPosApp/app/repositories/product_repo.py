@@ -1,8 +1,9 @@
 from typing import List, Optional, Dict
 from app.repositories.base_repo import BaseRepository
 from app.models.product import Product
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
-class ProductRepository(BaseRepository):
+class ProductRepository(BaseRepository, IMasterDataRepository):
     """
     商品データのCRUD操作を担当するリポジトリ
     """
@@ -133,3 +134,18 @@ class ProductRepository(BaseRepository):
         except Exception as e:
             print(f"Error importing product: {e}")
             return False
+    
+    def get_master_key(self) -> str:
+        return "products"
+
+    def export_all_data(self) -> List[Dict]:
+        # モデルを取得して辞書化する既存ロジックをラップ
+        models = self.fetch_all_as_models()
+        return [p.to_dict() for p in models]
+
+    def import_all_data(self, data_list: List[Dict]) -> bool:
+        success = True
+        for data in data_list:
+            if not self.import_data(data):
+                success = False
+        return success

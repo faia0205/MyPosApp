@@ -37,6 +37,8 @@ Root: MyPosApp/
             product_repo.py
             transaction_repo.py
             user_repo.py
+            interfaces/
+                master_data_repo.py
         services/
             __init__.py
             analytics_service.py
@@ -44,12 +46,14 @@ Root: MyPosApp/
             checkout_service.py
             customer_service.py
             discount_service.py
-            excel_ecporter.py
+            excel_exporter.py
             expense_service.py
             master_data_service.py
             payment_service.py
             product_service.py
             user_service.py
+            interfaces/
+                report_exporter.py
         utils/
             __init__.py
             database.py

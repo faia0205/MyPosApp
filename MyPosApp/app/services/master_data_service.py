@@ -19,12 +19,7 @@ from app.models.expense import Expense
 from app.models.discount import DiscountRule
 
 # Repositories
-from app.repositories.product_repo import ProductRepository
-from app.repositories.user_repo import UserRepository
-from app.repositories.customer_repo import CustomerRepository
-from app.repositories.payment_repo import PaymentRepository
-from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.discount_repo import DiscountRepository
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
 
 class MasterDataService:
     """
@@ -33,19 +28,14 @@ class MasterDataService:
     """
 
     def __init__(self, 
-                 prod_repo: ProductRepository,
-                 user_repo: UserRepository,
-                 cust_repo: CustomerRepository,
-                 pay_repo: PaymentRepository,
-                 exp_repo: ExpenseRepository,
-                 disc_repo: DiscountRepository):
+                 repositories: list[IMasterDataRepository]):
+        """
+        Args:
+            repositories (list[IMasterDataRepository]): 同期対象のリポジトリ群(順序が重要ならその順で渡す)
+        """
+
         # 依存性の注入 (Dependency Injection)
-        self.prod_repo = prod_repo
-        self.user_repo = user_repo
-        self.cust_repo = cust_repo
-        self.pay_repo = pay_repo
-        self.exp_repo = exp_repo
-        self.disc_repo = disc_repo
+        self.repositories = repositories
 
     # ==========================================
     # 1. DB -> JSON (Export / Backup)
@@ -68,14 +58,11 @@ class MasterDataService:
                 print(f"Backup created: {backup_path}")
 
             # 2. 各リポジトリからデータを収集し、モデルの to_dict() で変換
-            master_data = {
-                "products": [p.to_dict() for p in self.prod_repo.fetch_all_as_models()],
-                "users": [u.to_dict() for u in self.user_repo.fetch_all_users()],
-                "customer_presets": [c.to_dict() for c in self.cust_repo.fetch_all()],
-                "payment_methods": [p.to_dict() for p in self.pay_repo.fetch_all()],
-                "initial_expenses": [e.to_dict() for e in self.exp_repo.fetch_all()],
-                "discount_rules": [r.to_dict() for r in self.disc_repo.fetch_all_rules()]
-            }
+            master_data = {}
+            for repo in self.repositories:
+                key = repo.get_master_key()
+                data = repo.export_all_data()
+                master_data[key] = data
 
             # 3. JSON書き出し
             with open(MASTER_JSON_PATH, 'w', encoding='utf-8') as f:
@@ -114,28 +101,9 @@ class MasterDataService:
 
         print("Syncing JSON to DB...")
 
-        # --- A. Products (商品) ---
-        for p_data in data.get("products", []):
-            self.prod_repo.import_data(p_data)
-
-        # --- B. Users (ユーザー) ---
-        for u_data in data.get("users", []):
-            self.user_repo.import_data(u_data)
-
-        # --- C. Payment Methods (決済方法) ---
-        for pm_data in data.get("payment_methods", []):
-            self.pay_repo.import_data(pm_data)
-
-        # --- D. Customer Presets (客層) ---
-        for c_data in data.get("customer_presets", []):
-            self.cust_repo.import_data(c_data)
-
-        # --- E. Initial Expenses (経費項目) ---
-        for e_data in data.get("initial_expenses", []):
-            self.exp_repo.import_data(e_data)
-
-        # --- F. Discount Rules (割引) ---
-        for r_data in data.get("discount_rules", []):
-            self.disc_repo.import_data(r_data)
-
+        for repo in self.repositories:
+            key = repo.get_master_key()
+            target_data = data.get(key, [])
+            if target_data:
+                repo.import_all_data(target_data)
         print("Sync completed.")
