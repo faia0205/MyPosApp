@@ -10,7 +10,7 @@ OUTPUT_FILE = f'project_structure.txt'
 IGNORE_DIRS = {
     '__pycache__', '.git', '.venv', 'venv', 'env', 
     '.idea', '.vscode', 'node_modules', 'dist', 'build',
-    'migrations'
+    'migrations', 'backups'
 }
 
 # 構造図に載せたくないファイル拡張子（必要であれば追加）

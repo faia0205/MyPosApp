@@ -8,7 +8,7 @@ from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
 
-from app.services.excel_ecporter import ExcelReportExporter
+from MyPosApp.app.services.interfaces.report_exporter import IReportExporter
 
 class AnalyticsService:
     def __init__(
@@ -16,14 +16,15 @@ class AnalyticsService:
             ana_repo: AnalyticsRepository,
             trans_repo: TransactionRepository,
             expense_repo: ExpenseRepository,
-            log_repo: LogRepository
+            log_repo: LogRepository,
+            exporter: IReportExporter
         ):
         self.ana_repo = ana_repo
         self.trans_repo = trans_repo
         self.expense_repo = expense_repo
         self.log_repo = log_repo
+        self.exporter = exporter
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
-        self.excel_exporter = ExcelReportExporter()
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -174,4 +175,4 @@ class AnalyticsService:
         pivots = self.get_pivot_data()
         
         # 2. 書き出しの委譲 (File Export)
-        return self.excel_exporter.export(file_path, tx_list, logs, pivots)
+        return self.exporter.export(file_path, tx_list, logs, pivots)

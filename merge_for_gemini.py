@@ -3,7 +3,7 @@ import os
 # まとめる対象の拡張子
 TARGET_EXTENSIONS = ['.py', '.md', '.txt', '.json'] # .jsonも追加推奨
 # 無視するディレクトリ名
-IGNORE_DIRS = {'__pycache__', '.git', '.venv', 'venv', '.idea', '.vscode', 'data'} # dataフォルダ(DBなど)は除外推奨
+IGNORE_DIRS = {'__pycache__', '.git', '.venv', 'venv', '.idea', '.vscode', 'backups'} # dataフォルダ(DBなど)は除外推奨
 
 # 出力ファイル名
 OUTPUT_FILE = f'all_code_context.txt'

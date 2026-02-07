@@ -43,9 +43,13 @@ Root: MyPosApp/
             cart_service.py
             checkout_service.py
             customer_service.py
+            discount_service.py
             excel_ecporter.py
+            expense_service.py
             master_data_service.py
+            payment_service.py
             product_service.py
+            user_service.py
         utils/
             __init__.py
             database.py
@@ -72,6 +76,7 @@ Root: MyPosApp/
                 product_edit_dialog.py
                 user_edit_dialog.py
             settings_tabs/
+                __init__.py
                 base_setting_tab.py
                 customer_setting_tab.py
                 discount_setting_tab.py
@@ -88,45 +93,3 @@ Root: MyPosApp/
     data/
         master_data.json
         pos_system.db
-        backups/
-            master_backup_20260118_191207.json
-            master_backup_20260118_191521.json
-            master_backup_20260120_074358.json
-            master_backup_20260120_200246.json
-            master_backup_20260121_134347.json
-            master_backup_20260121_140840.json
-            master_backup_20260121_140942.json
-            master_backup_20260121_174203.json
-            master_backup_20260121_174249.json
-            master_backup_20260121_180139.json
-            master_backup_20260121_180837.json
-            master_backup_20260122_042845.json
-            master_backup_20260122_043603.json
-            master_backup_20260122_044553.json
-            master_backup_20260122_045044.json
-            master_backup_20260122_143947.json
-            master_backup_20260122_144339.json
-            master_backup_20260122_144350.json
-            master_backup_20260122_201659.json
-            master_backup_20260123_144330.json
-            master_backup_20260123_144436.json
-            master_backup_20260123_150241.json
-            master_backup_20260123_150336.json
-            master_backup_20260123_170118.json
-            master_backup_20260123_170200.json
-            master_backup_20260123_170448.json
-            master_backup_20260123_174523.json
-            master_backup_20260124_090937.json
-            master_backup_20260124_091115.json
-            master_backup_20260124_171625.json
-            master_backup_20260124_172050.json
-            master_backup_20260124_184508.json
-            master_backup_20260130_202042.json
-            master_backup_20260130_214305.json
-            master_backup_20260130_214334.json
-            master_backup_20260130_214432.json
-            master_backup_20260130_214443.json
-            master_backup_20260131_080909.json
-            master_backup_20260131_083044.json
-            master_backup_20260131_085208.json
-            master_backup_20260131_085258.json

@@ -1,35 +1,33 @@
 import pandas as pd
 from typing import List, Dict, Tuple
+from app.services.interfaces.report_exporter import IReportExporter
 
-class ExcelReportExporter:
+class ExcelReportExporter(IReportExporter):
     """
     Excel帳票出力の責務を持つクラス
-    データ(List, Dict)を受け取り、フォーマットしてファイルに書き出す
+    IReportExporter インターフェースを実装
     """
 
     def export(self, file_path: str, tx_list: List[Dict], logs: List[Dict], pivots: Dict[str, pd.DataFrame]) -> Tuple[bool, str]:
-        """
-        Excel出力実行
-        """
         try:
             # 1. データフレーム変換と整形
             df_tx = pd.DataFrame(tx_list)
             df_logs = pd.DataFrame(logs)
 
-            # タイムスタンプ列の調整 (表示用に time 列があるため timestamp は削除)
+            # タイムスタンプ列の調整
             if 'timestamp' in df_tx.columns:
                 df_tx = df_tx.drop(columns=['timestamp'])
-            
-            # カラム名の日本語化 (帳票レイアウト定義)
+
+            # カラム名の日本語化
             if not df_tx.empty:
                 rename_map = {
-                    'id': '伝票ID', 
-                    'time': '日時', 
-                    'total': '合計', 
-                    'items': '点数', 
-                    'payment': '決済', 
+                    'id': '伝票ID',
+                    'time': '日時',
+                    'total': '合計',
+                    'items': '点数',
+                    'payment': '決済',
                     'customer': '客層',
-                    'change': 'お釣り'  # 追加: お釣りカラムも日本語化
+                    'change': 'お釣り'
                 }
                 df_tx.rename(columns=rename_map, inplace=True)
 
@@ -43,12 +41,12 @@ class ExcelReportExporter:
                     pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
                 else:
                     df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
-
+                
                 # 操作ログシート
                 if not df_logs.empty:
                     df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
-                
-                # クロス集計シート (AnalysisTabの内容)
+
+                # クロス集計シート
                 if pivots:
                     if 'time_prod' in pivots:
                         pivots['time_prod'].to_excel(writer, sheet_name='時間x商品(個数)')

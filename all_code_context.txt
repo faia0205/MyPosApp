@@ -421,6 +421,34 @@ class BundleDiscountStrategy(DiscountStrategy):
     def priority(self) -> int:
         return 10  # 最優先
     
+    # --- Static Helper for JSON Generation (SRP対応) ---
+    @staticmethod
+    def create_target_json(mode: str, targets: List[str] = None, qty: int = 0, conditions: List[Dict] = None) -> str:
+        """
+        バンドル割引のターゲット定義JSONを生成する
+        UI側での手動組み立てを排除し、フォーマット定義をここに集約する。
+        """
+        data = {}
+        if mode == 'select':
+            # "[カテゴリ] " などのプレフィックス除去もここで行い、純粋なデータのみをJSONにする
+            clean_targets = []
+            if targets:
+                for t in targets:
+                    clean_targets.append(t.replace("[カテゴリ] ", ""))
+            
+            data = {
+                'mode': 'select',
+                'qty': qty,
+                'targets': clean_targets
+            }
+        elif mode == 'combo':
+            data = {
+                'mode': 'combo',
+                'conditions': conditions or []
+            }
+        
+        return json.dumps(data, ensure_ascii=False)
+
     def apply(self, inventory: List[Dict], rule: DiscountRule, current_net_total: int = 0) -> List[AppliedDiscount]:
         applied = []
         
@@ -2562,21 +2590,95 @@ class CheckoutService:
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\customer_service.py
 ==================================================
 
-from typing import List
+from typing import List, Dict
 from app.repositories.customer_repo import CustomerRepository
+from app.repositories.log_repo import LogRepository
 from app.models.customer import Customer
 
 class CustomerService:
-    def __init__(self, repo: CustomerRepository):
+    def __init__(self, repo: CustomerRepository, log_repo: LogRepository = None):
         self.repo = repo
+        self.log_repo = log_repo
 
     def get_all_customers(self) -> List[Customer]:
-        """全客層取得"""
         return self.repo.fetch_all()
 
     def get_active_customers(self) -> List[Customer]:
-        """有効な客層のみ取得"""
         return self.repo.fetch_active()
+
+    def add_customer(self, customer: Customer) -> bool:
+        if self.repo.add(customer):
+            if self.log_repo:
+                self.log_repo.add_log("info", f"客層追加: {customer.label}")
+            return True
+        return False
+
+    def update_customer(self, customer: Customer) -> bool:
+        if self.repo.update(customer):
+            if self.log_repo:
+                self.log_repo.add_log("info", f"客層変更: {customer.label}")
+            return True
+        return False
+
+    def delete_customer(self, customer: Customer) -> bool:
+        if self.repo.delete(customer.id):
+            if self.log_repo:
+                self.log_repo.add_log("warning", f"客層完全削除: {customer.label}")
+            return True
+        return False
+
+    def disable_customer(self, customer: Customer) -> bool:
+        customer.is_active = False
+        if self.repo.update(customer):
+            if self.log_repo:
+                self.log_repo.add_log("info", f"客層無効化: {customer.label}")
+            return True
+        return False
+
+    def update_display_order(self, order_map: Dict[int, int]) -> bool:
+        return self.repo.update_display_order(order_map)
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\discount_service.py
+==================================================
+
+from typing import List
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.log_repo import LogRepository
+from app.models.discount import DiscountRule
+
+class DiscountService:
+    def __init__(self, repo: DiscountRepository, log_repo: LogRepository):
+        self.repo = repo
+        self.log_repo = log_repo
+
+    def get_all_rules(self) -> List[DiscountRule]:
+        return self.repo.fetch_all_rules()
+
+    def add_rule(self, rule: DiscountRule) -> bool:
+        if self.repo.add(rule):
+            self.log_repo.add_log("info", f"割引ルール追加: {rule.name}")
+            return True
+        return False
+
+    def update_rule(self, rule: DiscountRule) -> bool:
+        if self.repo.update(rule):
+            self.log_repo.add_log("info", f"割引ルール更新: {rule.name}")
+            return True
+        return False
+
+    def delete_rule(self, rule: DiscountRule) -> bool:
+        if self.repo.delete(rule.id):
+            self.log_repo.add_log("warning", f"割引ルール完全削除: {rule.name}")
+            return True
+        return False
+
+    def disable_rule(self, rule: DiscountRule) -> bool:
+        rule.is_active = False
+        if self.repo.update(rule):
+            self.log_repo.add_log("info", f"割引ルール無効化: {rule.name}")
+            return True
+        return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\excel_ecporter.py
@@ -2649,6 +2751,41 @@ class ExcelReportExporter:
             import traceback
             traceback.print_exc()
             return False, str(e)
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\expense_service.py
+==================================================
+
+from typing import List
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
+from app.models.expense import Expense
+
+class ExpenseService:
+    def __init__(self, repo: ExpenseRepository, log_repo: LogRepository):
+        self.repo = repo
+        self.log_repo = log_repo
+
+    def get_all_expenses(self) -> List[Expense]:
+        return self.repo.fetch_all()
+
+    def add_expense(self, title: str, amount: int) -> bool:
+        if self.repo.add(title, amount):
+            self.log_repo.add_log("info", f"経費登録: {title} ¥{amount}")
+            return True
+        return False
+
+    def update_expense(self, expense: Expense) -> bool:
+        if self.repo.update(expense):
+            self.log_repo.add_log("info", f"経費編集: ID{expense.id}")
+            return True
+        return False
+
+    def delete_expense(self, expense: Expense) -> bool:
+        if self.repo.delete(expense.id):
+            self.log_repo.add_log("warning", f"経費削除: {expense.title}")
+            return True
+        return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\master_data_service.py
@@ -2797,24 +2934,139 @@ class MasterDataService:
         print("Sync completed.")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\product_service.py
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\payment_service.py
 ==================================================
 
 from typing import List
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.log_repo import LogRepository
+from app.models.payment_method import PaymentMethod
+
+class PaymentService:
+    def __init__(self, repo: PaymentRepository, log_repo: LogRepository):
+        self.repo = repo
+        self.log_repo = log_repo
+
+    def get_all_methods(self) -> List[PaymentMethod]:
+        return self.repo.fetch_all()
+
+    def add_method(self, method: PaymentMethod) -> bool:
+        if self.repo.add(method):
+            self.log_repo.add_log("info", f"支払方法追加: {method.name}")
+            return True
+        return False
+
+    def update_method(self, method: PaymentMethod) -> bool:
+        if self.repo.update(method):
+            self.log_repo.add_log("info", f"支払方法更新: {method.name}")
+            return True
+        return False
+
+    def delete_method(self, method: PaymentMethod) -> bool:
+        if self.repo.delete(method.id):
+            self.log_repo.add_log("warning", f"支払方法完全削除: {method.name}")
+            return True
+        return False
+
+    def disable_method(self, method: PaymentMethod) -> bool:
+        method.is_active = False
+        if self.repo.update(method):
+            self.log_repo.add_log("info", f"支払方法無効化: {method.name}")
+            return True
+        return False
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\product_service.py
+==================================================
+
+from typing import List, Dict
 from app.repositories.product_repo import ProductRepository
+from app.repositories.log_repo import LogRepository
 from app.models.product import Product
 
 class ProductService:
-    def __init__(self, repo: ProductRepository):
+    def __init__(self, repo: ProductRepository, log_repo: LogRepository):
         self.repo = repo
+        self.log_repo = log_repo
 
     def get_active_products(self) -> List[Product]:
-        """販売画面用: 有効な商品を取得"""
         return self.repo.fetch_active_products()
 
     def get_all_products(self) -> List[Product]:
-        """商品一覧用"""
         return self.repo.fetch_all_as_models()
+
+    def add_product(self, product: Product) -> bool:
+        if self.repo.add_product(product):
+            self.log_repo.add_log("info", f"商品追加: {product.name}")
+            return True
+        return False
+
+    def update_product(self, product: Product) -> bool:
+        if self.repo.update_product(product):
+            self.log_repo.add_log("info", f"商品変更: {product.name}")
+            return True
+        return False
+
+    def delete_product(self, product: Product) -> bool:
+        # 完全削除
+        if self.repo.delete_product(product.id):
+            self.log_repo.add_log("warning", f"商品完全削除: {product.name}")
+            return True
+        return False
+
+    def disable_product(self, product: Product) -> bool:
+        # 無効化（論理削除的な扱い）
+        product.is_active = False
+        if self.repo.update_product(product):
+            self.log_repo.add_log("info", f"商品無効化: {product.name}")
+            return True
+        return False
+
+    def update_display_order(self, order_map: Dict[int, int]) -> bool:
+        return self.repo.update_display_order(order_map)
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\user_service.py
+==================================================
+
+from typing import List
+from app.repositories.user_repo import UserRepository
+from app.repositories.log_repo import LogRepository
+from app.models.user import User
+
+class UserService:
+    def __init__(self, repo: UserRepository, log_repo: LogRepository):
+        self.repo = repo
+        self.log_repo = log_repo
+
+    def get_all_users(self) -> List[User]:
+        return self.repo.fetch_all_users()
+
+    def add_user(self, user: User) -> bool:
+        if self.repo.add_user(user):
+            self.log_repo.add_log("info", f"ユーザー追加: {user.name}")
+            return True
+        return False
+
+    def update_user(self, user: User) -> bool:
+        # 更新前の名前などがわかればログに出せるが、ここではシンプルに実装
+        if self.repo.update_user(user):
+            self.log_repo.add_log("info", f"ユーザー更新: {user.name}")
+            return True
+        return False
+
+    def delete_user(self, user: User) -> bool:
+        if self.repo.delete_user(user.id):
+            self.log_repo.add_log("warning", f"ユーザー完全削除: {user.name}")
+            return True
+        return False
+
+    def disable_user(self, user: User) -> bool:
+        user.is_active = False
+        if self.repo.update_user(user):
+            self.log_repo.add_log("info", f"ユーザー無効化: {user.name}")
+            return True
+        return False
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\__init__.py
@@ -3167,6 +3419,11 @@ from app.repositories.customer_repo import CustomerRepository
 from app.repositories.analytics_repo import AnalyticsRepository
 
 # Service/Logic
+from app.services.user_service import UserService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
+from app.services.master_data_service import MasterDataService
 from app.services.cart_service import CartService
 from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
@@ -3228,8 +3485,20 @@ class MainWindow(QMainWindow):
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
         
         # UI用のデータ提供サービスを作成
-        self.product_service = ProductService(self.prod_repo)
-        self.customer_service = CustomerService(self.cust_repo)
+        self.product_service = ProductService(self.prod_repo, self.log_repo)
+        self.customer_service = CustomerService(self.cust_repo, self.log_repo)
+        self.payment_service = PaymentService(self.payment_repo, self.log_repo)
+        self.expense_service = ExpenseService(self.expense_repo, self.log_repo)
+        self.discount_service = DiscountService(self.disc_repo, self.log_repo)
+        self.user_service = UserService(self.user_repo, self.log_repo)
+        self.master_data_service = MasterDataService(
+            prod_repo=self.prod_repo,
+            user_repo=self.user_repo,
+            cust_repo=self.cust_repo,
+            pay_repo=self.payment_repo,
+            exp_repo=self.expense_repo,
+            disc_repo=self.disc_repo
+        )
 
         # AnalyticsServiceにRepoを注入
         self.analytics_service = AnalyticsService(
@@ -3424,13 +3693,13 @@ class MainWindow(QMainWindow):
 
     def _open_settings_window(self):
         win = SettingsWindow(
-            product_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            customer_repo=self.cust_repo,
-            payment_repo=self.payment_repo,
-            expense_repo=self.expense_repo,
-            discount_repo=self.disc_repo,
-            log_repo=self.log_repo,
+            product_service=self.product_service,
+            user_service=self.user_service,
+            customer_service=self.customer_service,
+            payment_service=self.payment_service,
+            expense_service=self.expense_service,
+            discount_service=self.discount_service,
+            master_service=self.master_data_service,
             parent=self
         )
         win.exec()
@@ -3449,6 +3718,12 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget,
                                QPushButton, QMessageBox, QLabel, QWidget)
 # from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
+from app.services.product_service import ProductService
+from app.services.user_service import UserService
+from app.services.customer_service import CustomerService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
 
 # 各設定タブをインポート
 from app.views.settings_tabs.product_setting_tab import ProductSettingTab
@@ -3469,23 +3744,23 @@ from app.repositories.log_repo import LogRepository
 class SettingsWindow(QDialog):
     """設定管理・マスタ編集ウィンドウ"""
     def __init__(self,
-                 product_repo: ProductRepository,
-                 user_repo: UserRepository,
-                 customer_repo: CustomerRepository,
-                 payment_repo: PaymentRepository,
-                 expense_repo: ExpenseRepository,
-                 discount_repo: DiscountRepository,
-                 log_repo: LogRepository,
+                 product_service: ProductService,
+                 user_service: UserService,
+                 customer_service: CustomerService,
+                 payment_service: PaymentService,
+                 expense_service: ExpenseService,
+                 discount_service: DiscountService,
+                 master_service: MasterDataService,
                  parent=None):
         super().__init__(parent)
 
-        self.prod_repo = product_repo
-        self.user_repo = user_repo
-        self.cust_repo = customer_repo
-        self.pay_repo = payment_repo
-        self.exp_repo = expense_repo
-        self.disc_repo = discount_repo
-        self.log_repo = log_repo
+        self.product_service = product_service
+        self.user_service = user_service
+        self.customer_service = customer_service
+        self.payment_service = payment_service
+        self.expense_service = expense_service
+        self.discount_service = discount_service
+        self.master_service = master_service
 
         self.setWindowTitle("システム設定・マスタ管理")
         self.resize(1000, 700)
@@ -3499,14 +3774,6 @@ class SettingsWindow(QDialog):
             QLabel { color: white; }
         """)
 
-        self.master_service = MasterDataService(
-            prod_repo=self.prod_repo,
-            user_repo=self.user_repo,
-            cust_repo=self.cust_repo,
-            pay_repo=self.pay_repo,
-            exp_repo=self.exp_repo,
-            disc_repo=self.disc_repo
-        )
         self._init_ui()
 
     def _init_ui(self):
@@ -3545,27 +3812,27 @@ class SettingsWindow(QDialog):
         self.tabs = QTabWidget()
         
         # 1. 商品管理
-        self.tab_product = ProductSettingTab(self.prod_repo, self.log_repo)
+        self.tab_product = ProductSettingTab(self.product_service)
         self.tabs.addTab(self.tab_product, "商品管理")
 
         # 2. ユーザー管理
-        self.tab_user = UserSettingTab(self.user_repo, self.log_repo)
+        self.tab_user = UserSettingTab(self.user_service)
         self.tabs.addTab(self.tab_user, "ユーザー管理")
         
         # 3. 客層
-        self.tab_cust = CustomerSettingTab(self.cust_repo, self.log_repo)
+        self.tab_cust = CustomerSettingTab(self.customer_service)
         self.tabs.addTab(self.tab_cust, "客層管理")
         
         # 4. 支払方法
-        self.tab_pay = PaymentSettingTab(self.pay_repo, self.log_repo)
+        self.tab_pay = PaymentSettingTab(self.payment_service)
         self.tabs.addTab(self.tab_pay, "支払方法")
         
         # 5. 経費
-        self.tab_exp = ExpenseSettingTab(self.exp_repo, self.log_repo)
+        self.tab_exp = ExpenseSettingTab(self.expense_service)
         self.tabs.addTab(self.tab_exp, "経費履歴")
 
         # 6. 割引設定
-        self.tab_disc = DiscountSettingTab(self.disc_repo, self.log_repo, self.prod_repo)
+        self.tab_disc = DiscountSettingTab(self.discount_service, self.product_service)
         self.tabs.addTab(self.tab_disc, "割引設定")
 
         layout.addWidget(self.tabs)
@@ -4299,17 +4566,19 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QRadioButton, QButtonGroup, QWidget, QListWidget, QPushButton, QMessageBox)
 import json
 from app.utils.style import StyleGenerator
-from app.repositories.product_repo import ProductRepository
+from app.services.product_service import ProductService
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
 
 class DiscountEditDialog(QDialog):
-    def __init__(self, prod_repo: ProductRepository, data=None, parent=None):
+    # コンストラクタの引数を ProductService に変更
+    def __init__(self, product_service: ProductService, data=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("割引ルール編集")
         self.resize(500, 600)
         
         self.setStyleSheet(f"""
             QDialog {{ background-color: #333; color: white; }}
-            QLineEdit, QComboBox, QSpinBox {{ 
+            QLineEdit, QComboBox, QSpinBox {{
                 padding: 8px; color: black; background-color: white; border-radius: 4px;
             }}
             QLabel {{ font-weight: bold; margin-top: 10px; color: #ccc; }}
@@ -4318,14 +4587,13 @@ class DiscountEditDialog(QDialog):
             {StyleGenerator.get_checkbox_style()}
             {StyleGenerator.get_spinbox_style()}
         """)
-        
+
         self.data = data
-        self.prod_repo = prod_repo
-        
-        # バンドル設定用の一時データ
-        self.bundle_conditions = [] # combo用
-        self.bundle_targets = []    # select用
-        
+        self.product_service = product_service  # Serviceを保持
+
+        self.bundle_conditions = []
+        self.bundle_targets = []
+
         self._init_ui()
 
     def _init_ui(self):
@@ -4458,7 +4726,7 @@ class DiscountEditDialog(QDialog):
         layout.addWidget(btns)
 
     def _load_master_data(self):
-        self.products = self.prod_repo.fetch_active_products()
+        self.products = self.product_service.get_active_products()
         self.categories = sorted(list(set(p.category for p in self.products if p.category)))
         
         candidates = []
@@ -4476,17 +4744,17 @@ class DiscountEditDialog(QDialog):
             self.normal_widget.setVisible(True)
             self.bundle_widget.setVisible(False)
             
-            self.target_combo.clear()
-            self.target_combo.setEnabled(True)
-            if index == 0:
-                self.target_label.setText("対象: 全体")
-                self.target_combo.setEnabled(False)
-            elif index == 1:
-                self.target_label.setText("対象カテゴリ:")
-                self.target_combo.addItems(self.categories)
-            elif index == 2:
-                self.target_label.setText("対象商品:")
-                for p in self.products: self.target_combo.addItem(p.name)
+        self.target_combo.clear()
+        self.target_combo.setEnabled(True)
+        if index == 0:
+            self.target_label.setText("対象: 全体")
+            self.target_combo.setEnabled(False)
+        elif index == 1:
+            self.target_label.setText("対象カテゴリ:")
+            self.target_combo.addItems(self.categories)
+        elif index == 2:
+            self.target_label.setText("対象商品:")
+            for p in self.products: self.target_combo.addItem(p.name)
 
     def _on_bundle_mode_changed(self, index):
         if index == 0:
@@ -4520,6 +4788,7 @@ class DiscountEditDialog(QDialog):
         self.name_edit.setText(self.data['name'])
         if self.data['discount_type'] == 'percent': self.rb_percent.setChecked(True)
         else: self.rb_fixed.setChecked(True)
+        
         self.value_spin.setValue(self.data['discount_value'])
         self.active_chk.setChecked(bool(self.data['is_active']))
         
@@ -4535,8 +4804,11 @@ class DiscountEditDialog(QDialog):
                     self.bundle_mode_combo.setCurrentIndex(0)
                     self.select_qty_spin.setValue(b_data.get('qty', 2))
                     for t in b_data.get('targets', []):
-                        self.bundle_targets.append(t)
-                        self.select_list_widget.addItem(t)
+                        # 表示用にプレフィックス復元を試みる簡易ロジック
+                        disp = t
+                        if t in self.categories: disp = f"[カテゴリ] {t}"
+                        self.bundle_targets.append(disp)
+                        self.select_list_widget.addItem(disp)
                 else:
                     self.bundle_mode_combo.setCurrentIndex(1)
                     for c in b_data.get('conditions', []):
@@ -4559,33 +4831,31 @@ class DiscountEditDialog(QDialog):
         
         a_type = 'cart'
         target_value = ""
-        
-        if idx == 0: a_type = 'cart'
-        elif idx == 1: 
+
+        if idx == 0:
+            a_type = 'cart'
+        elif idx == 1:
             a_type = 'category'
             target_value = self.target_combo.currentText()
-        elif idx == 2: 
+        elif idx == 2:
             a_type = 'item'
             target_value = self.target_combo.currentText()
         elif idx == 3:
             a_type = 'bundle'
             mode_idx = self.bundle_mode_combo.currentIndex()
-            if mode_idx == 0: # Select
-                clean_targets = []
-                for t in self.bundle_targets:
-                    clean_targets.append(t.replace("[カテゴリ] ", ""))
-                
-                bundle_data = {
-                    'mode': 'select',
-                    'qty': self.select_qty_spin.value(),
-                    'targets': clean_targets
-                }
-            else: # Combo
-                bundle_data = {
-                    'mode': 'combo',
-                    'conditions': self.bundle_conditions
-                }
-            target_value = json.dumps(bundle_data, ensure_ascii=False)
+            
+            # ★ BundleDiscountStrategy の静的メソッドを使用してJSONを生成 (SRP対応)
+            if mode_idx == 0:
+                target_value = BundleDiscountStrategy.create_target_json(
+                    mode='select',
+                    targets=self.bundle_targets, # UI上の生の文字列を渡す
+                    qty=self.select_qty_spin.value()
+                )
+            else:
+                target_value = BundleDiscountStrategy.create_target_json(
+                    mode='combo',
+                    conditions=self.bundle_conditions
+                )
 
         return {
             "name": self.name_edit.text(),
@@ -4593,7 +4863,7 @@ class DiscountEditDialog(QDialog):
             "discount_value": self.value_spin.value(),
             "apply_type": a_type,
             "target_value": target_value,
-            "is_auto": True, # ★修正: 常に自動適用として保存
+            "is_auto": True,
             "is_active": self.active_chk.isChecked()
         }
 
@@ -4631,7 +4901,7 @@ class ExpenseEditDialog(QDialog):
         self.date_edit.setCalendarPopup(True)
         
         # データがあればその時間を、なければ現在時刻を設定
-        if self.data.get('timestamp'):
+        if self.data and self.data.get('timestamp'):
             # 文字列 "yyyy-MM-dd HH:mm:ss" を QDateTime に変換
             dt = QDateTime.fromString(self.data['timestamp'], "yyyy-MM-dd HH:mm:ss")
             self.date_edit.setDateTime(dt)
@@ -4642,13 +4912,13 @@ class ExpenseEditDialog(QDialog):
 
         # 項目名
         self.title_edit = QLineEdit()
-        self.title_edit.setText(self.data.get('title', ''))
+        self.title_edit.setText(self.data.get('title', '') if self.data else '')
         form.addRow("項目名:", self.title_edit)
 
         # 金額
         self.amount_edit = QSpinBox()
         self.amount_edit.setRange(1, 9999999)
-        self.amount_edit.setValue(self.data.get('amount', 0))
+        self.amount_edit.setValue(self.data.get('amount', 0) if self.data else 0)
         form.addRow("金額:", self.amount_edit)
 
         layout.addLayout(form)
@@ -5512,23 +5782,21 @@ from PySide6.QtGui import QColor
 from dataclasses import asdict
 
 from app.models.customer import Customer
-from app.repositories.customer_repo import CustomerRepository
-from app.repositories.log_repo import LogRepository
+from app.services.customer_service import CustomerService  # Serviceをインポート
 from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class CustomerSettingTab(BaseSettingTab):
-    def __init__(self, customer_repo: CustomerRepository, log_repo: LogRepository):
+    def __init__(self, service: CustomerService):
         super().__init__()
-        self.repo = customer_repo
-        self.log_repo = log_repo
-        
+        self.service = service  # Repositoryの代わりにServiceを保持
+
         self.set_columns(["ID", "ラベル", "属性 (詳細)", "状態"])
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(1, QHeaderView.Stretch)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
-        
-        # 並び替えボタンの挿入
+
+        # 並び替えボタン
         self.btn_up = QPushButton("▲ 上へ")
         self.btn_up.clicked.connect(lambda: self._move(-1))
         self.layout_btns.insertWidget(2, self.btn_up)
@@ -5536,13 +5804,14 @@ class CustomerSettingTab(BaseSettingTab):
         self.btn_down = QPushButton("▼ 下へ")
         self.btn_down.clicked.connect(lambda: self._move(1))
         self.layout_btns.insertWidget(3, self.btn_down)
-        
+
         self.load_data()
 
     def load_data(self):
-        self.customers = self.repo.fetch_all()
+        # Service経由でデータ取得
+        self.customers = self.service.get_all_customers()
         self.table.setRowCount(len(self.customers))
-        
+
         for row, c in enumerate(self.customers):
             is_active = c.is_active
             text_col = "white" if is_active else "#757575"
@@ -5558,7 +5827,7 @@ class CustomerSettingTab(BaseSettingTab):
             attrs = c.attributes
             attr_str = ", ".join([f"{k}: {v}" for k, v in attrs.items()]) if attrs else "-"
             self.table.setItem(row, 2, self.create_item(attr_str, text_col, bg_col))
-            
+
             status = "有効" if is_active else "無効"
             self.table.setItem(row, 3, self.create_item(status, text_col, bg_col))
 
@@ -5580,8 +5849,8 @@ class CustomerSettingTab(BaseSettingTab):
             )
             new_customer.set_attributes(d['attributes'])
 
-            if self.repo.add(new_customer):
-                self.log_repo.add_log("info", f"客層追加: {d['label']}")
+            # Service経由で追加
+            if self.service.add_customer(new_customer):
                 self.load_data()
 
     def on_edit_selected(self):
@@ -5609,42 +5878,37 @@ class CustomerSettingTab(BaseSettingTab):
             )
             updated_customer.set_attributes(d['attributes'])
 
-            if self.repo.update(updated_customer):
-                self.log_repo.add_log("info", f"客層変更: {target.label}")
+            # Service経由で更新
+            if self.service.update_customer(updated_customer):
                 self.load_data()
 
     def on_delete_selected(self):
         target = self.get_selected_row_data(self.customers)
         if not target: return
 
-        # 確認ダイアログ
         msg = f"客層「{target.label}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (非表示)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # 完全削除
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"客層完全削除: {target.label}")
+            # Service経由で削除
+            if self.service.delete_customer(target):
                 self.load_data()
-
         elif res == QMessageBox.No:
-            # 無効化 (既存ロジック)
-            target.is_active = False
-            if self.repo.update(target):
-                self.log_repo.add_log("info", f"客層無効化: {target.label}")
+            # Service経由で無効化
+            if self.service.disable_customer(target):
                 self.load_data()
 
     def _move(self, direction):
         row = self.table.currentRow()
         if row < 0: return
-        
         new_row = row + direction
         if new_row < 0 or new_row >= len(self.customers): return
-        
+
         a, b = self.customers[row], self.customers[new_row]
         order_map = {a.id: b.display_order, b.id: a.display_order}
-        
-        if self.repo.update_display_order(order_map):
+
+        # Service経由で並び替え
+        if self.service.update_display_order(order_map):
             self.load_data()
             self.table.selectRow(new_row)
 
@@ -5657,46 +5921,40 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMessageBox
 
 from app.models.discount import DiscountRule
-from app.repositories.discount_repo import DiscountRepository
-from app.repositories.log_repo import LogRepository
-from app.repositories.product_repo import ProductRepository
+from app.services.discount_service import DiscountService
+from app.services.product_service import ProductService
 from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class DiscountSettingTab(BaseSettingTab):
-    def __init__(self, discount_repo: DiscountRepository, log_repo: LogRepository, prod_repo: ProductRepository):
+    def __init__(self, discount_service: DiscountService, product_service: ProductService):
         super().__init__()
-        self.repo = discount_repo
-        self.log_repo = log_repo
-        self.prod_repo = prod_repo
-        
+        self.service = discount_service
+        self.product_service = product_service
+
         self.set_columns(["ID", "名称", "内容", "対象", "状態"])
-        # カラム幅調整 (対象列を見やすく)
-        self.table.horizontalHeader().setStretchLastSection(False) 
-        self.table.setColumnWidth(3, 250) 
-        
+        self.table.horizontalHeader().setStretchLastSection(False)
+        self.table.setColumnWidth(3, 250)
+
         self.load_data()
 
     def load_data(self):
-        self.rules = self.repo.fetch_all_rules()
+        self.rules = self.service.get_all_rules()
         self.table.setRowCount(len(self.rules))
-        
+
         for row, r in enumerate(self.rules):
-            # r は DiscountRule オブジェクト
             is_active = r.is_active
             base_col = "white" if is_active else "#757575"
-            
+
             self.table.setItem(row, 0, self.create_item(r.id, base_col))
             self.table.setItem(row, 1, self.create_item(r.name, base_col))
             
             unit = "円引" if r.discount_type == 'fixed' else "%OFF"
             val_text = f"{r.discount_value}{unit}"
             self.table.setItem(row, 2, self.create_item(val_text, "#ffeb3b" if is_active else base_col))
-            
-            # 対象の表示ロジック
+
             target_text = ""
             target_color = "white"
-            
             if r.apply_type == 'cart':
                 target_text = "■ カート全体"
                 target_color = "#81d4fa"
@@ -5704,7 +5962,7 @@ class DiscountSettingTab(BaseSettingTab):
                 target_text = f"【カテゴリ】 {r.target_value}"
                 target_color = "#ffcc80"
             elif r.apply_type == 'item':
-                target_text = f"【 商  品 】 {r.target_value}"
+                target_text = f"【 商 品 】 {r.target_value}"
                 target_color = "#a5d6a7"
             elif r.apply_type == 'bundle':
                 target_text = "★ セット・バンドル"
@@ -5714,9 +5972,10 @@ class DiscountSettingTab(BaseSettingTab):
             
             self.table.setItem(row, 3, self.create_item(target_text, target_color if is_active else base_col))
             self.table.setItem(row, 4, self.create_item("有効" if is_active else "無効", base_col))
-
+    
     def on_add(self):
-        dlg = DiscountEditDialog(prod_repo=self.prod_repo, parent=self)
+        # DialogにProductServiceを渡す (DI)
+        dlg = DiscountEditDialog(product_service=self.product_service, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             new_rule = DiscountRule(
@@ -5729,15 +5988,15 @@ class DiscountSettingTab(BaseSettingTab):
                 is_auto=d['is_auto'],
                 is_active=d['is_active']
             )
-            if self.repo.add(new_rule):
-                self.log_repo.add_log("info", f"割引ルール追加: {d['name']}")
+            if self.service.add_rule(new_rule):
                 self.load_data()
 
     def on_edit_selected(self):
         target = self.get_selected_row_data(self.rules)
         if not target: return
-        
-        dlg = DiscountEditDialog(data=asdict(target), prod_repo=self.prod_repo, parent=self)
+
+        # DialogにProductServiceを渡す (DI)
+        dlg = DiscountEditDialog(data=asdict(target), product_service=self.product_service, parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_rule = DiscountRule(
@@ -5750,8 +6009,7 @@ class DiscountSettingTab(BaseSettingTab):
                 is_auto=d['is_auto'],
                 is_active=d['is_active']
             )
-            if self.repo.update(updated_rule):
-                self.log_repo.add_log("info", f"割引ルール更新: {target.name}")
+            if self.service.update_rule(updated_rule):
                 self.load_data()
 
     def on_delete_selected(self):
@@ -5762,16 +6020,10 @@ class DiscountSettingTab(BaseSettingTab):
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # 完全削除
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"割引ルール完全削除: {target.name}")
+            if self.service.delete_rule(target):
                 self.load_data()
-
         elif res == QMessageBox.No:
-            # 無効化
-            target.is_active = False
-            if self.repo.update(target):
-                self.log_repo.add_log("info", f"割引ルール無効化: {target.name}")
+            if self.service.disable_rule(target):
                 self.load_data()
 
 ==================================================
@@ -5782,26 +6034,25 @@ from PySide6.QtWidgets import QMessageBox, QHeaderView
 from dataclasses import asdict
 
 from app.models.expense import Expense
-from app.repositories.expense_repo import ExpenseRepository
-from app.repositories.log_repo import LogRepository
+from app.services.expense_service import ExpenseService  # Serviceをインポート
 from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class ExpenseSettingTab(BaseSettingTab):
-    def __init__(self, expense_repo: ExpenseRepository, log_repo: LogRepository):
+    def __init__(self, service: ExpenseService):
         super().__init__()
-        self.repo = expense_repo
-        self.log_repo = log_repo
-        
+        self.service = service
+
         self.set_columns(["ID", "日時", "項目名", "金額"])
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         h.setSectionResizeMode(2, QHeaderView.Stretch)
-        
+
         self.load_data()
 
     def load_data(self):
-        self.expenses = self.repo.fetch_all()
+        # Service経由で取得
+        self.expenses = self.service.get_all_expenses()
         self.table.setRowCount(len(self.expenses))
 
         for row, ex in enumerate(self.expenses):
@@ -5814,8 +6065,8 @@ class ExpenseSettingTab(BaseSettingTab):
         dlg = ExpenseEditDialog(parent=self)
         if dlg.exec():
             d = dlg.get_data()
-            if self.repo.add(d['title'], d['amount']):
-                self.log_repo.add_log("info", f"経費登録: {d['title']} ¥{d['amount']}")
+            # Service経由で追加
+            if self.service.add_expense(d['title'], d['amount']):
                 self.load_data()
 
     def on_edit_selected(self):
@@ -5831,8 +6082,8 @@ class ExpenseSettingTab(BaseSettingTab):
                 amount=d['amount'],
                 timestamp=d["timestamp"]
             )
-            if self.repo.update(updated_expense):
-                self.log_repo.add_log("info", f"経費編集: {target.title} -> {d['title']}")
+            # Service経由で更新
+            if self.service.update_expense(updated_expense):
                 self.load_data()
 
     def on_delete_selected(self):
@@ -5840,8 +6091,8 @@ class ExpenseSettingTab(BaseSettingTab):
         if not target: return
         
         if QMessageBox.question(self, "確認", f"「{target.title}」を削除しますか？\n(取り消せません)") == QMessageBox.Yes:
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"経費削除: {target.title}")
+            # Service経由で削除
+            if self.service.delete_expense(target):
                 self.load_data()
 
 ==================================================
@@ -5850,28 +6101,28 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 
 from dataclasses import asdict
 from PySide6.QtWidgets import QMessageBox
+
 from app.models.payment_method import PaymentMethod
-from app.repositories.payment_repo import PaymentRepository
-from app.repositories.log_repo import LogRepository
+from app.services.payment_service import PaymentService  # Serviceをインポート
 from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class PaymentSettingTab(BaseSettingTab):
-    def __init__(self, payment_repo: PaymentRepository, log_repo: LogRepository):
+    def __init__(self, service: PaymentService):
         super().__init__()
-        self.repo = payment_repo
-        self.log_repo = log_repo
-        
+        self.service = service  # Repositoryの代わりにServiceを保持
+
         self.set_columns(["ID", "名称", "現金扱い", "状態"])
         self.load_data()
 
     def load_data(self):
-        self.methods = self.repo.fetch_all()
+        # Service経由で取得
+        self.methods = self.service.get_all_methods()
         self.table.setRowCount(len(self.methods))
+
         for row, m in enumerate(self.methods):
             active = m.is_active
             col = "white" if active else "#757575"
-            
             self.table.setItem(row, 0, self.create_item(m.id, col))
             self.table.setItem(row, 1, self.create_item(m.name, col))
             self.table.setItem(row, 2, self.create_item("Yes" if m.is_cash else "No", col))
@@ -5884,41 +6135,37 @@ class PaymentSettingTab(BaseSettingTab):
             # IDはAutoIncrementなので0
             new_obj = PaymentMethod(0, d['name'], d['is_cash'], d['is_active'])
             
-            if self.repo.add(new_obj):
-                self.log_repo.add_log("info", f"支払方法追加: {d['name']}")
+            # Service経由で追加
+            if self.service.add_method(new_obj):
                 self.load_data()
 
     def on_edit_selected(self):
         target = self.get_selected_row_data(self.methods)
         if not target: return
-
+        
         dlg = PaymentEditDialog(data=asdict(target), parent=self)
         if dlg.exec():
             d = dlg.get_data()
             updated_obj = PaymentMethod(target.id, d['name'], d['is_cash'], d['is_active'])
             
-            if self.repo.update(updated_obj):
-                self.log_repo.add_log("info", f"支払方法更新: {target.name}")
+            # Service経由で更新
+            if self.service.update_method(updated_obj):
                 self.load_data()
 
     def on_delete_selected(self):
         target = self.get_selected_row_data(self.methods)
         if not target: return
-
+        
         msg = f"支払方法「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 無効化 (停止)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            # 完全削除
-            if self.repo.delete(target.id):
-                self.log_repo.add_log("warning", f"支払方法完全削除: {target.name}")
+            # Service経由で削除
+            if self.service.delete_method(target):
                 self.load_data()
-
         elif res == QMessageBox.No:
-            # 無効化
-            target.is_active = False
-            if self.repo.update(target):
-                self.log_repo.add_log("info", f"支払方法無効化: {target.name}")
+            # Service経由で無効化
+            if self.service.disable_method(target):
                 self.load_data()
 
 ==================================================
@@ -5930,19 +6177,17 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from app.models.product import Product
-from app.repositories.product_repo import ProductRepository
-from app.repositories.log_repo import LogRepository
+from app.services.product_service import ProductService
 from app.views.dialogs.product_edit_dialog import ProductEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab # ★継承
 
 class ProductSettingTab(BaseSettingTab): # ★継承
     """商品管理タブ"""
-    def __init__(self, prod_repo: ProductRepository, log_repo: LogRepository):
+    def __init__(self, product_service: ProductService):
         # 基底クラスの初期化 (タイトルなし)
         super().__init__()
         
-        self.repo = prod_repo
-        self.log_repo = log_repo
+        self.service = product_service
         
         # カラム設定
         self.set_columns(["ID", "商品名", "価格", "カテゴリ", "色", "状態", "メモ"])
@@ -5966,7 +6211,7 @@ class ProductSettingTab(BaseSettingTab): # ★継承
 
     def load_data(self):
         """DBから全データを読み込んで表示"""
-        products = self.repo.fetch_all_as_models()
+        products = self.service.get_all_products()
         self.table.setRowCount(len(products))
         self.current_products = products
 
@@ -6012,14 +6257,13 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 note=data["note"],
                 is_active=data["is_active"]
             )
-            if self.repo.add_product(new_product):
-                self.log_repo.add_log("info", f"商品追加: {new_product.name}")
+            if self.service.add_product(new_product):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加に失敗しました")
 
     def on_edit_selected(self):
-        target = self.get_selected_row_data(self.current_products)
+        target : Product = self.get_selected_row_data(self.current_products)
         if not target: return
         
         dialog = ProductEditDialog(target, parent=self)
@@ -6037,40 +6281,37 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 is_active=data["is_active"],
                 display_order=target.display_order
             )
-            if self.repo.update_product(updated_product):
-                self.log_repo.add_log("info", f"商品変更: {target.name} -> {updated_product.name}")
+            if self.service.update_product(updated_product):
                 self.load_data()
                 # 選択位置を維持したい場合はここで再選択処理
 
     def on_delete_selected(self):
-        target = self.get_selected_row_data(self.current_products)
+        target : Product = self.get_selected_row_data(self.current_products)
         if not target: return
 
         msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 販売停止 (無効化)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
         if res == QMessageBox.Yes:
-            if self.repo.delete_product(target.id):
-                self.log_repo.add_log("warning", f"商品完全削除: {target.name}")
+            if self.service.delete_product(target):
                 self.load_data()
         elif res == QMessageBox.No:
             target.is_active = False
-            if self.repo.update_product(target):
-                self.log_repo.add_log("info", f"商品無効化: {target.name}")
+            if self.service.update_product(target):
                 self.load_data()
 
     def _move_row(self, direction):
-        target = self.get_selected_row_data(self.current_products)
+        target : Product = self.get_selected_row_data(self.current_products)
         if not target: return
         
         row = self.table.currentRow()
         new_row = row + direction
         if new_row < 0 or new_row >= len(self.current_products): return
 
-        item_b = self.current_products[new_row]
+        item_b : Product = self.current_products[new_row]
         order_map = {target.id: item_b.display_order, item_b.id: target.display_order}
         
-        if self.repo.update_display_order(order_map):
+        if self.service.update_display_order(order_map):
             self.load_data()
             self.table.selectRow(new_row)
 
@@ -6083,23 +6324,21 @@ from PySide6.QtCore import Qt
 from dataclasses import asdict
 
 from app.models.user import User
-from app.repositories.user_repo import UserRepository
-from app.repositories.log_repo import LogRepository
+from app.services.user_service import UserService
 from app.views.dialogs.user_edit_dialog import UserEditDialog
 from app.views.settings_tabs.base_setting_tab import BaseSettingTab
 
 class UserSettingTab(BaseSettingTab):
     """ユーザー管理タブ"""
-    def __init__(self, user_repo: UserRepository, log_repo: LogRepository):
+    def __init__(self, user_service: UserService):
         super().__init__()
-        self.repo = user_repo
-        self.log_repo = log_repo
+        self.service = user_service
         
         self.set_columns(["ID", "名前", "コード", "権限", "状態"])
         self.load_data()
 
     def load_data(self):
-        self.current_users = self.repo.fetch_all_users()
+        self.current_users = self.service.get_all_users()
         self.table.setRowCount(len(self.current_users))
         
         for row, u in enumerate(self.current_users):
@@ -6124,8 +6363,7 @@ class UserSettingTab(BaseSettingTab):
             d = dialog.get_data()
             new_user = User(None, d['name'], d['code'], d['role'], d['is_active'])
             
-            if self.repo.add_user(new_user):
-                self.log_repo.add_log("info", f"ユーザー追加: {new_user.name}")
+            if self.service.add_user(new_user):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "追加失敗\nコードが重複している可能性があります。")
@@ -6139,8 +6377,7 @@ class UserSettingTab(BaseSettingTab):
             d = dialog.get_data()
             updated_user = User(target.id, d['name'], d['code'], d['role'], d['is_active'])
             
-            if self.repo.update_user(updated_user):
-                self.log_repo.add_log("info", f"ユーザー更新: {target.name} -> {updated_user.name}")
+            if self.service.update_user(updated_user):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "更新失敗")
@@ -6153,16 +6390,20 @@ class UserSettingTab(BaseSettingTab):
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
         
         if res == QMessageBox.Yes:
-            if self.repo.delete_user(target.id):
-                self.log_repo.add_log("warning", f"ユーザー完全削除: {target.name}")
+            if self.service.delete_user(target):
                 self.load_data()
             else:
                 QMessageBox.warning(self, "エラー", "削除できませんでした")
         elif res == QMessageBox.No:
             target.is_active = False
-            if self.repo.update_user(target):
-                self.log_repo.add_log("info", f"ユーザー無効化: {target.name}")
+            if self.service.update_user(target):
                 self.load_data()
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\__init__.py
+==================================================
+
+
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
@@ -6497,3 +6738,308 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 ==================================================
 
 
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\master_data.json
+==================================================
+
+{
+    "products": [
+        {
+            "id": 1,
+            "name": "たこ焼き",
+            "price": 600,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "焼きそば",
+            "price": 500,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "大盛り対応可能",
+            "display_order": 2,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "唐揚げ",
+            "price": 400,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 3,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "フランクフルト",
+            "price": 300,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "生ビール",
+            "price": 600,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "年齢確認必須",
+            "display_order": 5,
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "name": "ハイボール",
+            "price": 400,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "年齢確認必須",
+            "display_order": 6,
+            "is_active": true
+        },
+        {
+            "id": 7,
+            "name": "ウーロン茶",
+            "price": 150,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "",
+            "display_order": 7,
+            "is_active": true
+        },
+        {
+            "id": 8,
+            "name": "コーラ",
+            "price": 150,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "",
+            "display_order": 8,
+            "is_active": false
+        },
+        {
+            "id": 9,
+            "name": "袋",
+            "price": 10,
+            "category": "その他",
+            "color": "#ffffff",
+            "note": "",
+            "display_order": 9,
+            "is_active": true
+        },
+        {
+            "id": 10,
+            "name": "セット割引",
+            "price": -50,
+            "category": "割引",
+            "color": "#ff8a80",
+            "note": "",
+            "display_order": 99,
+            "is_active": true
+        },
+        {
+            "id": 11,
+            "name": "ポイント割引",
+            "price": -100,
+            "category": "割引",
+            "color": "#ff8a80",
+            "note": "",
+            "display_order": 100,
+            "is_active": true
+        }
+    ],
+    "users": [
+        {
+            "id": 1,
+            "name": "店長",
+            "user_code": "9999",
+            "role": "admin",
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "副店長",
+            "user_code": "8888",
+            "role": "admin",
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "スタッフA",
+            "user_code": "001",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "スタッフB",
+            "user_code": "002",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "スタッフC",
+            "user_code": "003",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "name": "スタッフD",
+            "user_code": "004",
+            "role": "staff",
+            "is_active": true
+        }
+    ],
+    "customer_presets": [
+        {
+            "id": 1,
+            "label": "男1",
+            "attributes": {
+                "sex": "male",
+                "count": 1
+            },
+            "color": "#bbdefb",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "label": "女1",
+            "attributes": {
+                "sex": "female",
+                "count": 1
+            },
+            "color": "#f8bbd0",
+            "display_order": 2,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "label": "男複数",
+            "attributes": {
+                "sex": "male",
+                "count": "many"
+            },
+            "color": "#90caf9",
+            "display_order": 3,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "label": "女複数",
+            "attributes": {
+                "sex": "female",
+                "count": "many"
+            },
+            "color": "#f48fb1",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "label": "家族連れ",
+            "attributes": {
+                "type": "family"
+            },
+            "color": "#a5d6a7",
+            "display_order": 5,
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "label": "男女グループ",
+            "attributes": {
+                "type": "group"
+            },
+            "color": "#a5d6a7",
+            "display_order": 6,
+            "is_active": true
+        }
+    ],
+    "payment_methods": [
+        {
+            "id": 1,
+            "name": "現金",
+            "is_cash": true,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "クレジット",
+            "is_cash": false,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "PayPay",
+            "is_cash": false,
+            "is_active": true
+        }
+    ],
+    "initial_expenses": [
+        {
+            "id": 2,
+            "title": "買い出し",
+            "amount": 500,
+            "timestamp": "2026-01-24 18:41:14"
+        },
+        {
+            "id": 1,
+            "title": "準備金",
+            "amount": 15000,
+            "timestamp": "2026-01-24 18:41:14"
+        }
+    ],
+    "discount_rules": [
+        {
+            "id": 1,
+            "name": "ランチタイム値引",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "cart",
+            "target_value": "",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 2,
+            "name": "ドリンク全品10%OFF",
+            "discount_type": "percent",
+            "discount_value": 10,
+            "apply_type": "category",
+            "target_value": "ドリンク",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 3,
+            "name": "フード2個で100円引",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"select\", \"qty\": 2, \"targets\": [\"たこ焼き\", \"焼きそば\", \"唐揚げ\"]}",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 5,
+            "name": "たこ焼きドリンクセット100円引き",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"たこ焼き\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        }
+    ]
+}

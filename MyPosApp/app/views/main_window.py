@@ -28,6 +28,7 @@ from app.services.checkout_service import CheckoutService
 from app.services.product_service import ProductService
 from app.services.customer_service import CustomerService
 from app.services.analytics_service import AnalyticsService
+from app.services.excel_exporter import ExcelReportExporter
 from app.logic.discount_manager import DiscountManager
 
 # Strategies
@@ -82,7 +83,7 @@ class MainWindow(QMainWindow):
         # 4. Services (アプリケーション層)
         # CheckoutServiceにRepoを注入
         self.checkout_service = CheckoutService(self.trans_repo, self.log_repo)
-        
+        self.excel_exporter = ExcelReportExporter()
         # UI用のデータ提供サービスを作成
         self.product_service = ProductService(self.prod_repo, self.log_repo)
         self.customer_service = CustomerService(self.cust_repo, self.log_repo)
@@ -104,7 +105,8 @@ class MainWindow(QMainWindow):
             ana_repo=self.ana_repo,
             trans_repo=self.trans_repo,
             expense_repo=self.expense_repo,
-            log_repo=self.log_repo
+            log_repo=self.log_repo,
+            exporter=self.excel_exporter
         )
 
         # CartServiceに全ての依存関係を注入 (DI)
