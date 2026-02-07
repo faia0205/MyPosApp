@@ -392,6 +392,81 @@ class DiscountManager:
         return list(merged_map.values())
 
 ==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\payment_session.py
+==================================================
+
+from typing import List, Dict
+
+class PaymentSession:
+    """
+    会計の支払い状態と計算ロジックを管理するクラス
+    UI（PaymentDialog）から分離され、単体テストが可能
+    """
+    def __init__(self, total_amount: int):
+        self._total_amount = total_amount
+        self._payments: List[Dict] = [] # [{'name': str, 'amount': int}]
+
+    @property
+    def total_amount(self) -> int:
+        return self._total_amount
+
+    @property
+    def payments(self) -> List[Dict]:
+        return self._payments
+
+    def get_total_paid(self) -> int:
+        """支払い済み総額"""
+        return sum(p['amount'] for p in self._payments)
+
+    def get_remaining(self) -> int:
+        """不足金額"""
+        paid = self.get_total_paid()
+        return max(0, self._total_amount - paid)
+
+    def get_change(self) -> int:
+        """お釣り"""
+        paid = self.get_total_paid()
+        return max(0, paid - self._total_amount)
+
+    def is_complete(self) -> bool:
+        """支払いが完了しているか"""
+        return self.get_total_paid() >= self._total_amount
+
+    def add_payment(self, method_name: str, amount: int, is_cash: bool) -> bool:
+        """
+        支払いを追加する
+        Returns: 追加されたかどうか (金額0以下や、非現金での過払いの場合はFalse)
+        """
+        if amount <= 0:
+            return False
+
+        # 非現金の場合、残額を超える支払いは自動的に残額に丸める（あるいは拒否する）
+        if not is_cash:
+            remaining = self.get_remaining()
+            if amount > remaining:
+                amount = remaining
+            
+            if amount <= 0: # 既に支払い完了している場合など
+                return False
+
+        # 既存の支払い方法があれば加算、なければ新規追加
+        for pay in self._payments:
+            if pay['name'] == method_name:
+                pay['amount'] += amount
+                return True
+
+        self._payments.append({
+            'name': method_name,
+            'amount': amount
+        })
+        return True
+
+    def remove_payment(self, index: int):
+        """指定インデックスの支払いを削除"""
+        if 0 <= index < len(self._payments):
+            self._payments.pop(index)
+
+==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\__init__.py
 ==================================================
 
@@ -1495,6 +1570,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repo
 ==================================================
 
 from typing import List, Dict
+import datetime
 from app.repositories.base_repo import BaseRepository
 from app.models.expense import Expense
 from app.repositories.interfaces.master_data_repo import IMasterDataRepository
@@ -1504,13 +1580,10 @@ class ExpenseRepository(BaseRepository, IMasterDataRepository):
 
     def fetch_all(self) -> List[Expense]:
         with self.transaction() as (conn, cursor):
-            # 注意: ここで r['id'] のように辞書アクセスしていますが、
-            # BaseRepositoryで row_factory = sqlite3.Row が設定されている前提です。
             cursor.execute("SELECT id, title, amount, created_at FROM expenses ORDER BY created_at DESC")
             rows = cursor.fetchall()
             return [Expense(id=r['id'], title=r['title'], amount=r['amount'], timestamp=r['created_at']) for r in rows]
 
-    # ★修正: メソッド名を get_total_amount から get_total_expenses に変更しました
     def get_total_expenses(self) -> int:
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT SUM(amount) FROM expenses")
@@ -1519,34 +1592,60 @@ class ExpenseRepository(BaseRepository, IMasterDataRepository):
 
     def add(self, title: str, amount: int) -> bool:
         try:
+            t_delta = datetime.timedelta(hours=9)
+            JST = datetime.timezone(t_delta, 'JST')
+            now_jst = datetime.datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
             with self.transaction() as (conn, cursor):
-                cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (title, amount))
-            return True
+                cursor.execute(
+                    "INSERT INTO expenses (title, amount, created_at) VALUES (?, ?, ?)",
+                    (title, amount, now_jst)
+                )
+                return True
         except Exception:
             return False
 
-    def delete(self, expense_id: int) -> bool:
-        try:
-            with self.transaction() as (conn, cursor):
-                cursor.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
-            return True
-        except Exception:
-            return False
-    
     def update(self, expense: Expense) -> bool:
         try:
             with self.transaction() as (conn, cursor):
                 cursor.execute("UPDATE expenses SET title=?, amount=?, created_at=? WHERE id=?",
                                (expense.title, expense.amount, expense.timestamp, expense.id))
-            return True
+                # ★ 修正: 行数チェック
+                return cursor.rowcount > 0
         except Exception:
             return False
-    
+            
+    def delete(self, expense_id: int) -> bool:
+        try:
+            with self.transaction() as (conn, cursor):
+                cursor.execute("DELETE FROM expenses WHERE id=?", (expense_id,))
+                return True
+        except Exception:
+            return False
+
+    # ★ 修正: IDを使ってUpsertを行うロジックに変更
     def import_data(self, data: Dict) -> bool:
-        """辞書データを取り込み (常に追加)"""
-        # 初期データ取り込み用
-        return self.add(data.get('title'), data.get('amount'))
-    
+        """辞書データを取り込み (Upsert)"""
+        try:
+            exp = Expense.from_dict(data)
+            if exp.id:
+                # 1. 更新を試みる
+                if self.update(exp):
+                    return True
+                
+                # 2. 更新失敗なら、IDとタイムスタンプを指定して強制挿入
+                with self.transaction() as (conn, cursor):
+                    cursor.execute(
+                        "INSERT INTO expenses (id, title, amount, created_at) VALUES (?, ?, ?, ?)",
+                        (exp.id, exp.title, exp.amount, exp.timestamp)
+                    )
+                return True
+            else:
+                # IDがない場合は通常追加
+                return self.add(exp.title, exp.amount)
+        except Exception as e:
+            print(f"Error importing expense: {e}")
+            return False
+
     def get_master_key(self) -> str:
         return "initial_expenses"
 
@@ -1598,14 +1697,12 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
     """決済方法の設定・取得に関する責務を持つ"""
 
     def fetch_all(self) -> List[PaymentMethod]:
-        """設定画面用: 全て取得"""
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT id, name, is_cash, is_active FROM payment_methods ORDER BY id")
             rows = cursor.fetchall()
             return [PaymentMethod(id=r['id'], name=r['name'], is_cash=bool(r['is_cash']), is_active=bool(r['is_active'])) for r in rows]
 
     def fetch_active(self) -> List[PaymentMethod]:
-        """販売画面用: 有効なもののみ"""
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT id, name, is_cash, is_active FROM payment_methods WHERE is_active=1 ORDER BY id")
             rows = cursor.fetchall()
@@ -1616,7 +1713,7 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
             with self.transaction() as (conn, cursor):
                 cursor.execute("INSERT INTO payment_methods (name, is_cash, is_active) VALUES (?, ?, ?)",
                                (method.name, int(method.is_cash), int(method.is_active)))
-            return True
+                return True
         except Exception:
             return False
 
@@ -1625,26 +1722,32 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
             with self.transaction() as (conn, cursor):
                 cursor.execute("UPDATE payment_methods SET name=?, is_cash=?, is_active=? WHERE id=?",
                                (method.name, int(method.is_cash), int(method.is_active), method.id))
-            return True
+                # ★ 修正: 更新件数が1件以上かを確認する
+                return cursor.rowcount > 0
         except Exception:
             return False
-        
+
     def delete(self, payment_id: int) -> bool:
-        """物理削除"""
         try:
             with self.transaction() as (conn, cursor):
                 cursor.execute("DELETE FROM payment_methods WHERE id=?", (payment_id,))
-            return True
+                return True
         except Exception:
             return False
-    
+
     def import_data(self, data: Dict) -> bool:
         """辞書データを取り込み"""
         try:
             pm = PaymentMethod.from_dict(data)
+            # IDがある場合は更新を試みる
             if pm.id:
                 if self.update(pm):
                     return True
+                # 更新できなければ（IDがない場合など）、ID指定でのINSERTを試みる必要があるが、
+                # ここでは簡易的に通常のadd（ID自動採番）にフォールバックさせる。
+                # 完全な同期のためには「IDを指定してINSERT」が必要だが、SQLiteのAUTOINCREMENTとの兼ね合いもあるため、
+                # 「IDが存在しないなら新規作成」という挙動にする。
+            
             return self.add(pm)
         except Exception:
             return False
@@ -2582,28 +2685,28 @@ class CartService(QObject):
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
-        
+
         total = self.get_total_amount()
-        
+
         # 1. 明細リスト作成
         tx_items: List[TransactionItem] = []
+        # カート商品
         for item in self.cart_items:
             tx_items.append(TransactionItem(
-                id=None, 
+                id=None,
                 transaction_id=None,
                 product_name=item.name,
                 unit_price=item.price,
                 quantity=item.qty,
                 subtotal=item.price * item.qty
             ))
-            
+        # 割引
         for d in self.applied_discounts:
             qty = d.qty if d.qty > 0 else 1
             total_disc = d.amount
             unit_price = int(total_disc / qty)
-
             tx_items.append(TransactionItem(
-                id=None, 
+                id=None,
                 transaction_id=None,
                 product_name=d.name,
                 unit_price=unit_price,
@@ -2611,27 +2714,46 @@ class CartService(QObject):
                 subtotal=total_disc
             ))
 
-        # 2. 決済リスト作成
+        # 2. 決済リスト作成 (★修正箇所)
         tx_payments: List[TransactionPayment] = []
+        
+        # どの支払い方法が現金なのかを特定する
+        # (DBに問い合わせてキャッシュする)
+        all_methods = self.payment_repo.fetch_all()
+        cash_method_names = {m.name for m in all_methods if m.is_cash}
+
         remaining_change = change
         
-        for method, amount in payments:
-            actual_pay = amount
-            if remaining_change > 0 and amount >= remaining_change:
-                actual_pay = amount - remaining_change
-                remaining_change = 0
-            
-            if actual_pay > 0:
+        # 計算用に一時リストを作成 (名前, 金額)
+        temp_payments = [{'method': p[0], 'amount': p[1]} for p in payments]
+
+        # お釣りがある場合、現金支払いからのみ減算する
+        if remaining_change > 0:
+            for p in temp_payments:
+                if p['method'] in cash_method_names:
+                    if p['amount'] >= remaining_change:
+                        p['amount'] -= remaining_change
+                        remaining_change = 0
+                    else:
+                        # 現金支払いが複数に分かれていて、1つ目でお釣りが引ききれない場合
+                        remaining_change -= p['amount']
+                        p['amount'] = 0
+                    
+                    if remaining_change == 0:
+                        break
+        
+        # 0円より大きい支払いのみを保存対象にする
+        for p in temp_payments:
+            if p['amount'] > 0:
                 tx_payments.append(TransactionPayment(
-                    id=None, 
+                    id=None,
                     transaction_id=None,
-                    payment_method=method,
-                    amount=actual_pay
+                    payment_method=p['method'],
+                    amount=p['amount']
                 ))
 
-        # 3. ヘッダー作成 (キーワード引数で明示)
+        # 3. ヘッダー作成
         current_customer_name = self.selected_customer.label
-        
         transaction = Transaction(
             id=None,
             total_amount=total,
@@ -2645,10 +2767,10 @@ class CartService(QObject):
 
         # 保存実行
         self.checkout_service.process_checkout(transaction)
-        
+
         # 状態更新
         self.total_sales_today += total
-
+        
         # カートクリア
         self.cart_items = []
         self.applied_discounts = []
@@ -3619,7 +3741,8 @@ class MainWindow(QMainWindow):
         self.master_data_service = MasterDataService(
             repositories=master_repos
         )
-        
+
+        self.master_data_service.sync_json_to_db()
 
         # AnalyticsServiceにRepoを注入
         self.analytics_service = AnalyticsService(
@@ -5153,29 +5276,32 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QPushButton, QListWidget, QGridLayout, QWidget)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeyEvent
+
 from app.models.payment_method import PaymentMethod
+# ★ Logicクラスのインポート
+from app.logic.payment_session import PaymentSession
 
 class PaymentDialog(QDialog):
     """
     決済画面 (キーボード操作特化版)
-    - 画面上のテンキーを廃止
-    - 全ボタンを NoFocus に設定
-    - Enterキーの挙動に合わせてボタン表記を動的に変更
+    UIレイアウトは変更せず、ロジックのみPaymentSessionに移譲
     """
     def __init__(self, total_amount: int, payment_methods: list[PaymentMethod], parent=None):
         super().__init__(parent)
         self.setWindowTitle("お会計")
         self.resize(900, 550)
         self.setStyleSheet("background-color: #2b2b2b; color: white;")
+
+        # ★ 状態管理を Session に委譲
+        self.session = PaymentSession(total_amount)
         
-        self.total_amount = total_amount
         self.payment_methods = payment_methods
         
-        self.current_payments: List[Dict] = []
+        # UI制御用の状態はViewに残す
         self.selected_method = None
         self.input_buffer = ""
         self.is_initial_input = False
-        
+
         # 初期選択（現金があればデフォルト）
         cash_opts = [m for m in self.payment_methods if m.is_cash]
         if cash_opts:
@@ -5183,28 +5309,29 @@ class PaymentDialog(QDialog):
         elif self.payment_methods:
             self.selected_method = self.payment_methods[0]
 
-        self._init_ui()
+        self._init_ui() # 既存のUI構築メソッドを呼ぶ
         self._update_ui()
         self._set_buffer_to_remaining()
 
+    # ==========================================================
+    # UI構築部分 (変更なし)
+    # ==========================================================
     def _init_ui(self):
         main_layout = QHBoxLayout(self)
 
-        # ==========================================
-        # 左パネル: 請求・内訳・残高
-        # ==========================================
+        # --- 左パネル: 請求・内訳・残高 ---
         left_panel = QVBoxLayout()
-        
+
         # 請求額
         lbl_title = QLabel("ご請求額")
         lbl_title.setStyleSheet("font-size: 18px; color: #ccc;")
         left_panel.addWidget(lbl_title)
-        
-        self.lbl_total = QLabel(f"¥{self.total_amount:,}")
+
+        self.lbl_total = QLabel(f"¥{self.session.total_amount:,}") # sessionから取得
         self.lbl_total.setStyleSheet("font-size: 48px; font-weight: bold; color: white;")
         self.lbl_total.setAlignment(Qt.AlignRight)
         left_panel.addWidget(self.lbl_total)
-        
+
         left_panel.addSpacing(15)
 
         # 内訳リスト
@@ -5217,8 +5344,8 @@ class PaymentDialog(QDialog):
             QListWidget::item:selected { background-color: #1976d2; color: white; }
         """)
         left_panel.addWidget(self.payment_list_widget)
-        
-        # 削除ボタン (★修正: (Del)表記を削除)
+
+        # 削除ボタン
         btn_remove = QPushButton("選択した支払を削除")
         btn_remove.setFocusPolicy(Qt.NoFocus)
         btn_remove.setStyleSheet("background-color: #d32f2f; color: white; padding: 10px; border-radius: 4px;")
@@ -5231,20 +5358,18 @@ class PaymentDialog(QDialog):
         self.lbl_status_title = QLabel("不足金額")
         self.lbl_status_title.setStyleSheet("font-size: 18px; color: #ff8a80;")
         left_panel.addWidget(self.lbl_status_title)
-        
-        self.lbl_status_amount = QLabel(f"¥{self.total_amount:,}")
+
+        self.lbl_status_amount = QLabel(f"¥{self.session.total_amount:,}")
         self.lbl_status_amount.setStyleSheet("font-size: 42px; font-weight: bold; color: #ff8a80;")
         self.lbl_status_amount.setAlignment(Qt.AlignRight)
         left_panel.addWidget(self.lbl_status_amount)
 
         main_layout.addLayout(left_panel, 40)
 
-        # ==========================================
-        # 右パネル: 入力表示・決済選択・完了
-        # ==========================================
+        # --- 右パネル: 入力表示・決済選択・完了 ---
         right_panel = QVBoxLayout()
         right_panel.setContentsMargins(20, 0, 0, 0)
-        
+
         # 1. 入力値ディスプレイ
         right_panel.addWidget(QLabel("現在の入力金額:"))
         self.lbl_input = QLabel("0")
@@ -5256,7 +5381,6 @@ class PaymentDialog(QDialog):
             padding-right: 20px; border-radius: 8px; border: 3px solid #0288d1;
         """)
         right_panel.addWidget(self.lbl_input)
-        
         right_panel.addSpacing(20)
 
         # 2. 決済方法ボタン
@@ -5264,7 +5388,7 @@ class PaymentDialog(QDialog):
         self.method_btn_group = []
         m_grid = QGridLayout()
         m_grid.setSpacing(15)
-        
+
         r, c = 0, 0
         for method in self.payment_methods:
             is_active = method.is_active
@@ -5279,15 +5403,14 @@ class PaymentDialog(QDialog):
                 btn = QPushButton(name)
                 btn.setCheckable(True)
                 btn.setFocusPolicy(Qt.NoFocus)
-                btn.setProperty("base_color", base_color) 
+                btn.setProperty("base_color", base_color)
                 btn.clicked.connect(lambda _, m=method: self._select_method(m))
+                btn.setFixedSize(140, 80)
+                m_grid.addWidget(btn, r, c)
                 
-            btn.setFixedSize(140, 80)
-            m_grid.addWidget(btn, r, c)
+                if is_active:
+                    self.method_btn_group.append((btn, method))
             
-            if is_active:
-                self.method_btn_group.append((btn, method))
-
             c += 1
             if c > 2:
                 c = 0
@@ -5299,7 +5422,6 @@ class PaymentDialog(QDialog):
         # 3. アクションボタンエリア
         action_layout = QHBoxLayout()
         
-        # 決定(追加)ボタン
         self.btn_enter = QPushButton("支払追加 (Enter)")
         self.btn_enter.setFixedHeight(90)
         self.btn_enter.setFocusPolicy(Qt.NoFocus)
@@ -5310,7 +5432,6 @@ class PaymentDialog(QDialog):
         self.btn_enter.clicked.connect(self._add_payment)
         action_layout.addWidget(self.btn_enter, 1)
 
-        # 会計完了ボタン
         self.btn_finish = QPushButton("会計完了")
         self.btn_finish.setFixedHeight(90)
         self.btn_finish.setFocusPolicy(Qt.NoFocus)
@@ -5319,7 +5440,7 @@ class PaymentDialog(QDialog):
         action_layout.addWidget(self.btn_finish, 2)
         
         right_panel.addLayout(action_layout)
-        
+
         # 戻るボタン
         btn_cancel = QPushButton("戻る (Esc)")
         btn_cancel.setFocusPolicy(Qt.NoFocus)
@@ -5329,9 +5450,10 @@ class PaymentDialog(QDialog):
 
         main_layout.addLayout(right_panel, 60)
 
-    # ==========================================
-    # キーボードイベント
-    # ==========================================
+    # ==========================================================
+    # イベントハンドラ & ロジック (ここを修正)
+    # ==========================================================
+    
     def keyPressEvent(self, event: QKeyEvent):
         key = event.key()
         text = event.text()
@@ -5346,25 +5468,18 @@ class PaymentDialog(QDialog):
         
         # Enter / Return -> 状態に応じて分岐
         elif key in (Qt.Key_Enter, Qt.Key_Return):
-            paid = self._get_paid_total()
-            if paid < self.total_amount:
-                # まだ足りない -> 入力値を支払に追加
+            # ★ Sessionの状態を確認
+            if not self.session.is_complete():
                 self._add_payment()
             else:
-                # 足りている -> 会計完了
                 if self.btn_finish.isEnabled():
                     self.accept()
         
         # ESC -> 戻る
         elif key == Qt.Key_Escape:
             self.reject()
-            
         else:
             super().keyPressEvent(event)
-
-    # ==========================================
-    # ロジック
-    # ==========================================
 
     def _select_method(self, method):
         self.selected_method = method
@@ -5372,11 +5487,11 @@ class PaymentDialog(QDialog):
         self._set_buffer_to_remaining()
 
     def _set_buffer_to_remaining(self):
-        paid = self._get_paid_total()
-        remain = self.total_amount - paid
+        """残額を自動入力するUI補助機能"""
+        remain = self.session.get_remaining()
         if remain > 0:
             self.input_buffer = str(remain)
-            self.is_initial_input = True 
+            self.is_initial_input = True
         else:
             self.input_buffer = ""
             self.is_initial_input = False
@@ -5386,7 +5501,7 @@ class PaymentDialog(QDialog):
         if self.is_initial_input:
             self.input_buffer = ""
             self.is_initial_input = False
-
+        
         if self.input_buffer == "0" and text == "0": return
         if self.input_buffer == "0" and text != "00": self.input_buffer = ""
         if len(self.input_buffer + text) > 8: return
@@ -5404,80 +5519,65 @@ class PaymentDialog(QDialog):
         self.lbl_input.setText(f"¥{val:,}")
 
     def _add_payment(self):
+        """支払いの追加 (Logicへ委譲)"""
         if not self.selected_method: return
-        
+
         amount_val = int(self.input_buffer) if self.input_buffer else 0
-        if amount_val <= 0: return 
+        if amount_val <= 0: return
 
-        if not self.selected_method.is_cash:
-            paid_so_far = self._get_paid_total()
-            remaining = self.total_amount - paid_so_far
-            
-            if amount_val > remaining:
-                if remaining <= 0: return 
-                amount_val = remaining
+        # ★ ロジック呼び出し
+        success = self.session.add_payment(
+            method_name=self.selected_method.name, 
+            amount=amount_val,
+            is_cash=self.selected_method.is_cash
+        )
 
-        method_name = self.selected_method.name
-
-        existing_index = -1
-        for i, pay in enumerate(self.current_payments):
-            if pay['name'] == method_name:
-                existing_index = i
-                break
-        
-        if existing_index >= 0:
-            self.current_payments[existing_index]['amount'] += amount_val
-        else:
-            self.current_payments.append({
-                'name': method_name,
-                'amount': amount_val
-            })
-
-        self.input_buffer = ""
-        self.is_initial_input = False
-        self._update_input_display()
-        self._update_ui()
+        if success:
+            self.input_buffer = ""
+            self.is_initial_input = False
+            self._update_input_display()
+            self._update_ui()
 
     def _remove_selected_row(self):
         row = self.payment_list_widget.currentRow()
         if row >= 0:
-            self.current_payments.pop(row)
+            # ★ ロジック呼び出し
+            self.session.remove_payment(row)
             self._update_ui()
 
-    def _get_paid_total(self):
-        return sum(p['amount'] for p in self.current_payments)
-
     def _update_ui(self):
-        """画面表示の更新"""
+        """画面表示の更新 (Sessionの状態を反映)"""
         self.payment_list_widget.clear()
-        for p in self.current_payments:
+        
+        # ★ Sessionからリスト取得
+        for p in self.session.payments:
             self.payment_list_widget.addItem(f"{p['name']}: ¥{p['amount']:,}")
 
-        paid = self._get_paid_total()
-        diff = self.total_amount - paid
-        
-        if diff > 0:
+        # ★ Sessionから計算結果取得
+        remaining = self.session.get_remaining()
+        change = self.session.get_change()
+
+        if remaining > 0:
             self.lbl_status_title.setText("不足金額")
             self.lbl_status_title.setStyleSheet("font-size: 18px; color: #ff8a80;")
-            self.lbl_status_amount.setText(f"¥{diff:,}")
-            self.lbl_status_amount.setStyleSheet("font-size: 42px; font-weight: bold; color: #ff8a80;")
             
+            self.lbl_status_amount.setText(f"¥{remaining:,}")
+            self.lbl_status_amount.setStyleSheet("font-size: 42px; font-weight: bold; color: #ff8a80;")
+
             self.btn_finish.setEnabled(False)
             self.btn_finish.setText("金額不足")
             self.btn_finish.setStyleSheet("background-color: #555; color: #aaa; font-size: 24px; font-weight: bold; border-radius: 10px;")
+
             self.btn_enter.setEnabled(True)
-            
-            # ★修正: 不足時は「支払追加 (Enter)」
             self.btn_enter.setText("支払追加 (Enter)")
-            
         else:
-            change = abs(diff)
             title = "お釣り" if change > 0 else "過不足なし"
             self.lbl_status_title.setText(title)
             self.lbl_status_title.setStyleSheet("font-size: 18px; color: #69f0ae;")
+            
             self.lbl_status_amount.setText(f"¥{change:,}")
             self.lbl_status_amount.setStyleSheet("font-size: 48px; font-weight: bold; color: #69f0ae;")
-            
+
             self.btn_finish.setEnabled(True)
             self.btn_finish.setText("会計完了 (Enter)")
             self.btn_finish.setStyleSheet("""
@@ -5485,16 +5585,15 @@ class PaymentDialog(QDialog):
                 QPushButton:hover { background-color: #ffb74d; }
             """)
             
-            # ★修正: 完了時は「支払追加」から (Enter) を消す
             self.btn_enter.setText("支払追加")
-            # 完了可能なら追加ボタンを少し目立たなくする
-            self.btn_enter.setEnabled(True) 
+            self.btn_enter.setEnabled(True)
 
         self._update_method_buttons()
 
     def _update_method_buttons(self):
         for btn, method in self.method_btn_group:
             base_color = btn.property("base_color")
+            
             if self.selected_method and method.name == self.selected_method.name:
                 btn.setChecked(True)
                 btn.setStyleSheet(f"""
@@ -5515,9 +5614,10 @@ class PaymentDialog(QDialog):
                 """)
 
     def get_result(self) -> Tuple[List[Tuple[str, int]], int]:
-        paid = self._get_paid_total()
-        change = max(0, paid - self.total_amount)
-        result_list = [(p['name'], p['amount']) for p in self.current_payments]
+        """MainWindowに結果を返すための互換メソッド"""
+        # SessionのデータをTuple形式に変換して返す
+        result_list = [(p['name'], p['amount']) for p in self.session.payments]
+        change = self.session.get_change()
         return result_list, change
 
 ==================================================
@@ -6908,13 +7008,23 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         },
         {
+            "id": 13,
+            "name": "テストA",
+            "price": 9999,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 5,
+            "is_active": true
+        },
+        {
             "id": 5,
             "name": "生ビール",
             "price": 600,
             "category": "ドリンク",
             "color": "#80d8ff",
             "note": "年齢確認必須",
-            "display_order": 5,
+            "display_order": 6,
             "is_active": true
         },
         {
@@ -6924,7 +7034,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "category": "ドリンク",
             "color": "#80d8ff",
             "note": "年齢確認必須",
-            "display_order": 6,
+            "display_order": 7,
             "is_active": true
         },
         {
@@ -6934,7 +7044,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "category": "ドリンク",
             "color": "#80d8ff",
             "note": "",
-            "display_order": 7,
+            "display_order": 8,
             "is_active": true
         },
         {
@@ -6944,7 +7054,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "category": "ドリンク",
             "color": "#80d8ff",
             "note": "",
-            "display_order": 8,
+            "display_order": 9,
             "is_active": false
         },
         {
@@ -6954,7 +7064,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "category": "その他",
             "color": "#ffffff",
             "note": "",
-            "display_order": 9,
+            "display_order": 99,
             "is_active": true
         },
         {
@@ -6964,7 +7074,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "category": "割引",
             "color": "#ff8a80",
             "note": "",
-            "display_order": 99,
+            "display_order": 100,
             "is_active": true
         },
         {
@@ -6973,16 +7083,6 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "price": -100,
             "category": "割引",
             "color": "#ff8a80",
-            "note": "",
-            "display_order": 100,
-            "is_active": true
-        },
-        {
-            "id": 13,
-            "name": "テストA",
-            "price": 9999,
-            "category": "フード",
-            "color": "#ffcc80",
             "note": "",
             "display_order": 101,
             "is_active": true
@@ -7118,7 +7218,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         },
         {
-            "id": 5,
+            "id": 6,
             "name": "交通系IC",
             "is_cash": false,
             "is_active": true

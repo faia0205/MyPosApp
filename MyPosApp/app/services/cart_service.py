@@ -288,28 +288,28 @@ class CartService(QObject):
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
-        
+
         total = self.get_total_amount()
-        
+
         # 1. 明細リスト作成
         tx_items: List[TransactionItem] = []
+        # カート商品
         for item in self.cart_items:
             tx_items.append(TransactionItem(
-                id=None, 
+                id=None,
                 transaction_id=None,
                 product_name=item.name,
                 unit_price=item.price,
                 quantity=item.qty,
                 subtotal=item.price * item.qty
             ))
-            
+        # 割引
         for d in self.applied_discounts:
             qty = d.qty if d.qty > 0 else 1
             total_disc = d.amount
             unit_price = int(total_disc / qty)
-
             tx_items.append(TransactionItem(
-                id=None, 
+                id=None,
                 transaction_id=None,
                 product_name=d.name,
                 unit_price=unit_price,
@@ -317,27 +317,46 @@ class CartService(QObject):
                 subtotal=total_disc
             ))
 
-        # 2. 決済リスト作成
+        # 2. 決済リスト作成 (★修正箇所)
         tx_payments: List[TransactionPayment] = []
+        
+        # どの支払い方法が現金なのかを特定する
+        # (DBに問い合わせてキャッシュする)
+        all_methods = self.payment_repo.fetch_all()
+        cash_method_names = {m.name for m in all_methods if m.is_cash}
+
         remaining_change = change
         
-        for method, amount in payments:
-            actual_pay = amount
-            if remaining_change > 0 and amount >= remaining_change:
-                actual_pay = amount - remaining_change
-                remaining_change = 0
-            
-            if actual_pay > 0:
+        # 計算用に一時リストを作成 (名前, 金額)
+        temp_payments = [{'method': p[0], 'amount': p[1]} for p in payments]
+
+        # お釣りがある場合、現金支払いからのみ減算する
+        if remaining_change > 0:
+            for p in temp_payments:
+                if p['method'] in cash_method_names:
+                    if p['amount'] >= remaining_change:
+                        p['amount'] -= remaining_change
+                        remaining_change = 0
+                    else:
+                        # 現金支払いが複数に分かれていて、1つ目でお釣りが引ききれない場合
+                        remaining_change -= p['amount']
+                        p['amount'] = 0
+                    
+                    if remaining_change == 0:
+                        break
+        
+        # 0円より大きい支払いのみを保存対象にする
+        for p in temp_payments:
+            if p['amount'] > 0:
                 tx_payments.append(TransactionPayment(
-                    id=None, 
+                    id=None,
                     transaction_id=None,
-                    payment_method=method,
-                    amount=actual_pay
+                    payment_method=p['method'],
+                    amount=p['amount']
                 ))
 
-        # 3. ヘッダー作成 (キーワード引数で明示)
+        # 3. ヘッダー作成
         current_customer_name = self.selected_customer.label
-        
         transaction = Transaction(
             id=None,
             total_amount=total,
@@ -351,10 +370,10 @@ class CartService(QObject):
 
         # 保存実行
         self.checkout_service.process_checkout(transaction)
-        
+
         # 状態更新
         self.total_sales_today += total
-
+        
         # カートクリア
         self.cart_items = []
         self.applied_discounts = []

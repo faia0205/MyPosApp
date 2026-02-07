@@ -8,6 +8,7 @@ Root: MyPosApp/
             __init__.py
             calculator.py
             discount_manager.py
+            payment_session.py
             strategies/
                 __init__.py
                 bundle_strategy.py
