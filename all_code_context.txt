@@ -1274,6 +1274,96 @@ class AnalyticsRepository(BaseRepository):
             {"id": r[0], "timestamp": r[1], "customer": r[2], "cashier": r[3], "product": r[4], "qty": r[5], "sales": r[6]}
             for r in rows
         ]
+    
+    def get_comprehensive_raw_data(self, start_date: str = None, end_date: str = None):
+        """
+        分析に必要な全項目を含むフラットなデータを取得
+        ※ 期間指定があれば WHERE 句を追加する拡張が可能
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # JSON属性なども含めて取得するが、SQLite側では文字列として取得し、
+        # Python側でパースする方が汎用性が高い。
+        query = """
+            SELECT
+                t.id as tx_id,
+                t.timestamp,
+                t.customer_label,
+                t.cashier_name,
+                c.attributes as customer_attrs,  -- Customerテーブルと結合
+                i.product_name,
+                i.quantity,
+                i.unit_price,
+                i.subtotal,
+                p.category,                      -- Productsテーブルと結合
+                pay.payment_method
+            FROM transactions t
+            LEFT JOIN transaction_items i ON t.id = i.transaction_id
+            LEFT JOIN products p ON i.product_name = p.name -- 名前で結合(ID推奨だが現状スキーマに合わせる)
+            LEFT JOIN customer_presets c ON t.customer_label = c.label
+            LEFT JOIN transaction_payments pay ON t.id = pay.transaction_id
+            WHERE 1=1
+        """
+        
+        # 必要に応じて date(t.timestamp) BETWEEN ? AND ? を追加
+        params = []
+        if start_date and end_date:
+            query += " AND date(t.timestamp) >= ? AND date(t.timestamp) <= ?"
+            params.extend([start_date, end_date])
+            
+        cursor.execute(query, params)
+        cols = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(zip(cols, row)) for row in rows]
+    
+    def get_min_timestamp(self) -> str:
+        """最も古い取引の日時を取得"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MIN(timestamp) FROM transactions")
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else None
+    
+    def get_customer_attribute_keys(self) -> list[str]:
+        """
+        客層マスタ(customer_presets)に含まれるJSON属性キー
+        （sex, ageなど）のユニーク一覧を取得して返します。
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # attributesカラム（JSON文字列）を取得
+            cursor.execute("SELECT attributes FROM customer_presets WHERE is_active=1")
+            rows = cursor.fetchall()
+        except Exception:
+            # テーブルが存在しない場合などのエラー回避
+            conn.close()
+            return []
+            
+        conn.close()
+
+        import json
+        keys = set()
+        
+        for r in rows:
+            json_str = r[0]
+            if not json_str:
+                continue
+                
+            try:
+                data = json.loads(json_str)
+                if isinstance(data, dict):
+                    # 辞書のキー（"sex", "age"など）をセットに追加
+                    keys.update(data.keys())
+            except:
+                pass
+                
+        return sorted(list(keys))
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\base_repo.py
@@ -2221,6 +2311,9 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
+from app.services.analytics.processor import DataProcessor
+from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
 
 from app.services.interfaces.report_exporter import IReportExporter
 
@@ -2239,6 +2332,10 @@ class AnalyticsService:
         self.log_repo = log_repo
         self.exporter = exporter
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
+        self.strategies = {
+            "standard": CrossTabStrategy(),
+            "basket": BasketAnalysisStrategy()
+        }
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -2390,6 +2487,155 @@ class AnalyticsService:
         
         # 2. 書き出しの委譲 (File Export)
         return self.exporter.export(file_path, tx_list, logs, pivots)
+    
+    def analyze_dynamic(self, 
+                        row_axis_key: str, 
+                        col_axis_key: str, 
+                        metric_key: str,
+                        start_date=None, 
+                        end_date=None) -> Dict[str, Any]:
+        """
+        動的分析のエントリーポイント
+        Viewから渡された文字列キーをEnumに変換し、適切な戦略を実行する
+        """
+        
+        # 1. データの取得
+        raw_data = self.ana_repo.get_comprehensive_raw_data(start_date, end_date)
+        if not raw_data:
+            return {"df": pd.DataFrame(), "max_val": 0, "min_val": 0}
+
+        # 2. データ加工 (Processorへ委譲)
+        df = DataProcessor.process(raw_data)
+        
+        # 3. 軸の決定ロジック (Enum変換できなければ動的カラム名として扱う)
+        def get_axis(key):
+            # 文字列型のまま処理すべき特殊キーの判定
+            if isinstance(key, str) and key.startswith("cust_attr:"):
+                # "cust_attr:sex" -> "cust_sex" (DataProcessorで作ったカラム名)
+                attr_name = key.split(":", 1)[1]
+                col_name = f"cust_{attr_name}"
+                
+                # データ内にその属性列が存在しない場合、エラー回避のため空列を作成
+                if col_name not in df.columns:
+                    df[col_name] = "未設定"
+                return col_name
+
+            # 通常のEnumキーの判定
+            try:
+                return AnalysisAxis(key)
+            except ValueError:
+                # Enumにもない、特殊キーでもない場合は None扱い
+                return AnalysisAxis.NONE
+
+        # ここで変換を実行 (try-exceptで囲まない)
+        row_axis = get_axis(row_axis_key)
+        col_axis = get_axis(col_axis_key)
+        
+        # 集計値(Metric)は必ずEnumである必要がある
+        try:
+            metric = AnalysisMetric(metric_key)
+        except ValueError:
+            return {"df": pd.DataFrame(), "error": "Invalid metric parameters"}
+            
+        # 4. Strategy選択ロジック
+        # 縦軸と横軸が同じ、かつNONEではない場合は「バスケット分析」とみなす
+        # (Enum同士 または 文字列同士 の比較)
+        is_basket = (row_axis == col_axis) and (row_axis != AnalysisAxis.NONE)
+        
+        strategy = self.strategies['basket'] if is_basket else self.strategies['standard']
+        
+        # 5. 実行
+        try:
+            result_df = strategy.execute(df, row_axis, col_axis, metric)
+        except Exception as e:
+            # 万が一集計中にエラーが出た場合
+            import traceback
+            traceback.print_exc()
+            return {"df": pd.DataFrame(), "error": f"Calculation Error: {str(e)}"}
+        
+        # 6. View用の付加情報 (ヒートマップ用)
+        numeric_df = result_df.select_dtypes(include=['number'])
+        
+        if '合計' in numeric_df.index:
+            numeric_df = numeric_df.drop('合計', axis=0)
+        if '合計' in numeric_df.columns:
+            numeric_df = numeric_df.drop('合計', axis=1)
+            
+        max_val = numeric_df.max().max() if not numeric_df.empty else 0
+        min_val = numeric_df.min().min() if not numeric_df.empty else 0
+        
+        return {
+            "df": result_df,
+            "max_val": float(max_val),
+            "min_val": float(min_val),
+            "mode": "basket" if is_basket else "standard"
+        }
+    
+    def get_initial_date_range(self):
+        """データの最小日時と現在日時を返す"""
+        min_ts = self.ana_repo.get_min_timestamp()
+        
+        now = datetime.datetime.now()
+        start_date = now
+        
+        if min_ts:
+            try:
+                # 文字列を日付型に変換
+                start_date = datetime.datetime.strptime(min_ts, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+        
+        return start_date, now
+    
+    def get_axis_categories(self) -> list[str]:
+        """大分類のリストを返す"""
+        return ["全体", "時間", "商品", "客層", "客層(属性)", "運用"]
+
+    def get_axis_details(self, category: str) -> list[tuple[str, str]]:
+        """
+        大分類に応じた小分類リストを返す
+        Return: [(表示名, 内部キー), ...]
+        """
+        if category == "全体":
+            return [("指定なし (総計)", AnalysisAxis.NONE.value)]
+            
+        elif category == "時間":
+            return [
+                ("月別", AnalysisAxis.TIME_MONTH.value),
+                ("曜日別", AnalysisAxis.TIME_DOW.value),
+                ("時間帯別", AnalysisAxis.TIME_HOUR.value),
+            ]
+            
+        elif category == "商品":
+            return [
+                ("カテゴリ", AnalysisAxis.PRODUCT_CAT.value),
+                ("商品名", AnalysisAxis.PRODUCT_NAME.value),
+            ]
+            
+        elif category == "客層":
+            return [
+                ("客層ラベル (ボタン名)", AnalysisAxis.CUSTOMER_LBL.value),
+            ]
+            
+        elif category == "客層(属性)":
+            # DBから動的キーを取得
+            attr_keys = self.ana_repo.get_customer_attribute_keys()
+            results = []
+            for k in attr_keys:
+                # 表示名: sex, 内部キー: cust_attr:sex
+                results.append((k, f"cust_attr:{k}"))
+            
+            if not results:
+                results.append(("(属性データなし)", AnalysisAxis.NONE.value))
+            return results
+            
+        elif category == "運用":
+            return [
+                ("担当者", AnalysisAxis.CASHIER.value),
+                ("決済方法", AnalysisAxis.PAYMENT.value),
+            ]
+            
+        return []
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\cart_service.py
@@ -3286,6 +3532,224 @@ class UserService:
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\enums.py
+==================================================
+
+from enum import Enum, auto
+
+class AnalysisAxis(Enum):
+    """分析軸の定義"""
+    NONE = "none"               # 指定なし
+    TIME_MONTH = "time_month"   # 月別
+    TIME_DOW = "time_dow"       # 曜日別
+    TIME_HOUR = "time_hour"     # 時間帯別
+    PRODUCT_NAME = "prod_name"  # 商品名
+    PRODUCT_CAT = "prod_cat"    # カテゴリ
+    CUSTOMER_LBL = "cust_label" # 客層ラベル
+    CUSTOMER_SEX = "cust_sex"   # 性別 (属性)
+    CUSTOMER_AGE = "cust_age"   # 年代 (属性)
+    CASHIER = "cashier"         # 担当者
+    PAYMENT = "payment"         # 決済方法
+
+class AnalysisMetric(Enum):
+    """集計対象（値）の定義"""
+    SALES = "sales"       # 売上金額
+    QUANTITY = "qty"      # 販売個数
+    TX_COUNT = "tx_count" # 客数（伝票数）
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\processor.py
+==================================================
+
+import pandas as pd
+import json
+from .enums import AnalysisAxis
+
+class DataProcessor:
+    """[SRP] 生データ(Dict List)をPandas DataFrameに変換・加工する責務"""
+    
+    @staticmethod
+    def process(raw_data: list) -> pd.DataFrame:
+        if not raw_data:
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(raw_data)
+        
+        # 1. 日時加工
+        if 'timestamp' in df.columns:
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            # JST変換 (UTCの場合)
+            if df['timestamp'].dt.tz is None:
+                df['timestamp'] = df['timestamp'].dt.tz_localize('UTC').dt.tz_convert('Asia/Tokyo')
+            
+            df[AnalysisAxis.TIME_MONTH.value] = df['timestamp'].dt.strftime('%Y-%m')
+            df[AnalysisAxis.TIME_DOW.value] = df['timestamp'].dt.strftime('%a')
+            df[AnalysisAxis.TIME_HOUR.value] = df['timestamp'].dt.hour
+            
+        # 2. JSON属性展開
+        if 'customer_attrs' in df.columns:
+            def parse_attr(x):
+                try: return json.loads(x)
+                except: return {}
+            
+            attrs = df['customer_attrs'].apply(parse_attr).tolist()
+            attr_df = pd.json_normalize(attrs)
+            # カラム名にプレフィックスをつける (例: sex -> cust_sex)
+            attr_df.columns = [f"cust_{c}" for c in attr_df.columns]
+            
+            df = pd.concat([df, attr_df], axis=1)
+
+        # 3. カラム名のマッピング調整 (Enum定義に合わせる)
+        rename_map = {
+            'product_name': AnalysisAxis.PRODUCT_NAME.value,
+            'category': AnalysisAxis.PRODUCT_CAT.value,
+            'customer_label': AnalysisAxis.CUSTOMER_LBL.value,
+            'cashier_name': AnalysisAxis.CASHIER.value,
+            'payment_method': AnalysisAxis.PAYMENT.value
+        }
+        df.rename(columns=rename_map, inplace=True)
+
+        # ★追加修正: 存在しない分析軸カラムがあれば、空値で作成してエラーを防ぐ
+        # Enumに定義されているすべてのカラムをチェック
+        expected_columns = [
+            AnalysisAxis.CUSTOMER_SEX.value,
+            AnalysisAxis.CUSTOMER_AGE.value,
+            AnalysisAxis.CUSTOMER_LBL.value
+            # 必要に応じて他のカスタム属性もここに追加
+        ]
+        
+        for col in expected_columns:
+            if col not in df.columns:
+                df[col] = "未設定" # または None, np.nan
+
+        # 欠損値を埋める（PivotTableでのエラー防止）
+        df = df.fillna("未設定")
+        
+        return df
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\strategies.py
+==================================================
+
+import pandas as pd
+from abc import ABC, abstractmethod
+from typing import Any
+from .enums import AnalysisAxis, AnalysisMetric
+
+class IAnalysisStrategy(ABC):
+    """
+    [OCP] 分析ロジックのインターフェース
+    """
+    @abstractmethod
+    def execute(self, df: pd.DataFrame, 
+                row_axis: Any, # Enum または str (動的カラム名)
+                col_axis: Any, # Enum または str (動的カラム名)
+                metric: AnalysisMetric) -> pd.DataFrame:
+        pass
+
+class CrossTabStrategy(IAnalysisStrategy):
+    """
+    [SRP] 通常のクロス集計（またはリスト集計）を担当
+    """
+    def execute(self, df: pd.DataFrame, 
+                row_axis: Any, 
+                col_axis: Any, 
+                metric: AnalysisMetric) -> pd.DataFrame:
+        
+        # --- 1. 軸の値を文字列として取り出すヘルパー ---
+        def get_val(axis):
+            if isinstance(axis, AnalysisAxis):
+                return axis.value
+            return axis # 文字列ならそのまま返す
+
+        row_val = get_val(row_axis)
+        col_val = get_val(col_axis)
+
+        # --- 2. 集計値のカラム決定 ---
+        value_col = 'subtotal'
+        agg_func = 'sum'
+        
+        if metric == AnalysisMetric.QUANTITY:
+            value_col = 'quantity'
+        elif metric == AnalysisMetric.TX_COUNT:
+            value_col = 'tx_id'
+            agg_func = 'nunique' # ユニークカウント
+            
+        # --- 3. 軸の決定 (NONEの場合は空リスト) ---
+        # row_axis が AnalysisAxis.NONE (Enum) の場合のみ除外
+        index_cols = [row_val] if row_axis != AnalysisAxis.NONE else []
+        columns_cols = [col_val] if col_axis != AnalysisAxis.NONE else []
+        
+        # --- ケース1: 総計 (なし x なし) ---
+        if not index_cols and not columns_cols:
+            total = df[value_col].nunique() if metric == AnalysisMetric.TX_COUNT else df[value_col].sum()
+            return pd.DataFrame({metric.name: [total]}, index=["Total"])
+
+        # --- ケース2: 1次元集計 (片方のみ) ---
+        if not columns_cols:
+            # groupby で集計
+            return df.groupby(index_cols)[value_col].agg(agg_func).to_frame()
+        
+        if not index_cols:
+            # 横のみ指定はあまりないが、転置して返す
+            return df.groupby(columns_cols)[value_col].agg(agg_func).to_frame().T
+
+        # --- ケース3: クロス集計 (Row x Col) ---
+        # 該当データがない場合に備えて pivot_table のエラーを防ぐ
+        if df.empty:
+            return pd.DataFrame()
+
+        return df.pivot_table(
+            index=index_cols,
+            columns=columns_cols,
+            values=value_col,
+            aggfunc=agg_func,
+            fill_value=0,
+            margins=True,       # 合計行・列を表示
+            margins_name='合計'
+        )
+
+class BasketAnalysisStrategy(IAnalysisStrategy):
+    """
+    [SRP] バスケット分析（同時購入分析）を担当
+    """
+    def execute(self, df: pd.DataFrame, 
+                row_axis: Any, 
+                col_axis: Any, 
+                metric: AnalysisMetric) -> pd.DataFrame:
+        
+        # ヘルパーで値を取得
+        def get_val(axis):
+            if isinstance(axis, AnalysisAxis):
+                return axis.value
+            return axis
+
+        target_col = get_val(row_axis) # 縦・横同じはず
+        
+        # 必要な列のみに絞る
+        if df.empty or 'tx_id' not in df.columns or target_col not in df.columns:
+            return pd.DataFrame()
+
+        subset = df[['tx_id', target_col]].drop_duplicates()
+        
+        # 自己結合 (Self-Join)
+        merged = pd.merge(subset, subset, on='tx_id', suffixes=('_row', '_col'))
+        
+        # クロス集計 (Count)
+        result = pd.crosstab(
+            merged[f'{target_col}_row'], 
+            merged[f'{target_col}_col']
+        )
+        
+        return result
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\__init__.py
 ==================================================
 
 
@@ -6631,63 +7095,282 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
 ==================================================
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QLabel, QTabWidget, 
-                               QTableWidget, QTableWidgetItem)
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+    QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
+    QHeaderView, QDateEdit, QFrame, QGridLayout # Gridレイアウトを使用
+)
+from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont
+from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
 
 class AnalysisTab(QWidget):
     def __init__(self, service):
         super().__init__()
         self.service = service
         self._init_ui()
+        
+        # 初期期間設定
+        start_dt, end_dt = self.service.get_initial_date_range()
+        self.date_start.setDate(QDate(start_dt.year, start_dt.month, start_dt.day))
+        self.date_end.setDate(QDate(end_dt.year, end_dt.month, end_dt.day))
+
+        # 初期ロード (商品 × 時間)
+        self._set_initial_selection()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
-        
-        # 案内ラベル
-        layout.addWidget(QLabel("【詳細クロス集計】", font=QFont("Meiryo", 12, QFont.Bold)))
 
-        # ネストしたタブを作成
-        self.inner_tabs = QTabWidget()
-        self.inner_tabs.setStyleSheet("QTabWidget::pane { border: none; } QTabBar::tab { background: #555; } QTabBar::tab:selected { background: #00897b; }")
+        # --- コントロールエリア ---
+        control_frame = QFrame()
+        control_frame.setStyleSheet("background-color: #333; border-radius: 8px;")
         
-        self.table_time_prod = QTableWidget()
-        self.table_cust_prod = QTableWidget()
-        self.table_time_cust = QTableWidget()
-        self.table_cashier_payment = QTableWidget() # レジ係ごとの売上
+        # グリッドレイアウトで整理
+        grid = QGridLayout(control_frame)
+        grid.setSpacing(10)
         
-        self.inner_tabs.addTab(self.table_time_prod, "時間 × 商品")
-        self.inner_tabs.addTab(self.table_cust_prod, "客層 × 商品")
-        self.inner_tabs.addTab(self.table_time_cust, "時間 × 客層 (客数)")
-        self.inner_tabs.addTab(self.table_cashier_payment, "担当 × 決済内訳")
+        # 1. 期間
+        grid.addWidget(QLabel("期間:"), 0, 0)
+        date_box = QHBoxLayout()
+        self.date_start = QDateEdit()
+        self.date_start.setCalendarPopup(True)
+        self.date_start.setDisplayFormat("yyyy-MM-dd")
         
-        layout.addWidget(self.inner_tabs)
+        self.date_end = QDateEdit()
+        self.date_end.setCalendarPopup(True)
+        self.date_end.setDisplayFormat("yyyy-MM-dd")
+        
+        date_box.addWidget(self.date_start)
+        date_box.addWidget(QLabel("～"))
+        date_box.addWidget(self.date_end)
+        grid.addLayout(date_box, 0, 1, 1, 3) # 横に結合
 
-    def update_data(self):
-        pivots = self.service.get_pivot_data()
-        if pivots:
-            self._fill_pivot_table(self.table_time_prod, pivots['time_prod'])
-            self._fill_pivot_table(self.table_cust_prod, pivots['cust_prod'])
-            self._fill_pivot_table(self.table_time_cust, pivots['time_cust'])
-            self._fill_pivot_table(self.table_cashier_payment, pivots['cashier_payment'])
+        # 2. 縦軸 (Row) - 2段構成
+        grid.addWidget(QLabel("縦軸 (行):"), 1, 0)
+        
+        self.row_cat_combo = QComboBox() # 大分類
+        self.row_det_combo = QComboBox() # 小分類
+        
+        grid.addWidget(self.row_cat_combo, 1, 1)
+        grid.addWidget(self.row_det_combo, 1, 2)
 
-    def _fill_pivot_table(self, table_widget, df):
-        if df.empty:
+        # 3. 横軸 (Col) - 2段構成
+        grid.addWidget(QLabel("横軸 (列):"), 2, 0)
+        
+        self.col_cat_combo = QComboBox() # 大分類
+        self.col_det_combo = QComboBox() # 小分類
+        
+        grid.addWidget(self.col_cat_combo, 2, 1)
+        grid.addWidget(self.col_det_combo, 2, 2)
+
+        # 4. 集計値
+        grid.addWidget(QLabel("集計値:"), 3, 0)
+        self.combo_metric = QComboBox()
+        self._populate_metric_combo(self.combo_metric)
+        grid.addWidget(self.combo_metric, 3, 1, 1, 2)
+
+        # 5. 実行ボタン
+        self.btn_run = QPushButton("集計実行")
+        self.btn_run.setFixedHeight(40)
+        self.btn_run.setStyleSheet("background-color: #00897b; color: white; font-weight: bold;")
+        self.btn_run.clicked.connect(self.run_analysis)
+        grid.addWidget(self.btn_run, 4, 0, 1, 3) # 全幅
+
+        layout.addWidget(control_frame)
+
+        # --- 結果エリア ---
+        self.lbl_status = QLabel("条件を指定して実行してください")
+        self.lbl_status.setStyleSheet("color: #bbb; margin: 5px;")
+        layout.addWidget(self.lbl_status)
+
+        self.table = QTableWidget()
+        self.table.setStyleSheet("""
+            QTableWidget { background-color: #2b2b2b; gridline-color: #555; color: white; }
+            QHeaderView::section { background-color: #444; color: white; border: 1px solid #555; padding: 4px; }
+            QTableWidget::item:selected { background-color: #0d47a1; color: white; }
+        """)
+        layout.addWidget(self.table)
+
+        # --- イベント接続 ---
+        # 大分類が変わったら小分類を更新する
+        self.row_cat_combo.currentIndexChanged.connect(lambda: self._update_detail_combo(self.row_cat_combo, self.row_det_combo))
+        self.col_cat_combo.currentIndexChanged.connect(lambda: self._update_detail_combo(self.col_cat_combo, self.col_det_combo))
+
+        # 大分類の初期値をセット
+        categories = self.service.get_axis_categories()
+        self.row_cat_combo.addItems(categories)
+        self.col_cat_combo.addItems(categories)
+
+    def _update_detail_combo(self, cat_combo: QComboBox, det_combo: QComboBox):
+        """大分類に合わせて小分類を更新"""
+        current_cat = cat_combo.currentText()
+        det_combo.clear()
+        
+        # Serviceからリスト取得
+        items = self.service.get_axis_details(current_cat)
+        
+        for label, value in items:
+            det_combo.addItem(label, userData=value)
+
+    def _set_initial_selection(self):
+        """初期値: 縦=商品(商品名), 横=時間(時間帯)"""
+        # インデックス指定はリスト順序に依存するため注意が必要だが、今回は固定リストなので簡易実装
+        # 縦: 商品 -> 商品名
+        self.row_cat_combo.setCurrentText("商品")
+        self._update_detail_combo(self.row_cat_combo, self.row_det_combo)
+        self.row_det_combo.setCurrentText("商品名")
+        
+        # 横: 時間 -> 時間帯別
+        self.col_cat_combo.setCurrentText("時間")
+        self._update_detail_combo(self.col_cat_combo, self.col_det_combo)
+        self.col_det_combo.setCurrentText("時間帯別")
+
+    def run_analysis(self):
+        """集計実行"""
+        # 小分類のuserData (Enumの値 or 文字列キー) を取得
+        row_key = self.row_det_combo.currentData()
+        col_key = self.col_det_combo.currentData()
+        metric_key = self.combo_metric.currentData()
+        
+        if not row_key or not col_key:
+            self.lbl_status.setText("軸が正しく選択されていません")
             return
-        table_widget.setRowCount(len(df.index))
-        table_widget.setColumnCount(len(df.columns))
-        table_widget.setHorizontalHeaderLabels([str(c) for c in df.columns])
-        table_widget.setVerticalHeaderLabels([str(i) for i in df.index])
+
+        s_date = self.date_start.date().toString("yyyy-MM-dd")
+        e_date = self.date_end.date().toString("yyyy-MM-dd")
+
+        result = self.service.analyze_dynamic(
+            row_axis_key=row_key,
+            col_axis_key=col_key,
+            metric_key=metric_key,
+            start_date=s_date,
+            end_date=e_date
+        )
+
+        if "error" in result:
+            self.lbl_status.setText(f"エラー: {result['error']}")
+            return
+
+        df = result.get("df")
+        max_val = result.get("max_val", 0)
+        min_val = result.get("min_val", 0)
+
+        self._render_table(df, max_val, min_val)
         
+        # モード表示
+        mode_text = ""
+        if result.get("mode") == "basket":
+            mode_text = " (バスケット分析)"
+        
+        # 選択した軸名を表示
+        r_txt = f"{self.row_cat_combo.currentText()}-{self.row_det_combo.currentText()}"
+        c_txt = f"{self.col_cat_combo.currentText()}-{self.col_det_combo.currentText()}"
+        self.lbl_status.setText(f"集計結果: {r_txt} × {c_txt}{mode_text}")
+    
+    def _populate_metric_combo(self, combo: QComboBox):
+        combo.clear()
+        items = [
+            (AnalysisMetric.SALES, "売上金額 (円)"),
+            (AnalysisMetric.QUANTITY, "販売数 (個)"),
+            (AnalysisMetric.TX_COUNT, "客数/伝票数 (件)"),
+        ]
+        for enum_val, label in items:
+            combo.addItem(label, userData=enum_val.value)
+
+    def _render_table(self, df, max_val, min_val):
+        """DataFrameをQTableWidgetに描画 + ヒートマップ処理"""
+        self.table.clear()
+        
+        if df.empty:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+            self.lbl_status.setText("該当データがありません")
+            return
+
+        # 行・列の設定
+        self.table.setRowCount(len(df.index))
+        self.table.setColumnCount(len(df.columns))
+        self.table.setHorizontalHeaderLabels([str(c) for c in df.columns])
+        self.table.setVerticalHeaderLabels([str(i) for i in df.index])
+
+        # データセット
         for r in range(len(df.index)):
             for c in range(len(df.columns)):
                 val = df.iloc[r, c]
-                item = QTableWidgetItem(str(val))
+                
+                try:
+                    text_val = f"{int(val):,}"
+                except:
+                    text_val = str(val)
+
+                item = QTableWidgetItem(text_val)
                 item.setTextAlignment(Qt.AlignCenter)
+                
+                # デフォルトの色設定
+                bg_color = QColor("#2b2b2b") # デフォルト背景
+                text_color = QColor("white") # デフォルト文字色
+
+                # ヒートマップ処理
                 if val == 0:
-                    item.setForeground(QColor("#777"))
-                table_widget.setItem(r, c, item)
+                    text_color = QColor("#666") # 0ならグレー文字
+                elif max_val > 0:
+                    # 割合計算
+                    ratio = (val - min_val) / (max_val - min_val) if max_val > min_val else 0
+                    if val == max_val: ratio = 1.0
+                    
+                    # 背景色を取得
+                    bg_color = self._get_heatmap_color(ratio)
+                    
+                    # ★修正: 背景色の明るさに応じて文字色を決定
+                    text_color = self._get_contrasting_text_color(bg_color)
+                
+                item.setBackground(bg_color)
+                item.setForeground(text_color)
+                
+                self.table.setItem(r, c, item)
+    
+    def _get_contrasting_text_color(self, bg_color: QColor) -> QColor:
+        """★新規追加: 背景色に合わせて見やすい文字色(白or黒)を返す"""
+        # 輝度公式: Y = 0.299R + 0.587G + 0.114B
+        brightness = (bg_color.red() * 0.299 + 
+                      bg_color.green() * 0.587 + 
+                      bg_color.blue() * 0.114)
+        
+        # 輝度が128(中間)より大きければ明るいので黒文字、暗ければ白文字
+        return QColor("black") if brightness > 140 else QColor("white")
+
+    def _get_heatmap_color(self, ratio: float) -> QColor:
+        """割合(0.0-1.0)に応じた色を返す"""
+        # 低い値: 透明(元の背景色)に近い or 薄い青
+        # 高い値: 濃いオレンジ (#e65100)
+        
+        if ratio <= 0.05:
+            return QColor("#2b2b2b") # ほぼ背景色
+            
+        # 線形補間だと暗いので、少し強めに色を出す
+        # R: 43 -> 230
+        # G: 43 -> 81
+        # B: 43 -> 0
+        
+        r = int(43 + (230 - 43) * ratio)
+        g = int(43 + (81 - 43) * ratio)
+        b = int(43 + (0 - 43) * ratio)
+        
+        # 範囲チェック
+        r = max(0, min(255, r))
+        g = max(0, min(255, g))
+        b = max(0, min(255, b))
+        
+        return QColor(r, g, b)
+    
+    def update_data(self):
+        """
+        AdminWindowからの統一呼び出しインターフェース用。
+        
+        動的分析はユーザーが条件を指定してボタンを押す必要があるため、
+        ウィンドウを開いた瞬間の自動ロード（重い処理）は行わず、スキップします。
+        """
+        pass
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\dashboard_tab.py

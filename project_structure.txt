@@ -53,6 +53,11 @@ Root: MyPosApp/
             payment_service.py
             product_service.py
             user_service.py
+            analytics/
+                __init__.py
+                enums.py
+                processor.py
+                strategies.py
             interfaces/
                 report_exporter.py
         utils/

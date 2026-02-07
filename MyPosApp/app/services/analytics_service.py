@@ -7,6 +7,9 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
+from app.services.analytics.processor import DataProcessor
+from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
 
 from app.services.interfaces.report_exporter import IReportExporter
 
@@ -25,6 +28,10 @@ class AnalyticsService:
         self.log_repo = log_repo
         self.exporter = exporter
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
+        self.strategies = {
+            "standard": CrossTabStrategy(),
+            "basket": BasketAnalysisStrategy()
+        }
 
     def _to_jst_str(self, utc_str: str) -> str:
         if not utc_str:
@@ -176,3 +183,152 @@ class AnalyticsService:
         
         # 2. 書き出しの委譲 (File Export)
         return self.exporter.export(file_path, tx_list, logs, pivots)
+    
+    def analyze_dynamic(self, 
+                        row_axis_key: str, 
+                        col_axis_key: str, 
+                        metric_key: str,
+                        start_date=None, 
+                        end_date=None) -> Dict[str, Any]:
+        """
+        動的分析のエントリーポイント
+        Viewから渡された文字列キーをEnumに変換し、適切な戦略を実行する
+        """
+        
+        # 1. データの取得
+        raw_data = self.ana_repo.get_comprehensive_raw_data(start_date, end_date)
+        if not raw_data:
+            return {"df": pd.DataFrame(), "max_val": 0, "min_val": 0}
+
+        # 2. データ加工 (Processorへ委譲)
+        df = DataProcessor.process(raw_data)
+        
+        # 3. 軸の決定ロジック (Enum変換できなければ動的カラム名として扱う)
+        def get_axis(key):
+            # 文字列型のまま処理すべき特殊キーの判定
+            if isinstance(key, str) and key.startswith("cust_attr:"):
+                # "cust_attr:sex" -> "cust_sex" (DataProcessorで作ったカラム名)
+                attr_name = key.split(":", 1)[1]
+                col_name = f"cust_{attr_name}"
+                
+                # データ内にその属性列が存在しない場合、エラー回避のため空列を作成
+                if col_name not in df.columns:
+                    df[col_name] = "未設定"
+                return col_name
+
+            # 通常のEnumキーの判定
+            try:
+                return AnalysisAxis(key)
+            except ValueError:
+                # Enumにもない、特殊キーでもない場合は None扱い
+                return AnalysisAxis.NONE
+
+        # ここで変換を実行 (try-exceptで囲まない)
+        row_axis = get_axis(row_axis_key)
+        col_axis = get_axis(col_axis_key)
+        
+        # 集計値(Metric)は必ずEnumである必要がある
+        try:
+            metric = AnalysisMetric(metric_key)
+        except ValueError:
+            return {"df": pd.DataFrame(), "error": "Invalid metric parameters"}
+            
+        # 4. Strategy選択ロジック
+        # 縦軸と横軸が同じ、かつNONEではない場合は「バスケット分析」とみなす
+        # (Enum同士 または 文字列同士 の比較)
+        is_basket = (row_axis == col_axis) and (row_axis != AnalysisAxis.NONE)
+        
+        strategy = self.strategies['basket'] if is_basket else self.strategies['standard']
+        
+        # 5. 実行
+        try:
+            result_df = strategy.execute(df, row_axis, col_axis, metric)
+        except Exception as e:
+            # 万が一集計中にエラーが出た場合
+            import traceback
+            traceback.print_exc()
+            return {"df": pd.DataFrame(), "error": f"Calculation Error: {str(e)}"}
+        
+        # 6. View用の付加情報 (ヒートマップ用)
+        numeric_df = result_df.select_dtypes(include=['number'])
+        
+        if '合計' in numeric_df.index:
+            numeric_df = numeric_df.drop('合計', axis=0)
+        if '合計' in numeric_df.columns:
+            numeric_df = numeric_df.drop('合計', axis=1)
+            
+        max_val = numeric_df.max().max() if not numeric_df.empty else 0
+        min_val = numeric_df.min().min() if not numeric_df.empty else 0
+        
+        return {
+            "df": result_df,
+            "max_val": float(max_val),
+            "min_val": float(min_val),
+            "mode": "basket" if is_basket else "standard"
+        }
+    
+    def get_initial_date_range(self):
+        """データの最小日時と現在日時を返す"""
+        min_ts = self.ana_repo.get_min_timestamp()
+        
+        now = datetime.datetime.now()
+        start_date = now
+        
+        if min_ts:
+            try:
+                # 文字列を日付型に変換
+                start_date = datetime.datetime.strptime(min_ts, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                pass
+        
+        return start_date, now
+    
+    def get_axis_categories(self) -> list[str]:
+        """大分類のリストを返す"""
+        return ["全体", "時間", "商品", "客層", "客層(属性)", "運用"]
+
+    def get_axis_details(self, category: str) -> list[tuple[str, str]]:
+        """
+        大分類に応じた小分類リストを返す
+        Return: [(表示名, 内部キー), ...]
+        """
+        if category == "全体":
+            return [("指定なし (総計)", AnalysisAxis.NONE.value)]
+            
+        elif category == "時間":
+            return [
+                ("月別", AnalysisAxis.TIME_MONTH.value),
+                ("曜日別", AnalysisAxis.TIME_DOW.value),
+                ("時間帯別", AnalysisAxis.TIME_HOUR.value),
+            ]
+            
+        elif category == "商品":
+            return [
+                ("カテゴリ", AnalysisAxis.PRODUCT_CAT.value),
+                ("商品名", AnalysisAxis.PRODUCT_NAME.value),
+            ]
+            
+        elif category == "客層":
+            return [
+                ("客層ラベル (ボタン名)", AnalysisAxis.CUSTOMER_LBL.value),
+            ]
+            
+        elif category == "客層(属性)":
+            # DBから動的キーを取得
+            attr_keys = self.ana_repo.get_customer_attribute_keys()
+            results = []
+            for k in attr_keys:
+                # 表示名: sex, 内部キー: cust_attr:sex
+                results.append((k, f"cust_attr:{k}"))
+            
+            if not results:
+                results.append(("(属性データなし)", AnalysisAxis.NONE.value))
+            return results
+            
+        elif category == "運用":
+            return [
+                ("担当者", AnalysisAxis.CASHIER.value),
+                ("決済方法", AnalysisAxis.PAYMENT.value),
+            ]
+            
+        return []

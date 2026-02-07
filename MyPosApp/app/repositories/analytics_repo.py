@@ -120,3 +120,93 @@ class AnalyticsRepository(BaseRepository):
             {"id": r[0], "timestamp": r[1], "customer": r[2], "cashier": r[3], "product": r[4], "qty": r[5], "sales": r[6]}
             for r in rows
         ]
+    
+    def get_comprehensive_raw_data(self, start_date: str = None, end_date: str = None):
+        """
+        分析に必要な全項目を含むフラットなデータを取得
+        ※ 期間指定があれば WHERE 句を追加する拡張が可能
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # JSON属性なども含めて取得するが、SQLite側では文字列として取得し、
+        # Python側でパースする方が汎用性が高い。
+        query = """
+            SELECT
+                t.id as tx_id,
+                t.timestamp,
+                t.customer_label,
+                t.cashier_name,
+                c.attributes as customer_attrs,  -- Customerテーブルと結合
+                i.product_name,
+                i.quantity,
+                i.unit_price,
+                i.subtotal,
+                p.category,                      -- Productsテーブルと結合
+                pay.payment_method
+            FROM transactions t
+            LEFT JOIN transaction_items i ON t.id = i.transaction_id
+            LEFT JOIN products p ON i.product_name = p.name -- 名前で結合(ID推奨だが現状スキーマに合わせる)
+            LEFT JOIN customer_presets c ON t.customer_label = c.label
+            LEFT JOIN transaction_payments pay ON t.id = pay.transaction_id
+            WHERE 1=1
+        """
+        
+        # 必要に応じて date(t.timestamp) BETWEEN ? AND ? を追加
+        params = []
+        if start_date and end_date:
+            query += " AND date(t.timestamp) >= ? AND date(t.timestamp) <= ?"
+            params.extend([start_date, end_date])
+            
+        cursor.execute(query, params)
+        cols = [desc[0] for desc in cursor.description]
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(zip(cols, row)) for row in rows]
+    
+    def get_min_timestamp(self) -> str:
+        """最も古い取引の日時を取得"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT MIN(timestamp) FROM transactions")
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row and row[0] else None
+    
+    def get_customer_attribute_keys(self) -> list[str]:
+        """
+        客層マスタ(customer_presets)に含まれるJSON属性キー
+        （sex, ageなど）のユニーク一覧を取得して返します。
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # attributesカラム（JSON文字列）を取得
+            cursor.execute("SELECT attributes FROM customer_presets WHERE is_active=1")
+            rows = cursor.fetchall()
+        except Exception:
+            # テーブルが存在しない場合などのエラー回避
+            conn.close()
+            return []
+            
+        conn.close()
+
+        import json
+        keys = set()
+        
+        for r in rows:
+            json_str = r[0]
+            if not json_str:
+                continue
+                
+            try:
+                data = json.loads(json_str)
+                if isinstance(data, dict):
+                    # 辞書のキー（"sex", "age"など）をセットに追加
+                    keys.update(data.keys())
+            except:
+                pass
+                
+        return sorted(list(keys))
