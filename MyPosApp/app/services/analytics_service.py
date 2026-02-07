@@ -7,26 +7,30 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.product_repo import ProductRepository # ★追加
+
 from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
 from app.services.analytics.processor import DataProcessor
 from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
-
 from app.services.interfaces.report_exporter import IReportExporter
 
 class AnalyticsService:
     def __init__(
-            self,
-            ana_repo: AnalyticsRepository,
-            trans_repo: TransactionRepository,
-            expense_repo: ExpenseRepository,
-            log_repo: LogRepository,
-            exporter: IReportExporter
-        ):
+        self,
+        ana_repo: AnalyticsRepository,
+        trans_repo: TransactionRepository,
+        expense_repo: ExpenseRepository,
+        log_repo: LogRepository,
+        prod_repo: ProductRepository, # ★追加: 商品マスタ参照用
+        exporter: IReportExporter
+    ):
         self.ana_repo = ana_repo
         self.trans_repo = trans_repo
         self.expense_repo = expense_repo
         self.log_repo = log_repo
+        self.prod_repo = prod_repo # ★保持
         self.exporter = exporter
+        
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
         self.strategies = {
             "standard": CrossTabStrategy(),
@@ -192,80 +196,128 @@ class AnalyticsService:
                         end_date=None) -> Dict[str, Any]:
         """
         動的分析のエントリーポイント
-        Viewから渡された文字列キーをEnumに変換し、適切な戦略を実行する
         """
-        
         # 1. データの取得
         raw_data = self.ana_repo.get_comprehensive_raw_data(start_date, end_date)
         if not raw_data:
             return {"df": pd.DataFrame(), "max_val": 0, "min_val": 0}
 
-        # 2. データ加工 (Processorへ委譲)
+        # 2. データ加工
         df = DataProcessor.process(raw_data)
-        
-        # 3. 軸の決定ロジック (Enum変換できなければ動的カラム名として扱う)
+
+        # 3. 軸の決定ロジック
         def get_axis(key):
-            # 文字列型のまま処理すべき特殊キーの判定
             if isinstance(key, str) and key.startswith("cust_attr:"):
-                # "cust_attr:sex" -> "cust_sex" (DataProcessorで作ったカラム名)
                 attr_name = key.split(":", 1)[1]
                 col_name = f"cust_{attr_name}"
-                
-                # データ内にその属性列が存在しない場合、エラー回避のため空列を作成
                 if col_name not in df.columns:
                     df[col_name] = "未設定"
                 return col_name
-
-            # 通常のEnumキーの判定
+            
             try:
                 return AnalysisAxis(key)
             except ValueError:
-                # Enumにもない、特殊キーでもない場合は None扱い
                 return AnalysisAxis.NONE
 
-        # ここで変換を実行 (try-exceptで囲まない)
         row_axis = get_axis(row_axis_key)
         col_axis = get_axis(col_axis_key)
         
-        # 集計値(Metric)は必ずEnumである必要がある
         try:
             metric = AnalysisMetric(metric_key)
         except ValueError:
             return {"df": pd.DataFrame(), "error": "Invalid metric parameters"}
-            
-        # 4. Strategy選択ロジック
-        # 縦軸と横軸が同じ、かつNONEではない場合は「バスケット分析」とみなす
-        # (Enum同士 または 文字列同士 の比較)
+
+        # 4. Strategy選択
         is_basket = (row_axis == col_axis) and (row_axis != AnalysisAxis.NONE)
-        
         strategy = self.strategies['basket'] if is_basket else self.strategies['standard']
-        
+
         # 5. 実行
         try:
             result_df = strategy.execute(df, row_axis, col_axis, metric)
+            
+            # ★変更: 行・列それぞれで「商品名」が選択されていればマスタ順にソートする
+            if not result_df.empty:
+                # 行 (Index) のソート
+                if row_axis == AnalysisAxis.PRODUCT_NAME:
+                    result_df = self._sort_by_product_master(result_df, axis=0)
+                
+                # 列 (Columns) のソート
+                if col_axis == AnalysisAxis.PRODUCT_NAME:
+                    result_df = self._sort_by_product_master(result_df, axis=1)
+
         except Exception as e:
-            # 万が一集計中にエラーが出た場合
             import traceback
             traceback.print_exc()
             return {"df": pd.DataFrame(), "error": f"Calculation Error: {str(e)}"}
-        
+
         # 6. View用の付加情報 (ヒートマップ用)
         numeric_df = result_df.select_dtypes(include=['number'])
-        
         if '合計' in numeric_df.index:
             numeric_df = numeric_df.drop('合計', axis=0)
         if '合計' in numeric_df.columns:
             numeric_df = numeric_df.drop('合計', axis=1)
-            
+
         max_val = numeric_df.max().max() if not numeric_df.empty else 0
         min_val = numeric_df.min().min() if not numeric_df.empty else 0
-        
+
         return {
             "df": result_df,
             "max_val": float(max_val),
             "min_val": float(min_val),
             "mode": "basket" if is_basket else "standard"
         }
+    
+    def _sort_by_product_master(self, df: pd.DataFrame, axis: int = 0) -> pd.DataFrame:
+        """
+        DataFrameのインデックス(axis=0) または カラム(axis=1) を並び替える。
+        順序: [カテゴリの並び順] > [単価(高い順)]
+        """
+        # 1. 全商品をモデルとして取得
+        products = self.prod_repo.fetch_all_as_models()
+        
+        # --- カテゴリの並び順を決定するロジック ---
+        # カテゴリごとに、そのカテゴリに含まれる商品の「最小 display_order」を探す。
+        # これにより、「設定画面で上に置いている商品が多いカテゴリ」が先頭に来る。
+        category_rank = {}
+        for p in products:
+            cat = p.category or "未分類"
+            current_min = category_rank.get(cat, 999999)
+            if p.display_order < current_min:
+                category_rank[cat] = p.display_order
+        
+        # 2. ソートキー作成
+        # 第1キー: カテゴリのランク (display_orderが小さい商品が含まれるカテゴリほど先)
+        # 第2キー: 価格の降順 (高い順。割引などのマイナスは最後になる)
+        products.sort(key=lambda p: (
+            category_rank.get(p.category or "未分類", 999999),
+            -p.price
+        ))
+        
+        # 3. ソート済み商品名のリストを作成
+        sorted_names = [p.name for p in products]
+        
+        # 4. 現在のDataFrameにあるラベル（インデックス or カラム）を取得
+        if axis == 0:
+            current_labels = df.index.tolist()
+        else:
+            current_labels = df.columns.tolist()
+        
+        # '合計' 行/列 があれば一時的に除外して確保
+        has_total = '合計' in current_labels
+        if has_total:
+            current_labels.remove('合計')
+            
+        # 5. マスタにある順序で並べる + マスタにないもの(手入力等)を後ろに追加
+        new_order = [n for n in sorted_names if n in current_labels]
+        remaining = [n for n in current_labels if n not in new_order]
+        new_order.extend(remaining)
+        
+        # '合計' を最後尾に戻す
+        if has_total:
+            new_order.append('合計')
+            
+        # 6. Reindex実行 (指定したaxisに対して並び替え適用)
+        return df.reindex(new_order, axis=axis)
     
     def get_initial_date_range(self):
         """データの最小日時と現在日時を返す"""

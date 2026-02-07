@@ -3181,52 +3181,50 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\serv
 ==================================================
 
 import pandas as pd
-from typing import List, Dict, Tuple
+import os
+from typing import List, Dict, Tuple, Optional
+from openpyxl import load_workbook
+
 from app.services.interfaces.report_exporter import IReportExporter
+
+# 循環参照回避のためのTYPE_CHECKING
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.services.analytics_service import AnalyticsService
 
 class ExcelReportExporter(IReportExporter):
     """
-    Excel帳票出力の責務を持つクラス
-    IReportExporter インターフェースを実装
+    Excel帳票出力クラス
+    - 固定レポートの一括出力 (export)
+    - 分析結果の追記出力 (export_analysis_result)
+    の両方に対応
     """
 
+    def __init__(self, analytics_service: Optional['AnalyticsService'] = None):
+        """
+        Args:
+            analytics_service: 生データ取得用。MainWindowでの初期化時はNoneで、
+                               AnalysisTabで利用する際にインスタンスを渡して生成するか、
+                               後からセットすることを想定。
+        """
+        self.analytics_service = analytics_service
+
     def export(self, file_path: str, tx_list: List[Dict], logs: List[Dict], pivots: Dict[str, pd.DataFrame]) -> Tuple[bool, str]:
+        """
+        [既存機能] 全データを新規ファイルとして出力する
+        """
         try:
             # 1. データフレーム変換と整形
-            df_tx = pd.DataFrame(tx_list)
-            df_logs = pd.DataFrame(logs)
+            df_tx = self._process_transaction_list(tx_list)
+            df_logs = self._process_logs(logs)
 
-            # タイムスタンプ列の調整
-            if 'timestamp' in df_tx.columns:
-                df_tx = df_tx.drop(columns=['timestamp'])
-
-            # カラム名の日本語化
-            if not df_tx.empty:
-                rename_map = {
-                    'id': '伝票ID',
-                    'time': '日時',
-                    'total': '合計',
-                    'items': '点数',
-                    'payment': '決済',
-                    'customer': '客層',
-                    'change': 'お釣り'
-                }
-                df_tx.rename(columns=rename_map, inplace=True)
-
-            if not df_logs.empty:
-                df_logs.rename(columns={'time': '日時', 'level': 'レベル', 'msg': '内容'}, inplace=True)
-
-            # 2. Excelファイルへの書き込み
+            # 2. Excelファイルへの書き込み (新規作成)
             with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-                # 伝票一覧シート
-                if df_tx.empty:
-                    pd.DataFrame(["データなし"]).to_excel(writer, sheet_name='伝票一覧')
-                else:
-                    df_tx.to_excel(writer, sheet_name='伝票一覧', index=False)
+                # 伝票一覧
+                self._write_sheet(writer, df_tx, '伝票一覧')
                 
-                # 操作ログシート
-                if not df_logs.empty:
-                    df_logs.to_excel(writer, sheet_name='操作ログ', index=False)
+                # 操作ログ
+                self._write_sheet(writer, df_logs, '操作ログ')
 
                 # クロス集計シート
                 if pivots:
@@ -3245,6 +3243,119 @@ class ExcelReportExporter(IReportExporter):
             import traceback
             traceback.print_exc()
             return False, str(e)
+
+    def export_analysis_result(self, 
+                               df: pd.DataFrame, 
+                               sheet_name: str, 
+                               file_path: str, 
+                               include_raw_data: bool = False) -> Tuple[bool, str]:
+        """
+        [新機能] 分析結果(DataFrame)をExcelに出力する。
+        ファイルが存在する場合は追記(Append)、存在しない場合は新規作成する。
+        
+        Args:
+            df: 分析結果のDataFrame
+            sheet_name: シート名（例: "商品-時間帯"）
+            file_path: 保存先パス
+            include_raw_data: Trueの場合、伝票一覧・ログなどの固定シートも出力/更新する
+        """
+        try:
+            # シート名のサニタイズ（Excel制限対応）
+            safe_sheet_name = self._sanitize_sheet_name(sheet_name)
+            
+            # 書き込むデータの準備
+            data_map = {safe_sheet_name: df}
+
+            # 生データを含める場合（AnalyticsServiceが必要）
+            if include_raw_data and self.analytics_service:
+                raw_datasets = self._get_raw_datasets()
+                data_map.update(raw_datasets)
+
+            # ファイルの存在確認
+            mode = 'w'
+            if_sheet_exists = None
+            
+            if os.path.exists(file_path):
+                mode = 'a' # 追記モード
+                if_sheet_exists = 'replace' # 同名シートは上書き (Pandas 1.3+)
+
+            # 書き込み実行
+            # ※ Pandasのバージョンが古いと if_sheet_exists でエラーになる可能性があります
+            #    その場合は try-except で mode='w' にフォールバックするか、
+            #    openpyxlで直接シート削除する処理が必要です。
+            with pd.ExcelWriter(file_path, engine='openpyxl', mode=mode, if_sheet_exists=if_sheet_exists) as writer:
+                for s_name, d_frame in data_map.items():
+                    d_frame.to_excel(writer, sheet_name=s_name)
+
+            return True, "出力しました"
+
+        except ValueError as ve:
+            # Pandasのバージョンが古くて if_sheet_exists が使えない場合などの対応
+            if "if_sheet_exists" in str(ve):
+                return False, "Excel追記エラー: Pandasのバージョンを1.3以上に更新してください"
+            return False, str(ve)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, f"出力エラー: {str(e)}"
+
+    # --- 内部ヘルパーメソッド ---
+
+    def _get_raw_datasets(self) -> Dict[str, pd.DataFrame]:
+        """AnalyticsServiceから生データを取得してDataFrame化"""
+        datasets = {}
+        
+        # 伝票一覧
+        tx_list = self.analytics_service.get_transaction_list()
+        df_tx = self._process_transaction_list(tx_list)
+        datasets['伝票一覧'] = df_tx
+        
+        # 操作ログ
+        logs = self.analytics_service.get_logs()
+        df_logs = self._process_logs(logs)
+        datasets['操作ログ'] = df_logs
+        
+        return datasets
+
+    def _process_transaction_list(self, tx_list: List[Dict]) -> pd.DataFrame:
+        """伝票リストの整形・カラム名変更"""
+        df = pd.DataFrame(tx_list)
+        if 'timestamp' in df.columns:
+            df = df.drop(columns=['timestamp'])
+        
+        if not df.empty:
+            rename_map = {
+                'id': '伝票ID',
+                'time': '日時',
+                'total': '合計',
+                'items': '点数',
+                'payment': '決済',
+                'customer': '客層',
+                'change': 'お釣り'
+            }
+            df.rename(columns=rename_map, inplace=True)
+        return df
+
+    def _process_logs(self, logs: List[Dict]) -> pd.DataFrame:
+        """ログリストの整形"""
+        df = pd.DataFrame(logs)
+        if not df.empty:
+            df.rename(columns={'time': '日時', 'level': 'レベル', 'msg': '内容'}, inplace=True)
+        return df
+
+    def _write_sheet(self, writer, df, sheet_name):
+        """空データ対応のシート書き込み"""
+        if df.empty:
+            pd.DataFrame(["データなし"]).to_excel(writer, sheet_name=sheet_name)
+        else:
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+    def _sanitize_sheet_name(self, name: str) -> str:
+        """Excelシート名に使用できない文字を除去し、31文字以内に収める"""
+        invalid_chars = ['\\', '/', '?', '*', '[', ']', ':']
+        for char in invalid_chars:
+            name = name.replace(char, '_')
+        return name[:31]
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\expense_service.py
@@ -7095,19 +7206,33 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
 ==================================================
 
+import datetime
+import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
-    QHeaderView, QDateEdit, QFrame, QGridLayout # Gridレイアウトを使用
+    QHeaderView, QDateEdit, QFrame, QGridLayout, QMessageBox, QFileDialog 
 )
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont
+
+# Enum定義
 from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
+# Exporter
+from app.services.excel_exporter import ExcelReportExporter
 
 class AnalysisTab(QWidget):
     def __init__(self, service):
         super().__init__()
         self.service = service
+        
+        # Excel出力用クラスの初期化 (生データ取得用にserviceを渡す)
+        self.exporter = ExcelReportExporter(self.service)
+        
+        # 直近の集計結果を保持する変数
+        self.last_dataframe = None
+        self.last_sheet_name = ""
+
         self._init_ui()
         
         # 初期期間設定
@@ -7169,12 +7294,35 @@ class AnalysisTab(QWidget):
         self._populate_metric_combo(self.combo_metric)
         grid.addWidget(self.combo_metric, 3, 1, 1, 2)
 
-        # 5. 実行ボタン
+        # 5. アクションボタン (実行 & Excel出力)
+        btn_layout = QHBoxLayout()
+        
         self.btn_run = QPushButton("集計実行")
         self.btn_run.setFixedHeight(40)
-        self.btn_run.setStyleSheet("background-color: #00897b; color: white; font-weight: bold;")
+        self.btn_run.setStyleSheet("""
+            QPushButton { 
+                background-color: #00897b; color: white; font-weight: bold; border-radius: 5px; 
+            }
+            QPushButton:hover { background-color: #009688; }
+        """)
         self.btn_run.clicked.connect(self.run_analysis)
-        grid.addWidget(self.btn_run, 4, 0, 1, 3) # 全幅
+        
+        self.btn_export = QPushButton("Excel出力")
+        self.btn_export.setFixedHeight(40)
+        self.btn_export.setStyleSheet("""
+            QPushButton { 
+                background-color: #00695c; color: white; font-weight: bold; border-radius: 5px; 
+            }
+            QPushButton:hover { background-color: #00796b; }
+            QPushButton:disabled { background-color: #555; color: #aaa; }
+        """)
+        self.btn_export.clicked.connect(self.export_excel)
+        self.btn_export.setEnabled(False) # 初期状態は無効
+        
+        btn_layout.addWidget(self.btn_run, 2)    # 比率 2
+        btn_layout.addWidget(self.btn_export, 1) # 比率 1
+        
+        grid.addLayout(btn_layout, 4, 0, 1, 3) # 全幅
 
         layout.addWidget(control_frame)
 
@@ -7192,7 +7340,6 @@ class AnalysisTab(QWidget):
         layout.addWidget(self.table)
 
         # --- イベント接続 ---
-        # 大分類が変わったら小分類を更新する
         self.row_cat_combo.currentIndexChanged.connect(lambda: self._update_detail_combo(self.row_cat_combo, self.row_det_combo))
         self.col_cat_combo.currentIndexChanged.connect(lambda: self._update_detail_combo(self.col_cat_combo, self.col_det_combo))
 
@@ -7206,7 +7353,6 @@ class AnalysisTab(QWidget):
         current_cat = cat_combo.currentText()
         det_combo.clear()
         
-        # Serviceからリスト取得
         items = self.service.get_axis_details(current_cat)
         
         for label, value in items:
@@ -7214,20 +7360,16 @@ class AnalysisTab(QWidget):
 
     def _set_initial_selection(self):
         """初期値: 縦=商品(商品名), 横=時間(時間帯)"""
-        # インデックス指定はリスト順序に依存するため注意が必要だが、今回は固定リストなので簡易実装
-        # 縦: 商品 -> 商品名
         self.row_cat_combo.setCurrentText("商品")
         self._update_detail_combo(self.row_cat_combo, self.row_det_combo)
         self.row_det_combo.setCurrentText("商品名")
         
-        # 横: 時間 -> 時間帯別
         self.col_cat_combo.setCurrentText("時間")
         self._update_detail_combo(self.col_cat_combo, self.col_det_combo)
         self.col_det_combo.setCurrentText("時間帯別")
 
     def run_analysis(self):
         """集計実行"""
-        # 小分類のuserData (Enumの値 or 文字列キー) を取得
         row_key = self.row_det_combo.currentData()
         col_key = self.col_det_combo.currentData()
         metric_key = self.combo_metric.currentData()
@@ -7255,18 +7397,83 @@ class AnalysisTab(QWidget):
         max_val = result.get("max_val", 0)
         min_val = result.get("min_val", 0)
 
+        # 結果を保存 (Excel出力用)
+        self.last_dataframe = df
+        
+        # シート名を生成 (例: "商品名_時間帯別")
+        # ファイル名に使えない文字を簡易的に除去
+        r_txt = self.row_det_combo.currentText()
+        c_txt = self.col_det_combo.currentText()
+        safe_r = r_txt.replace(":", "").replace("/", "").replace("\\", "")
+        safe_c = c_txt.replace(":", "").replace("/", "").replace("\\", "")
+        self.last_sheet_name = f"{safe_r}_{safe_c}"
+
+        # ボタン有効化
+        self.btn_export.setEnabled(not df.empty)
+
+        # テーブル描画
         self._render_table(df, max_val, min_val)
         
-        # モード表示
         mode_text = ""
         if result.get("mode") == "basket":
             mode_text = " (バスケット分析)"
         
-        # 選択した軸名を表示
-        r_txt = f"{self.row_cat_combo.currentText()}-{self.row_det_combo.currentText()}"
-        c_txt = f"{self.col_cat_combo.currentText()}-{self.col_det_combo.currentText()}"
-        self.lbl_status.setText(f"集計結果: {r_txt} × {c_txt}{mode_text}")
+        self.lbl_status.setText(f"集計結果: {self.row_cat_combo.currentText()}-{r_txt} × {self.col_cat_combo.currentText()}-{c_txt}{mode_text}")
     
+    def export_excel(self):
+        """Excel出力処理 (新規・追記・生データ選択機能付き)"""
+        if self.last_dataframe is None or self.last_dataframe.empty:
+            return
+
+        # 1. 保存先ダイアログ
+        # デフォルトファイル名: 売上分析_YYYYMMDD_HHMMSS.xlsx
+        default_name = f"売上分析_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Excelファイルを保存", default_name, "Excel Files (*.xlsx)"
+        )
+        
+        if not file_path:
+            return
+
+        # 2. 出力モードの確認 (カスタムダイアログ)
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("出力オプション")
+        
+        exists = os.path.exists(file_path)
+        
+        if exists:
+            msg_box.setText("選択されたファイルは既に存在します。\n分析結果シートを追加（または上書き）します。")
+            msg_box.setInformativeText("出力内容を選択してください。")
+            btn_only = msg_box.addButton("この分析シートのみ追加", QMessageBox.ActionRole)
+            btn_full = msg_box.addButton("全データ(伝票一覧等)も含めて更新", QMessageBox.ActionRole)
+            btn_cancel = msg_box.addButton("キャンセル", QMessageBox.RejectRole)
+        else:
+            msg_box.setText("新しいファイルを作成します。")
+            msg_box.setInformativeText("出力内容を選択してください。")
+            btn_only = msg_box.addButton("分析シートのみ作成", QMessageBox.ActionRole)
+            btn_full = msg_box.addButton("全データ(伝票一覧等)も添付", QMessageBox.ActionRole)
+            btn_cancel = msg_box.addButton("キャンセル", QMessageBox.RejectRole)
+            
+        msg_box.exec()
+        
+        if msg_box.clickedButton() == btn_cancel:
+            return
+            
+        include_raw = (msg_box.clickedButton() == btn_full)
+
+        # 3. 実行
+        ok, msg = self.exporter.export_analysis_result(
+            df=self.last_dataframe,
+            sheet_name=self.last_sheet_name,
+            file_path=file_path,
+            include_raw_data=include_raw
+        )
+        
+        if ok:
+            QMessageBox.information(self, "完了", f"{msg}\nパス: {file_path}")
+        else:
+            QMessageBox.critical(self, "エラー", f"出力中にエラーが発生しました:\n{msg}")
+
     def _populate_metric_combo(self, combo: QComboBox):
         combo.clear()
         items = [
@@ -7287,13 +7494,11 @@ class AnalysisTab(QWidget):
             self.lbl_status.setText("該当データがありません")
             return
 
-        # 行・列の設定
         self.table.setRowCount(len(df.index))
         self.table.setColumnCount(len(df.columns))
         self.table.setHorizontalHeaderLabels([str(c) for c in df.columns])
         self.table.setVerticalHeaderLabels([str(i) for i in df.index])
 
-        # データセット
         for r in range(len(df.index)):
             for c in range(len(df.columns)):
                 val = df.iloc[r, c]
@@ -7306,22 +7511,17 @@ class AnalysisTab(QWidget):
                 item = QTableWidgetItem(text_val)
                 item.setTextAlignment(Qt.AlignCenter)
                 
-                # デフォルトの色設定
-                bg_color = QColor("#2b2b2b") # デフォルト背景
-                text_color = QColor("white") # デフォルト文字色
+                bg_color = QColor("#2b2b2b")
+                text_color = QColor("white")
 
-                # ヒートマップ処理
                 if val == 0:
-                    text_color = QColor("#666") # 0ならグレー文字
+                    text_color = QColor("#666")
                 elif max_val > 0:
-                    # 割合計算
+                    # ヒートマップ処理
                     ratio = (val - min_val) / (max_val - min_val) if max_val > min_val else 0
                     if val == max_val: ratio = 1.0
                     
-                    # 背景色を取得
                     bg_color = self._get_heatmap_color(ratio)
-                    
-                    # ★修正: 背景色の明るさに応じて文字色を決定
                     text_color = self._get_contrasting_text_color(bg_color)
                 
                 item.setBackground(bg_color)
@@ -7330,33 +7530,19 @@ class AnalysisTab(QWidget):
                 self.table.setItem(r, c, item)
     
     def _get_contrasting_text_color(self, bg_color: QColor) -> QColor:
-        """★新規追加: 背景色に合わせて見やすい文字色(白or黒)を返す"""
-        # 輝度公式: Y = 0.299R + 0.587G + 0.114B
         brightness = (bg_color.red() * 0.299 + 
                       bg_color.green() * 0.587 + 
                       bg_color.blue() * 0.114)
-        
-        # 輝度が128(中間)より大きければ明るいので黒文字、暗ければ白文字
         return QColor("black") if brightness > 140 else QColor("white")
 
     def _get_heatmap_color(self, ratio: float) -> QColor:
-        """割合(0.0-1.0)に応じた色を返す"""
-        # 低い値: 透明(元の背景色)に近い or 薄い青
-        # 高い値: 濃いオレンジ (#e65100)
-        
         if ratio <= 0.05:
-            return QColor("#2b2b2b") # ほぼ背景色
+            return QColor("#2b2b2b")
             
-        # 線形補間だと暗いので、少し強めに色を出す
-        # R: 43 -> 230
-        # G: 43 -> 81
-        # B: 43 -> 0
-        
         r = int(43 + (230 - 43) * ratio)
         g = int(43 + (81 - 43) * ratio)
         b = int(43 + (0 - 43) * ratio)
         
-        # 範囲チェック
         r = max(0, min(255, r))
         g = max(0, min(255, g))
         b = max(0, min(255, b))
@@ -7364,12 +7550,7 @@ class AnalysisTab(QWidget):
         return QColor(r, g, b)
     
     def update_data(self):
-        """
-        AdminWindowからの統一呼び出しインターフェース用。
-        
-        動的分析はユーザーが条件を指定してボタンを押す必要があるため、
-        ウィンドウを開いた瞬間の自動ロード（重い処理）は行わず、スキップします。
-        """
+        """AdminWindowからの統一呼び出し用 (動的分析なので何もしない)"""
         pass
 
 ==================================================

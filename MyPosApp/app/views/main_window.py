@@ -114,6 +114,7 @@ class MainWindow(QMainWindow):
             trans_repo=self.trans_repo,
             expense_repo=self.expense_repo,
             log_repo=self.log_repo,
+            prod_repo=self.prod_repo,
             exporter=self.excel_exporter
         )
 
