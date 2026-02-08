@@ -281,10 +281,15 @@ class CartService(QObject):
     def get_total_amount(self) -> int:
         sub_prod = sum(item.price * item.qty for item in self.cart_items)
         sub_disc = sum(d.amount for d in self.applied_discounts) 
-        return max(0, sub_prod + sub_disc)
+        return sub_prod + sub_disc
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
         """会計確定処理"""
+
+        if self.current_user_name in [None, "", "Guest"]:
+            self._notify_message("担当者が選択されていません。会計できません。", "error")
+            return
+        
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
@@ -347,7 +352,7 @@ class CartService(QObject):
         
         # 0円より大きい支払いのみを保存対象にする
         for p in temp_payments:
-            if p['amount'] > 0:
+            if p['amount'] != 0:
                 tx_payments.append(TransactionPayment(
                     id=None,
                     transaction_id=None,

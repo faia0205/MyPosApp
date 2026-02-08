@@ -102,4 +102,6 @@ Root: MyPosApp/
                 transaction_tab.py
     data/
         master_data.json
+        master_data_.json
         pos_system.db
+        pos_system_0208.db

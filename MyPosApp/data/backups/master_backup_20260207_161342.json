@@ -39,16 +39,6 @@
             "note": "",
             "display_order": 4,
             "is_active": true
-        },
-        {
-            "id": 5,
-            "name": "たこ焼き",
-            "price": 500,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 5,
-            "is_active": true
         }
     ],
     "users": [
@@ -72,31 +62,11 @@
             "is_active": true
         }
     ],
-    "payment_methods": [
-        {
-            "id": 1,
-            "name": "現金",
-            "is_cash": true,
-            "is_active": true
-        },
-        {
-            "id": 2,
-            "name": "PayPay",
-            "is_cash": false,
-            "is_active": true
-        }
-    ],
-    "initial_expenses": [
-        {
-            "id": 1,
-            "title": "仕入れ代",
-            "amount": 5000,
-            "timestamp": "2026-02-08 13:30:48"
-        }
-    ],
+    "payment_methods": [],
+    "initial_expenses": [],
     "discount_rules": [
         {
-            "id": 1,
+            "id": 2,
             "name": "商品A2_50円引き",
             "discount_type": "fixed",
             "discount_value": 50,
@@ -119,7 +89,7 @@
             "id": 4,
             "name": "割引",
             "discount_type": "percent",
-            "discount_value": 30,
+            "discount_value": 10,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"割引カードA\", \"type\": \"item\", \"qty\": 1}]}",
             "is_auto": true,

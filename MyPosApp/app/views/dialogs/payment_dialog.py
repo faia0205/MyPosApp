@@ -214,14 +214,14 @@ class PaymentDialog(QDialog):
         self._set_buffer_to_remaining()
 
     def _set_buffer_to_remaining(self):
-        """残額を自動入力するUI補助機能"""
         remain = self.session.get_remaining()
-        if remain > 0:
-            self.input_buffer = str(remain)
+        if remain != 0:
+            self.input_buffer = str(abs(remain))
             self.is_initial_input = True
         else:
             self.input_buffer = ""
             self.is_initial_input = False
+            
         self._update_input_display()
 
     def _on_numpad(self, text):
@@ -231,7 +231,7 @@ class PaymentDialog(QDialog):
         
         if self.input_buffer == "0" and text == "0": return
         if self.input_buffer == "0" and text != "00": self.input_buffer = ""
-        if len(self.input_buffer + text) > 8: return
+        if len(self.input_buffer + text) > 10: return
         
         self.input_buffer += text
         self._update_input_display()
@@ -284,15 +284,15 @@ class PaymentDialog(QDialog):
         remaining = self.session.get_remaining()
         change = self.session.get_change()
 
-        if remaining > 0:
-            self.lbl_status_title.setText("不足金額")
+        if remaining != 0:
+            self.lbl_status_title.setText("不足金額" if remaining > 0 else "要返金額")
             self.lbl_status_title.setStyleSheet("font-size: 18px; color: #ff8a80;")
             
             self.lbl_status_amount.setText(f"¥{remaining:,}")
             self.lbl_status_amount.setStyleSheet("font-size: 42px; font-weight: bold; color: #ff8a80;")
 
             self.btn_finish.setEnabled(False)
-            self.btn_finish.setText("金額不足")
+            self.btn_finish.setText("金額不足" if remaining > 0 else "返金未了")
             self.btn_finish.setStyleSheet("background-color: #555; color: #aaa; font-size: 24px; font-weight: bold; border-radius: 10px;")
 
             self.btn_enter.setEnabled(True)

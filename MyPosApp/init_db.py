@@ -144,7 +144,20 @@ def create_tables():
     # --- データ投入 ---
     cursor.execute("SELECT count(*) FROM products")
     if cursor.fetchone()[0] == 0:
+        print("No users found. Creating default admin...")
+        # JSONがある場合はそこからロード、なければハードコードで作成
         data = load_master_data()
+
+        if data and "users" in data:
+            # JSONから投入 (既存ロジック)
+            u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
+            cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
+        else:
+            # JSONがない場合: デフォルト管理者を作成
+            cursor.execute("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", 
+                           ("初期管理者", "9999", "admin", 1))
+            print("Default admin created (Code: 9999).")
+        
         if data:
             print("Inserting initial data...")
 
@@ -175,36 +188,51 @@ def create_tables():
             """, presets_data)
 
             # Users
-            u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
-            cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
+            #u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
+            #cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
 
             # Expenses
             for exp in data.get("initial_expenses", []):
                 cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (exp["title"], exp["amount"]))
 
             # ★ Discount Rules (新)
+            print("Loading discount rules...")
+            raw_rules = data.get("discount_rules", [])
+            print(f"Found {len(raw_rules)} rules in JSON.") # デバッグ用: JSONから何件見つかったか表示
+    
             d_rules = []
-            for r in data.get("discount_rules", []):
+            for r in raw_rules:
+                # target_value がJSONオブジェクト(辞書)の場合、文字列に変換して保存する安全策を追加
+                t_val = r.get("target_value", None)
+                if isinstance(t_val, (dict, list)):
+                    t_val = json.dumps(t_val, ensure_ascii=False)
+                
                 d_rules.append((
-                    r["name"], 
-                    r.get("discount_type", "fixed"), 
+                    r["name"],
+                    r.get("discount_type", "fixed"),
                     r.get("discount_value", 0),
                     r.get("apply_type", "cart"),
-                    r.get("target_value", None),
+                    t_val,
                     int(r.get("is_auto", 0)),
                     int(r.get("is_active", 1))
                 ))
-            
-            cursor.executemany("""
-                INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, d_rules)
-
+    
+            if d_rules:
+                cursor.executemany("""
+                    INSERT INTO discount_rules (name, discount_type, discount_value, apply_type,
+                    target_value, is_auto, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, d_rules)
+                print(f"Inserted {len(d_rules)} discount rules.")
+            else:
+                print("No discount rules to insert.")
+    
             conn.commit()
             print("Data insertion completed.")
         else:
             print("No data inserted (JSON missing or invalid).")
     
+    conn.commit()
     conn.close()
     print("Database initialized.")
 

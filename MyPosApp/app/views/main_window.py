@@ -227,12 +227,16 @@ class MainWindow(QMainWindow):
 
     def _check_checkout_button(self):
         cust = self.cart_service.selected_customer
-        if cust:
+        has_user = self.cart_service.current_user_name not in [None, "", "Guest"]
+        if cust and has_user:
             self.btn_checkout.setEnabled(True)
             self.btn_checkout.setText(f"会計\n({cust.label})")
         else:
             self.btn_checkout.setEnabled(False)
-            self.btn_checkout.setText("会 計")
+            if not has_user:
+                self.btn_checkout.setText("会計\n(担当者未選択)")
+            else:
+                self.btn_checkout.setText("会 計")
 
     def _update_stats(self, sales: int, expenses: int, profit: int, msg: str, is_red: bool) -> None:
         self.lbl_stats["総売上"].setText(f"総売上: ¥{sales:,}")
@@ -244,7 +248,6 @@ class MainWindow(QMainWindow):
 
     def _open_payment_dialog(self) -> None:
         total = self.cart_service.get_total_amount()
-        if total <= 0: return
         
         methods = self.payment_repo.fetch_all()
         dialog = PaymentDialog(total, methods, self)
@@ -274,7 +277,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(name_input)
         
         price_input = QSpinBox()
-        price_input.setRange(0, 999999)
+        price_input.setRange(-999999999, 999999999)
         price_input.setSingleStep(100)
         price_input.setValue(100)
         layout.addWidget(price_input)
@@ -286,8 +289,7 @@ class MainWindow(QMainWindow):
         
         if dialog.exec():
             val = price_input.value()
-            if val > 0:
-                self.cart_service.add_manual_item(val, name_input.text() or "手入力")
+            self.cart_service.add_manual_item(val, name_input.text() or "手入力")
 
     def _open_admin_window(self) -> None:
         admin = AdminWindow(self.analytics_service, self)
@@ -300,6 +302,7 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
+            self._check_checkout_button()
 
     def _open_settings_window(self):
         win = SettingsWindow(

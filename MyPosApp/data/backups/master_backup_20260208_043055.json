@@ -39,16 +39,6 @@
             "note": "",
             "display_order": 4,
             "is_active": true
-        },
-        {
-            "id": 5,
-            "name": "たこ焼き",
-            "price": 500,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 5,
-            "is_active": true
         }
     ],
     "users": [
@@ -86,14 +76,7 @@
             "is_active": true
         }
     ],
-    "initial_expenses": [
-        {
-            "id": 1,
-            "title": "仕入れ代",
-            "amount": 5000,
-            "timestamp": "2026-02-08 13:30:48"
-        }
-    ],
+    "initial_expenses": [],
     "discount_rules": [
         {
             "id": 1,

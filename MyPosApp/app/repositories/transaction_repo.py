@@ -46,7 +46,7 @@ class TransactionRepository(BaseRepository):
                 payments_data = [
                     (new_id, pay.payment_method, pay.amount)
                     for pay in tx.payments
-                    if pay.amount > 0 # 金額0円の決済は保存しない
+                    if pay.amount != 0 # 金額0円の決済は保存しない
                 ]
                 if payments_data:
                     cursor.executemany("""

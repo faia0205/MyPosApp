@@ -39,16 +39,6 @@
             "note": "",
             "display_order": 4,
             "is_active": true
-        },
-        {
-            "id": 5,
-            "name": "たこ焼き",
-            "price": 500,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 5,
-            "is_active": true
         }
     ],
     "users": [

@@ -15,7 +15,7 @@ class DiscountManager:
         inventory = []
         gross_total = 0
         for item in cart_items:
-            if item.id is not None and item.price > 0:
+            if item.id is not None and item.price >= 0:
                 inventory.append({
                     'id': item.id,
                     'name': item.name,

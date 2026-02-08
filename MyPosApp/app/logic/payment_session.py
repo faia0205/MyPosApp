@@ -24,16 +24,26 @@ class PaymentSession:
     def get_remaining(self) -> int:
         """不足金額"""
         paid = self.get_total_paid()
-        return max(0, self._total_amount - paid)
+
+        if self._total_amount >= 0:
+            return max(0, self._total_amount - paid)
+        else:
+            return min(0, self._total_amount - paid)
 
     def get_change(self) -> int:
         """お釣り"""
         paid = self.get_total_paid()
-        return max(0, paid - self._total_amount)
+        if self._total_amount >= 0:
+            return max(0, paid - self._total_amount)
+        else:
+            return max(0, abs(paid) - abs(self._total_amount)) if paid < self._total_amount else 0
 
     def is_complete(self) -> bool:
         """支払いが完了しているか"""
-        return self.get_total_paid() >= self._total_amount
+        if self._total_amount >= 0:
+            return self.get_total_paid() >= self._total_amount
+        else:
+            return self.get_total_paid() <= self._total_amount
 
     def add_payment(self, method_name: str, amount: int, is_cash: bool) -> bool:
         """
@@ -42,17 +52,27 @@ class PaymentSession:
         """
         if amount <= 0:
             return False
+        
+        if self._total_amount < 0:
+            amount = -abs(amount)
+        # 通常モードなら、マイナス入力は不可
+        elif amount < 0:
+            return False
 
-        # 非現金の場合、残額を超える支払いは自動的に残額に丸める（あるいは拒否する）
+        # 非現金の場合の過払いチェックなど（既存ロジック）
         if not is_cash:
             remaining = self.get_remaining()
-            if amount > remaining:
-                amount = remaining
+            # 返金時は「より小さく（よりマイナスに）」なるのを防ぐ
+            if self._total_amount < 0:
+                 if amount < remaining: # remaining=-1000, amount=-2000 はNG
+                     amount = remaining
+            else:
+                 if amount > remaining:
+                     amount = remaining
             
-            if amount <= 0: # 既に支払い完了している場合など
-                return False
+            if amount == 0: return False
 
-        # 既存の支払い方法があれば加算、なければ新規追加
+        # 既存の支払い方法があれば加算
         for pay in self._payments:
             if pay['name'] == method_name:
                 pay['amount'] += amount

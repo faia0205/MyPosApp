@@ -130,7 +130,10 @@ class DiscountEditDialog(QDialog):
         cm_h.addWidget(self.combo_qty_spin)
         btn_add_cm = QPushButton("追加")
         btn_add_cm.clicked.connect(self._add_combo_condition)
+        btn_remove_cm = QPushButton("削除")
+        btn_remove_cm.clicked.connect(self._remove_selected_combo)
         cm_h.addWidget(btn_add_cm)
+        cm_h.addWidget(btn_remove_cm)
         combo_lay.addLayout(cm_h)
 
         self.combo_list_widget = QListWidget()
@@ -163,7 +166,8 @@ class DiscountEditDialog(QDialog):
         layout.addWidget(btns)
 
     def _load_master_data(self):
-        self.products = self.product_service.get_active_products()
+        self.products = self.product_service.get_all_products() 
+        
         self.categories = sorted(list(set(p.category for p in self.products if p.category)))
         
         candidates = []
@@ -203,6 +207,9 @@ class DiscountEditDialog(QDialog):
 
     def _add_select_target(self):
         txt = self.select_target_combo.currentText()
+        if not txt: return
+        
+        # 重複チェック
         if txt not in self.bundle_targets:
             self.bundle_targets.append(txt)
             self.select_list_widget.addItem(txt)
@@ -216,10 +223,28 @@ class DiscountEditDialog(QDialog):
         if txt.startswith("[カテゴリ] "):
             target_type = 'category'
             target_val = txt.replace("[カテゴリ] ", "")
-            
-        cond = {'target': target_val, 'type': target_type, 'qty': qty}
-        self.bundle_conditions.append(cond)
-        self.combo_list_widget.addItem(f"{txt} x {qty}個")
+
+        # ★修正: 既存条件の検索と更新
+        found = False
+        for i, cond in enumerate(self.bundle_conditions):
+            if cond['target'] == target_val and cond['type'] == target_type:
+                # 既存があれば加算または更新 (ここでは加算)
+                self.bundle_conditions[i]['qty'] += qty
+                found = True
+                break
+        
+        if not found:
+            self.bundle_conditions.append({'target': target_val, 'type': target_type, 'qty': qty})
+
+        # リスト表示の再描画
+        self._refresh_combo_list()
+    
+    def _refresh_combo_list(self):
+        """内部リストを元に表示を更新"""
+        self.combo_list_widget.clear()
+        for cond in self.bundle_conditions:
+            prefix = "[カテゴリ] " if cond['type'] == 'category' else ""
+            self.combo_list_widget.addItem(f"{prefix}{cond['target']} x {cond['qty']}個")
 
     def _load_data(self):
         self.name_edit.setText(self.data['name'])
@@ -303,3 +328,23 @@ class DiscountEditDialog(QDialog):
             "is_auto": True,
             "is_active": self.active_chk.isChecked()
         }
+    
+    def _remove_selected_combo(self):
+        row = self.combo_list_widget.currentRow()
+        if row >= 0:
+            self.bundle_conditions.pop(row)
+            self._refresh_combo_list()
+
+    def accept(self):
+        # バンドルの場合、中身があるかチェック
+        idx = self.apply_combo.currentIndex()
+        if idx == 3: # Bundle
+            mode_idx = self.bundle_mode_combo.currentIndex()
+            if mode_idx == 0 and not self.bundle_targets:
+                QMessageBox.warning(self, "エラー", "対象商品が選択されていません")
+                return
+            elif mode_idx == 1 and not self.bundle_conditions:
+                QMessageBox.warning(self, "エラー", "組み合わせ条件が設定されていません")
+                return
+        
+        super().accept()

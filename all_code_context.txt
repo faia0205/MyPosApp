@@ -149,7 +149,20 @@ def create_tables():
     # --- データ投入 ---
     cursor.execute("SELECT count(*) FROM products")
     if cursor.fetchone()[0] == 0:
+        print("No users found. Creating default admin...")
+        # JSONがある場合はそこからロード、なければハードコードで作成
         data = load_master_data()
+
+        if data and "users" in data:
+            # JSONから投入 (既存ロジック)
+            u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
+            cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
+        else:
+            # JSONがない場合: デフォルト管理者を作成
+            cursor.execute("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", 
+                           ("初期管理者", "9999", "admin", 1))
+            print("Default admin created (Code: 9999).")
+        
         if data:
             print("Inserting initial data...")
 
@@ -180,36 +193,51 @@ def create_tables():
             """, presets_data)
 
             # Users
-            u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
-            cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
+            #u_data = [(u["name"], u["user_code"], u.get("role", "staff"), int(u.get("is_active", 1))) for u in data.get("users", [])]
+            #cursor.executemany("INSERT INTO users (name, user_code, role, is_active) VALUES (?, ?, ?, ?)", u_data)
 
             # Expenses
             for exp in data.get("initial_expenses", []):
                 cursor.execute("INSERT INTO expenses (title, amount) VALUES (?, ?)", (exp["title"], exp["amount"]))
 
             # ★ Discount Rules (新)
+            print("Loading discount rules...")
+            raw_rules = data.get("discount_rules", [])
+            print(f"Found {len(raw_rules)} rules in JSON.") # デバッグ用: JSONから何件見つかったか表示
+    
             d_rules = []
-            for r in data.get("discount_rules", []):
+            for r in raw_rules:
+                # target_value がJSONオブジェクト(辞書)の場合、文字列に変換して保存する安全策を追加
+                t_val = r.get("target_value", None)
+                if isinstance(t_val, (dict, list)):
+                    t_val = json.dumps(t_val, ensure_ascii=False)
+                
                 d_rules.append((
-                    r["name"], 
-                    r.get("discount_type", "fixed"), 
+                    r["name"],
+                    r.get("discount_type", "fixed"),
                     r.get("discount_value", 0),
                     r.get("apply_type", "cart"),
-                    r.get("target_value", None),
+                    t_val,
                     int(r.get("is_auto", 0)),
                     int(r.get("is_active", 1))
                 ))
-            
-            cursor.executemany("""
-                INSERT INTO discount_rules (name, discount_type, discount_value, apply_type, target_value, is_auto, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, d_rules)
-
+    
+            if d_rules:
+                cursor.executemany("""
+                    INSERT INTO discount_rules (name, discount_type, discount_value, apply_type,
+                    target_value, is_auto, is_active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, d_rules)
+                print(f"Inserted {len(d_rules)} discount rules.")
+            else:
+                print("No discount rules to insert.")
+    
             conn.commit()
             print("Data insertion completed.")
         else:
             print("No data inserted (JSON missing or invalid).")
     
+    conn.commit()
     conn.close()
     print("Database initialized.")
 
@@ -228,10 +256,17 @@ from PySide6.QtGui import QFont
 # appパッケージのパスを通す
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from app.config import DB_PATH
+from init_db import create_tables # init_dbをインポート
+
 from app.views.main_window import MainWindow
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+
+    if not os.path.exists(DB_PATH):
+        print("Database not found. Initializing...")
+        create_tables()
     
     # フォント設定
     font = QFont("Yu Gothic UI", 12)
@@ -319,7 +354,7 @@ class DiscountManager:
         inventory = []
         gross_total = 0
         for item in cart_items:
-            if item.id is not None and item.price > 0:
+            if item.id is not None and item.price >= 0:
                 inventory.append({
                     'id': item.id,
                     'name': item.name,
@@ -421,16 +456,26 @@ class PaymentSession:
     def get_remaining(self) -> int:
         """不足金額"""
         paid = self.get_total_paid()
-        return max(0, self._total_amount - paid)
+
+        if self._total_amount >= 0:
+            return max(0, self._total_amount - paid)
+        else:
+            return min(0, self._total_amount - paid)
 
     def get_change(self) -> int:
         """お釣り"""
         paid = self.get_total_paid()
-        return max(0, paid - self._total_amount)
+        if self._total_amount >= 0:
+            return max(0, paid - self._total_amount)
+        else:
+            return max(0, abs(paid) - abs(self._total_amount)) if paid < self._total_amount else 0
 
     def is_complete(self) -> bool:
         """支払いが完了しているか"""
-        return self.get_total_paid() >= self._total_amount
+        if self._total_amount >= 0:
+            return self.get_total_paid() >= self._total_amount
+        else:
+            return self.get_total_paid() <= self._total_amount
 
     def add_payment(self, method_name: str, amount: int, is_cash: bool) -> bool:
         """
@@ -2311,26 +2356,30 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
+from app.repositories.product_repo import ProductRepository # ★追加
+
 from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
 from app.services.analytics.processor import DataProcessor
 from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
-
 from app.services.interfaces.report_exporter import IReportExporter
 
 class AnalyticsService:
     def __init__(
-            self,
-            ana_repo: AnalyticsRepository,
-            trans_repo: TransactionRepository,
-            expense_repo: ExpenseRepository,
-            log_repo: LogRepository,
-            exporter: IReportExporter
-        ):
+        self,
+        ana_repo: AnalyticsRepository,
+        trans_repo: TransactionRepository,
+        expense_repo: ExpenseRepository,
+        log_repo: LogRepository,
+        prod_repo: ProductRepository, # ★追加: 商品マスタ参照用
+        exporter: IReportExporter
+    ):
         self.ana_repo = ana_repo
         self.trans_repo = trans_repo
         self.expense_repo = expense_repo
         self.log_repo = log_repo
+        self.prod_repo = prod_repo # ★保持
         self.exporter = exporter
+        
         self.JST = datetime.timezone(datetime.timedelta(hours=9), 'JST')
         self.strategies = {
             "standard": CrossTabStrategy(),
@@ -2496,80 +2545,128 @@ class AnalyticsService:
                         end_date=None) -> Dict[str, Any]:
         """
         動的分析のエントリーポイント
-        Viewから渡された文字列キーをEnumに変換し、適切な戦略を実行する
         """
-        
         # 1. データの取得
         raw_data = self.ana_repo.get_comprehensive_raw_data(start_date, end_date)
         if not raw_data:
             return {"df": pd.DataFrame(), "max_val": 0, "min_val": 0}
 
-        # 2. データ加工 (Processorへ委譲)
+        # 2. データ加工
         df = DataProcessor.process(raw_data)
-        
-        # 3. 軸の決定ロジック (Enum変換できなければ動的カラム名として扱う)
+
+        # 3. 軸の決定ロジック
         def get_axis(key):
-            # 文字列型のまま処理すべき特殊キーの判定
             if isinstance(key, str) and key.startswith("cust_attr:"):
-                # "cust_attr:sex" -> "cust_sex" (DataProcessorで作ったカラム名)
                 attr_name = key.split(":", 1)[1]
                 col_name = f"cust_{attr_name}"
-                
-                # データ内にその属性列が存在しない場合、エラー回避のため空列を作成
                 if col_name not in df.columns:
                     df[col_name] = "未設定"
                 return col_name
-
-            # 通常のEnumキーの判定
+            
             try:
                 return AnalysisAxis(key)
             except ValueError:
-                # Enumにもない、特殊キーでもない場合は None扱い
                 return AnalysisAxis.NONE
 
-        # ここで変換を実行 (try-exceptで囲まない)
         row_axis = get_axis(row_axis_key)
         col_axis = get_axis(col_axis_key)
         
-        # 集計値(Metric)は必ずEnumである必要がある
         try:
             metric = AnalysisMetric(metric_key)
         except ValueError:
             return {"df": pd.DataFrame(), "error": "Invalid metric parameters"}
-            
-        # 4. Strategy選択ロジック
-        # 縦軸と横軸が同じ、かつNONEではない場合は「バスケット分析」とみなす
-        # (Enum同士 または 文字列同士 の比較)
+
+        # 4. Strategy選択
         is_basket = (row_axis == col_axis) and (row_axis != AnalysisAxis.NONE)
-        
         strategy = self.strategies['basket'] if is_basket else self.strategies['standard']
-        
+
         # 5. 実行
         try:
             result_df = strategy.execute(df, row_axis, col_axis, metric)
+            
+            # ★変更: 行・列それぞれで「商品名」が選択されていればマスタ順にソートする
+            if not result_df.empty:
+                # 行 (Index) のソート
+                if row_axis == AnalysisAxis.PRODUCT_NAME:
+                    result_df = self._sort_by_product_master(result_df, axis=0)
+                
+                # 列 (Columns) のソート
+                if col_axis == AnalysisAxis.PRODUCT_NAME:
+                    result_df = self._sort_by_product_master(result_df, axis=1)
+
         except Exception as e:
-            # 万が一集計中にエラーが出た場合
             import traceback
             traceback.print_exc()
             return {"df": pd.DataFrame(), "error": f"Calculation Error: {str(e)}"}
-        
+
         # 6. View用の付加情報 (ヒートマップ用)
         numeric_df = result_df.select_dtypes(include=['number'])
-        
         if '合計' in numeric_df.index:
             numeric_df = numeric_df.drop('合計', axis=0)
         if '合計' in numeric_df.columns:
             numeric_df = numeric_df.drop('合計', axis=1)
-            
+
         max_val = numeric_df.max().max() if not numeric_df.empty else 0
         min_val = numeric_df.min().min() if not numeric_df.empty else 0
-        
+
         return {
             "df": result_df,
             "max_val": float(max_val),
             "min_val": float(min_val),
             "mode": "basket" if is_basket else "standard"
         }
+    
+    def _sort_by_product_master(self, df: pd.DataFrame, axis: int = 0) -> pd.DataFrame:
+        """
+        DataFrameのインデックス(axis=0) または カラム(axis=1) を並び替える。
+        順序: [カテゴリの並び順] > [単価(高い順)]
+        """
+        # 1. 全商品をモデルとして取得
+        products = self.prod_repo.fetch_all_as_models()
+        
+        # --- カテゴリの並び順を決定するロジック ---
+        # カテゴリごとに、そのカテゴリに含まれる商品の「最小 display_order」を探す。
+        # これにより、「設定画面で上に置いている商品が多いカテゴリ」が先頭に来る。
+        category_rank = {}
+        for p in products:
+            cat = p.category or "未分類"
+            current_min = category_rank.get(cat, 999999)
+            if p.display_order < current_min:
+                category_rank[cat] = p.display_order
+        
+        # 2. ソートキー作成
+        # 第1キー: カテゴリのランク (display_orderが小さい商品が含まれるカテゴリほど先)
+        # 第2キー: 価格の降順 (高い順。割引などのマイナスは最後になる)
+        products.sort(key=lambda p: (
+            category_rank.get(p.category or "未分類", 999999),
+            -p.price
+        ))
+        
+        # 3. ソート済み商品名のリストを作成
+        sorted_names = [p.name for p in products]
+        
+        # 4. 現在のDataFrameにあるラベル（インデックス or カラム）を取得
+        if axis == 0:
+            current_labels = df.index.tolist()
+        else:
+            current_labels = df.columns.tolist()
+        
+        # '合計' 行/列 があれば一時的に除外して確保
+        has_total = '合計' in current_labels
+        if has_total:
+            current_labels.remove('合計')
+            
+        # 5. マスタにある順序で並べる + マスタにないもの(手入力等)を後ろに追加
+        new_order = [n for n in sorted_names if n in current_labels]
+        remaining = [n for n in current_labels if n not in new_order]
+        new_order.extend(remaining)
+        
+        # '合計' を最後尾に戻す
+        if has_total:
+            new_order.append('合計')
+            
+        # 6. Reindex実行 (指定したaxisに対して並び替え適用)
+        return df.reindex(new_order, axis=axis)
     
     def get_initial_date_range(self):
         """データの最小日時と現在日時を返す"""
@@ -2928,6 +3025,11 @@ class CartService(QObject):
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
         """会計確定処理"""
+
+        if self.current_user_name in [None, "", "Guest"]:
+            self._notify_message("担当者が選択されていません。会計できません。", "error")
+            return
+        
         if not self.cart_items or not self.selected_customer:
             self._notify_message("カートが空か、客層が未選択です", "warning")
             return
@@ -4325,6 +4427,7 @@ class MainWindow(QMainWindow):
             trans_repo=self.trans_repo,
             expense_repo=self.expense_repo,
             log_repo=self.log_repo,
+            prod_repo=self.prod_repo,
             exporter=self.excel_exporter
         )
 
@@ -4437,12 +4540,16 @@ class MainWindow(QMainWindow):
 
     def _check_checkout_button(self):
         cust = self.cart_service.selected_customer
-        if cust:
+        has_user = self.cart_service.current_user_name not in [None, "", "Guest"]
+        if cust and has_user:
             self.btn_checkout.setEnabled(True)
             self.btn_checkout.setText(f"会計\n({cust.label})")
         else:
             self.btn_checkout.setEnabled(False)
-            self.btn_checkout.setText("会 計")
+            if not has_user:
+                self.btn_checkout.setText("会計\n(担当者未選択)")
+            else:
+                self.btn_checkout.setText("会 計")
 
     def _update_stats(self, sales: int, expenses: int, profit: int, msg: str, is_red: bool) -> None:
         self.lbl_stats["総売上"].setText(f"総売上: ¥{sales:,}")
@@ -4454,7 +4561,6 @@ class MainWindow(QMainWindow):
 
     def _open_payment_dialog(self) -> None:
         total = self.cart_service.get_total_amount()
-        if total <= 0: return
         
         methods = self.payment_repo.fetch_all()
         dialog = PaymentDialog(total, methods, self)
@@ -4484,7 +4590,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(name_input)
         
         price_input = QSpinBox()
-        price_input.setRange(0, 999999)
+        price_input.setRange(-999999999, 999999999)
         price_input.setSingleStep(100)
         price_input.setValue(100)
         layout.addWidget(price_input)
@@ -4496,8 +4602,7 @@ class MainWindow(QMainWindow):
         
         if dialog.exec():
             val = price_input.value()
-            if val > 0:
-                self.cart_service.add_manual_item(val, name_input.text() or "手入力")
+            self.cart_service.add_manual_item(val, name_input.text() or "手入力")
 
     def _open_admin_window(self) -> None:
         admin = AdminWindow(self.analytics_service, self)
@@ -4510,6 +4615,7 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
+            self._check_checkout_button()
 
     def _open_settings_window(self):
         win = SettingsWindow(
@@ -5513,7 +5619,10 @@ class DiscountEditDialog(QDialog):
         cm_h.addWidget(self.combo_qty_spin)
         btn_add_cm = QPushButton("追加")
         btn_add_cm.clicked.connect(self._add_combo_condition)
+        btn_remove_cm = QPushButton("削除")
+        btn_remove_cm.clicked.connect(self._remove_selected_combo)
         cm_h.addWidget(btn_add_cm)
+        cm_h.addWidget(btn_remove_cm)
         combo_lay.addLayout(cm_h)
 
         self.combo_list_widget = QListWidget()
@@ -5546,7 +5655,8 @@ class DiscountEditDialog(QDialog):
         layout.addWidget(btns)
 
     def _load_master_data(self):
-        self.products = self.product_service.get_active_products()
+        self.products = self.product_service.get_all_products() 
+        
         self.categories = sorted(list(set(p.category for p in self.products if p.category)))
         
         candidates = []
@@ -5586,6 +5696,9 @@ class DiscountEditDialog(QDialog):
 
     def _add_select_target(self):
         txt = self.select_target_combo.currentText()
+        if not txt: return
+        
+        # 重複チェック
         if txt not in self.bundle_targets:
             self.bundle_targets.append(txt)
             self.select_list_widget.addItem(txt)
@@ -5599,10 +5712,28 @@ class DiscountEditDialog(QDialog):
         if txt.startswith("[カテゴリ] "):
             target_type = 'category'
             target_val = txt.replace("[カテゴリ] ", "")
-            
-        cond = {'target': target_val, 'type': target_type, 'qty': qty}
-        self.bundle_conditions.append(cond)
-        self.combo_list_widget.addItem(f"{txt} x {qty}個")
+
+        # ★修正: 既存条件の検索と更新
+        found = False
+        for i, cond in enumerate(self.bundle_conditions):
+            if cond['target'] == target_val and cond['type'] == target_type:
+                # 既存があれば加算または更新 (ここでは加算)
+                self.bundle_conditions[i]['qty'] += qty
+                found = True
+                break
+        
+        if not found:
+            self.bundle_conditions.append({'target': target_val, 'type': target_type, 'qty': qty})
+
+        # リスト表示の再描画
+        self._refresh_combo_list()
+    
+    def _refresh_combo_list(self):
+        """内部リストを元に表示を更新"""
+        self.combo_list_widget.clear()
+        for cond in self.bundle_conditions:
+            prefix = "[カテゴリ] " if cond['type'] == 'category' else ""
+            self.combo_list_widget.addItem(f"{prefix}{cond['target']} x {cond['qty']}個")
 
     def _load_data(self):
         self.name_edit.setText(self.data['name'])
@@ -5686,6 +5817,26 @@ class DiscountEditDialog(QDialog):
             "is_auto": True,
             "is_active": self.active_chk.isChecked()
         }
+    
+    def _remove_selected_combo(self):
+        row = self.combo_list_widget.currentRow()
+        if row >= 0:
+            self.bundle_conditions.pop(row)
+            self._refresh_combo_list()
+
+    def accept(self):
+        # バンドルの場合、中身があるかチェック
+        idx = self.apply_combo.currentIndex()
+        if idx == 3: # Bundle
+            mode_idx = self.bundle_mode_combo.currentIndex()
+            if mode_idx == 0 and not self.bundle_targets:
+                QMessageBox.warning(self, "エラー", "対象商品が選択されていません")
+                return
+            elif mode_idx == 1 and not self.bundle_conditions:
+                QMessageBox.warning(self, "エラー", "組み合わせ条件が設定されていません")
+                return
+        
+        super().accept()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\expense_edit_dialog.py
@@ -6064,7 +6215,7 @@ class PaymentDialog(QDialog):
     def _set_buffer_to_remaining(self):
         """残額を自動入力するUI補助機能"""
         remain = self.session.get_remaining()
-        if remain > 0:
+        if remain != 0:
             self.input_buffer = str(remain)
             self.is_initial_input = True
         else:
@@ -6079,7 +6230,7 @@ class PaymentDialog(QDialog):
         
         if self.input_buffer == "0" and text == "0": return
         if self.input_buffer == "0" and text != "00": self.input_buffer = ""
-        if len(self.input_buffer + text) > 8: return
+        if len(self.input_buffer + text) > 10: return
         
         self.input_buffer += text
         self._update_input_display()
@@ -6132,15 +6283,15 @@ class PaymentDialog(QDialog):
         remaining = self.session.get_remaining()
         change = self.session.get_change()
 
-        if remaining > 0:
-            self.lbl_status_title.setText("不足金額")
+        if remaining != 0:
+            self.lbl_status_title.setText("不足金額" if remaining > 0 else "要返金額")
             self.lbl_status_title.setStyleSheet("font-size: 18px; color: #ff8a80;")
             
             self.lbl_status_amount.setText(f"¥{remaining:,}")
             self.lbl_status_amount.setStyleSheet("font-size: 42px; font-weight: bold; color: #ff8a80;")
 
             self.btn_finish.setEnabled(False)
-            self.btn_finish.setText("金額不足")
+            self.btn_finish.setText("金額不足" if remaining > 0 else "返金未了")
             self.btn_finish.setStyleSheet("background-color: #555; color: #aaa; font-size: 24px; font-weight: bold; border-radius: 10px;")
 
             self.btn_enter.setEnabled(True)
@@ -7827,6 +7978,140 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\master_data.json
+==================================================
+
+{
+    "products": [
+        {
+            "id": 1,
+            "name": "商品A",
+            "price": 150,
+            "category": "商品",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "商品2",
+            "price": 200,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 2,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "商品C",
+            "price": 800,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 3,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "割引カードA",
+            "price": 0,
+            "category": "割引",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "たこ焼き",
+            "price": 500,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 5,
+            "is_active": true
+        }
+    ],
+    "users": [
+        {
+            "id": 1,
+            "name": "ユーザーA",
+            "user_code": "001",
+            "role": "staff",
+            "is_active": true
+        }
+    ],
+    "customers_presets": [
+        {
+            "id": 1,
+            "label": "客層A",
+            "attributes": {
+                "sex": "male"
+            },
+            "color": "#90caf9",
+            "display_order": 1,
+            "is_active": true
+        }
+    ],
+    "payment_methods": [
+        {
+            "id": 1,
+            "name": "現金",
+            "is_cash": true,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "PayPay",
+            "is_cash": false,
+            "is_active": true
+        }
+    ],
+    "initial_expenses": [
+        {
+            "id": 1,
+            "title": "仕入れ代",
+            "amount": 5000,
+            "timestamp": "2026-02-08 13:30:48"
+        }
+    ],
+    "discount_rules": [
+        {
+            "id": 1,
+            "name": "商品A2_50円引き",
+            "discount_type": "fixed",
+            "discount_value": 50,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"商品2\", \"type\": \"item\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "商品AC50%引き",
+            "discount_type": "percent",
+            "discount_value": 50,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"商品C\", \"type\": \"item\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "割引",
+            "discount_type": "percent",
+            "discount_value": 30,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"割引カードA\", \"type\": \"item\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        }
+    ]
+}
+
+==================================================
+File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\master_data_.json
 ==================================================
 
 {
