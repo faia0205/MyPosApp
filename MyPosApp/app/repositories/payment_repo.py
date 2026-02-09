@@ -75,3 +75,20 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの決済方法を削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM payment_methods")
+                    print("[Payment] Deleted ALL methods (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM payment_methods WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Payment] Deleted {cursor.rowcount} methods not in JSON.")
+        except Exception as e:
+            print(f"Error executing Payment delete_not_in: {e}")

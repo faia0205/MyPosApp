@@ -134,3 +134,20 @@ class CustomerRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの客層プリセットを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM customer_presets")
+                    print("[Customer] Deleted ALL presets (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM customer_presets WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f("[Customer] Deleted {cursor.rowcount} presets not in JSON."))
+        except Exception as e:
+            print(f"Error executing Customer delete_not_in: {e}")

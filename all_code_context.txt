@@ -484,17 +484,27 @@ class PaymentSession:
         """
         if amount <= 0:
             return False
+        
+        if self._total_amount < 0:
+            amount = -abs(amount)
+        # 通常モードなら、マイナス入力は不可
+        elif amount < 0:
+            return False
 
-        # 非現金の場合、残額を超える支払いは自動的に残額に丸める（あるいは拒否する）
+        # 非現金の場合の過払いチェックなど（既存ロジック）
         if not is_cash:
             remaining = self.get_remaining()
-            if amount > remaining:
-                amount = remaining
+            # 返金時は「より小さく（よりマイナスに）」なるのを防ぐ
+            if self._total_amount < 0:
+                 if amount < remaining: # remaining=-1000, amount=-2000 はNG
+                     amount = remaining
+            else:
+                 if amount > remaining:
+                     amount = remaining
             
-            if amount <= 0: # 既に支払い完了している場合など
-                return False
+            if amount == 0: return False
 
-        # 既存の支払い方法があれば加算、なければ新規追加
+        # 既存の支払い方法があれば加算
         for pay in self._payments:
             if pay['name'] == method_name:
                 pay['amount'] += amount
@@ -1571,6 +1581,23 @@ class CustomerRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの客層プリセットを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM customer_presets")
+                    print("[Customer] Deleted ALL presets (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM customer_presets WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f("[Customer] Deleted {cursor.rowcount} presets not in JSON."))
+        except Exception as e:
+            print(f"Error executing Customer delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
@@ -1699,6 +1726,23 @@ class DiscountRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの割引ルールを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM discount_rules")
+                    print("[Discount] Deleted ALL rules (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM discount_rules WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Discount] Deleted {cursor.rowcount} rules not in JSON.")
+        except Exception as e:
+            print(f"Error executing Discount delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
@@ -1794,6 +1838,23 @@ class ExpenseRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの経費データを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM expenses")
+                    print("[Expense] Deleted ALL expenses (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM expenses WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Expense] Deleted {cursor.rowcount} expenses not in JSON.")
+        except Exception as e:
+            print(f"Error executing Expense delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\log_repo.py
@@ -1900,6 +1961,23 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの決済方法を削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM payment_methods")
+                    print("[Payment] Deleted ALL methods (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM payment_methods WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Payment] Deleted {cursor.rowcount} methods not in JSON.")
+        except Exception as e:
+            print(f"Error executing Payment delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\product_repo.py
@@ -2056,6 +2134,25 @@ class ProductRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの商品を削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    # リストが空＝JSONにデータがない＝全削除
+                    cursor.execute("DELETE FROM products") # ★ここを各テーブル名に変更
+                    print("[Product] Deleted ALL items (JSON empty).")
+                else:
+                    # IDリストに含まれないものを削除
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM products WHERE id NOT IN ({placeholders})" # ★ここを各テーブル名に変更
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Product] Deleted {cursor.rowcount} items not in JSON.")
+        except Exception as e:
+            print(f"Error executing delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\transaction_repo.py
@@ -2109,7 +2206,7 @@ class TransactionRepository(BaseRepository):
                 payments_data = [
                     (new_id, pay.payment_method, pay.amount)
                     for pay in tx.payments
-                    if pay.amount > 0 # 金額0円の決済は保存しない
+                    if pay.amount != 0 # 金額0円の決済は保存しない
                 ]
                 if payments_data:
                     cursor.executemany("""
@@ -2303,6 +2400,25 @@ class UserRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDのユーザーを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    # JSONが空＝全削除
+                    cursor.execute("DELETE FROM users")
+                    print("[User] Deleted ALL users (JSON empty).")
+                else:
+                    # IDリストに含まれないものを削除
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM users WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[User] Deleted {cursor.rowcount} users not in JSON.")
+        except Exception as e:
+            print(f"Error executing User delete_not_in: {e}")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\__init__.py
@@ -2340,6 +2456,15 @@ class IMasterDataRepository(ABC):
     def import_all_data(self, data_list: List[Dict[str, Any]]) -> bool:
         """
         辞書リストを受け取り、DBに反映させる
+        """
+        pass
+
+    @abstractmethod
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """
+        指定されたIDリストに含まれないレコードを削除する
+        active_ids が空の場合は全削除を行う。
+        （JSONに記述がないデータをDBから消去するためのメソッド）
         """
         pass
 
@@ -3021,7 +3146,7 @@ class CartService(QObject):
     def get_total_amount(self) -> int:
         sub_prod = sum(item.price * item.qty for item in self.cart_items)
         sub_disc = sum(d.amount for d in self.applied_discounts) 
-        return max(0, sub_prod + sub_disc)
+        return sub_prod + sub_disc
 
     def finalize_checkout(self, payments: List[Tuple[str, int]], change: int) -> None:
         """会計確定処理"""
@@ -3092,7 +3217,7 @@ class CartService(QObject):
         
         # 0円より大きい支払いのみを保存対象にする
         for p in temp_payments:
-            if p['amount'] > 0:
+            if p['amount'] != 0:
                 tx_payments.append(TransactionPayment(
                     id=None,
                     transaction_id=None,
@@ -3502,7 +3627,7 @@ import json
 import shutil
 import os
 import datetime
-from typing import Dict
+from typing import Dict, List
 
 # Config
 from app.config import DATA_DIR
@@ -3585,6 +3710,7 @@ class MasterDataService:
             with open(MASTER_JSON_PATH, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
+            print(f"JSON load error: {MASTER_JSON_PATH}")
             return {}
 
     # ==========================================
@@ -3592,21 +3718,96 @@ class MasterDataService:
     # ==========================================
     def sync_json_to_db(self):
         """
-        起動時用: JSONの内容をDBに反映（簡易同期）
-        詳細な判定ロジックは各リポジトリの import_data に委譲
+        JSONの内容をDBに完全同期（削除も反映）
+        起動時および設定のリセット時に使用
         """
         data = self._load_json_safe()
         if not data:
             return
 
-        print("Syncing JSON to DB...")
+        print("Starting Full Sync (JSON -> DB)...")
+        self._apply_data_to_repositories(data)
+        print("Sync completed.")
+        
+        self.check_integrity()
 
+    def restore_from_dict(self, data: Dict):
+        """
+        メモリ上の辞書データからDBを復元する (設定画面の「破棄」用)
+        """
+        print("Restoring DB from backup dictionary...")
+        self._apply_data_to_repositories(data)
+        print("Restore completed.")
+    
+    def _apply_data_to_repositories(self, data: Dict):
+        """
+        共通反映ロジック:
+        1. JSON(辞書)にあるIDリストを抽出
+        2. それ以外のIDをDBから削除 (Delete)
+        3. JSON(辞書)のデータでDBを更新/追加 (Upsert)
+        """
         for repo in self.repositories:
             key = repo.get_master_key()
             target_data = data.get(key, [])
+            
+            # 1. 有効なIDリストを作成 (IDを持っているものだけ)
+            valid_ids = [item['id'] for item in target_data if item.get('id') is not None]
+            
+            # 2. リストにないIDを削除 (完全同期)
+            try:
+                repo.delete_not_in(valid_ids)
+            except Exception as e:
+                print(f"Failed to delete obsolete data for {key}: {e}")
+
+            # 3. データの取り込み (Upsert)
             if target_data:
                 repo.import_all_data(target_data)
-        print("Sync completed.")
+    
+    def get_current_data_as_dict(self) -> Dict:
+        """現在のDBの状態を辞書として取得 (メモリバックアップ用)"""
+        master_data = {}
+        for repo in self.repositories:
+            key = repo.get_master_key()
+            master_data[key] = repo.export_all_data()
+        return master_data
+    
+    def check_integrity(self):
+        """整合性チェック: 存在しない商品を対象にしている割引ルールがないか確認"""
+        print("Checking data integrity...")
+        
+        # 1. 現在の全商品名を取得
+        product_repo = self.repositories[0]  # 配列順序に依存するのは少し危険ですが、今回は簡易的に
+        # または明示的に product_repo を探す処理を入れる
+        
+        products = product_repo.fetch_all_as_models()
+        valid_names = {p.name for p in products} # 存在する商品名のセット(Set)
+
+        # 2. 割引ルールをチェック
+        discount_repo = None
+        for r in self.repositories:
+            if r.get_master_key() == "discount_rules":
+                discount_repo = r
+                break
+        
+        if discount_repo:
+            rules = discount_repo.fetch_all_rules()
+            for rule in rules:
+                # 商品指定のルールの場合
+                if rule.apply_type == 'item':
+                    if rule.target_value not in valid_names:
+                        print(f"⚠️ 警告: 割引ルール「{rule.name}」の対象商品「{rule.target_value}」が見つかりません。")
+                
+                # カテゴリ指定の場合
+                elif rule.apply_type == 'category':
+                    # カテゴリ名のチェックロジック（必要なら実装）
+                    pass
+
+                # バンドル指定の場合
+                elif rule.apply_type == 'bundle':
+                    # JSON文字列の中に商品名が含まれているかチェック（少し複雑）
+                    # 簡易的にチェックするなら target_value 内の文字列検索などで対応
+                    pass
+        print("Integrity check completed.")
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\payment_service.py
@@ -4642,6 +4843,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\view
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                                QPushButton, QMessageBox, QLabel, QWidget)
+from PySide6.QtGui import QCloseEvent
 # from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
 from app.services.product_service import ProductService
@@ -4687,6 +4889,10 @@ class SettingsWindow(QDialog):
         self.expense_service = expense_service
         self.discount_service = discount_service
         self.master_service = master_service
+
+        # 開いた時点でのデータをバックアップ (メモリ保持)
+        self.backup_data = self.master_service.get_current_data_as_dict()
+        self.is_saved = False # 保存ボタンが押されたかどうかのフラグ
 
         self.setWindowTitle("システム設定・マスタ管理")
         self.resize(1000, 700)
@@ -4764,15 +4970,51 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.tabs)
 
     def _export_to_json(self):
-        """DBの内容をJSONに書き出す"""
-        msg = "現在のデータベースの設定内容で `master_data.json` を上書きします。\n\nこれにより、次回「初期化」を行った際にもこの設定が復元されます。\n実行しますか？"
+        """保存ボタン処理: JSON出力してフラグを立てる"""
+        msg = "現在の設定を保存し、次回起動時にも適用されるようにしますか？"
         if QMessageBox.question(self, "確認", msg) != QMessageBox.Yes:
             return
 
         if self.master_service.save_db_to_json():
-            QMessageBox.information(self, "完了", "JSONファイルへの出力が完了しました。\nバックアップファイルも作成されました。")
+            QMessageBox.information(self, "完了", "設定を保存しました。")
+            self.is_saved = True # ★フラグを立てる
+            self.accept()        # ウィンドウを閉じる
         else:
-            QMessageBox.critical(self, "エラー", "出力に失敗しました。ログを確認してください。")
+            QMessageBox.critical(self, "エラー", "保存に失敗しました。")
+    
+    def closeEvent(self, event: QCloseEvent):
+        """閉じるイベントの検知"""
+        if self.is_saved:
+            event.accept()
+            return
+
+        # 保存していない場合の確認ダイアログ
+        msg = "設定変更を保存して終了しますか？\n\n" \
+              "【Yes】   変更をJSONに保存して終了\n" \
+              "【No】    変更を破棄して元の状態に戻す\n" \
+              "【Cancel】編集を続ける"
+        
+        res = QMessageBox.question(self, "設定の保存", msg, 
+                                   QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 保存処理
+            if self.master_service.save_db_to_json():
+                self.is_saved = True
+                event.accept()
+            else:
+                QMessageBox.critical(self, "エラー", "保存に失敗しました。")
+                event.ignore()
+
+        elif res == QMessageBox.No:
+            # 破棄処理 (バックアップから復元)
+            self.master_service.restore_from_dict(self.backup_data)
+            print("Settings discarded. Reverted to backup.")
+            event.accept()
+
+        else:
+            # キャンセル
+            event.ignore()
 
 ==================================================
 File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\__init__.py
@@ -6213,14 +6455,14 @@ class PaymentDialog(QDialog):
         self._set_buffer_to_remaining()
 
     def _set_buffer_to_remaining(self):
-        """残額を自動入力するUI補助機能"""
         remain = self.session.get_remaining()
         if remain != 0:
-            self.input_buffer = str(remain)
+            self.input_buffer = str(abs(remain))
             self.is_initial_input = True
         else:
             self.input_buffer = ""
             self.is_initial_input = False
+            
         self._update_input_display()
 
     def _on_numpad(self, text):
@@ -8023,7 +8265,7 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         },
         {
-            "id": 5,
+            "id": 6,
             "name": "たこ焼き",
             "price": 500,
             "category": "フード",
@@ -8031,13 +8273,30 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "note": "",
             "display_order": 5,
             "is_active": true
+        },
+        {
+            "id": 7,
+            "name": "JSONテスト商品",
+            "price": 500,
+            "category": "テスト",
+            "color": "#ff0000",
+            "note": "手動追加",
+            "display_order": 6,
+            "is_active": true
         }
     ],
     "users": [
         {
             "id": 1,
-            "name": "ユーザーA",
+            "name": "ユーザーB",
             "user_code": "001",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "ユーザーC",
+            "user_code": "002",
             "role": "staff",
             "is_active": true
         }
@@ -8045,12 +8304,20 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
     "customers_presets": [
         {
             "id": 1,
-            "label": "客層A",
+            "label": "客層B",
             "attributes": {
                 "sex": "male"
             },
             "color": "#90caf9",
             "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "label": "客層C",
+            "attributes": {},
+            "color": "#90caf9",
+            "display_order": 2,
             "is_active": true
         }
     ],
@@ -8066,9 +8333,27 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "name": "PayPay",
             "is_cash": false,
             "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "デビットカード",
+            "is_cash": false,
+            "is_active": true
         }
     ],
     "initial_expenses": [
+        {
+            "id": 3,
+            "title": "テストA",
+            "amount": 1,
+            "timestamp": "2026-02-09 22:37:59"
+        },
+        {
+            "id": 2,
+            "title": "開店資金",
+            "amount": 20000,
+            "timestamp": "2026-02-09 09:00:00"
+        },
         {
             "id": 1,
             "title": "仕入れ代",
@@ -8104,6 +8389,16 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "discount_value": 30,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"割引カードA\", \"type\": \"item\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "テスト",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "cart",
+            "target_value": "",
             "is_auto": true,
             "is_active": true
         }

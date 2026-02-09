@@ -149,3 +149,22 @@ class ProductRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの商品を削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    # リストが空＝JSONにデータがない＝全削除
+                    cursor.execute("DELETE FROM products") # ★ここを各テーブル名に変更
+                    print("[Product] Deleted ALL items (JSON empty).")
+                else:
+                    # IDリストに含まれないものを削除
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM products WHERE id NOT IN ({placeholders})" # ★ここを各テーブル名に変更
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Product] Deleted {cursor.rowcount} items not in JSON.")
+        except Exception as e:
+            print(f"Error executing delete_not_in: {e}")

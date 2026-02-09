@@ -121,3 +121,20 @@ class DiscountRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDの割引ルールを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    cursor.execute("DELETE FROM discount_rules")
+                    print("[Discount] Deleted ALL rules (JSON empty).")
+                else:
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM discount_rules WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[Discount] Deleted {cursor.rowcount} rules not in JSON.")
+        except Exception as e:
+            print(f"Error executing Discount delete_not_in: {e}")

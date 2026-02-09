@@ -26,3 +26,12 @@ class IMasterDataRepository(ABC):
         辞書リストを受け取り、DBに反映させる
         """
         pass
+
+    @abstractmethod
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """
+        指定されたIDリストに含まれないレコードを削除する
+        active_ids が空の場合は全削除を行う。
+        （JSONに記述がないデータをDBから消去するためのメソッド）
+        """
+        pass

@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
                                QPushButton, QMessageBox, QLabel, QWidget)
+from PySide6.QtGui import QCloseEvent
 # from PySide6.QtCore import Qt
 from app.services.master_data_service import MasterDataService
 from app.services.product_service import ProductService
@@ -45,6 +46,10 @@ class SettingsWindow(QDialog):
         self.expense_service = expense_service
         self.discount_service = discount_service
         self.master_service = master_service
+
+        # 開いた時点でのデータをバックアップ (メモリ保持)
+        self.backup_data = self.master_service.get_current_data_as_dict()
+        self.is_saved = False # 保存ボタンが押されたかどうかのフラグ
 
         self.setWindowTitle("システム設定・マスタ管理")
         self.resize(1000, 700)
@@ -122,12 +127,48 @@ class SettingsWindow(QDialog):
         layout.addWidget(self.tabs)
 
     def _export_to_json(self):
-        """DBの内容をJSONに書き出す"""
-        msg = "現在のデータベースの設定内容で `master_data.json` を上書きします。\n\nこれにより、次回「初期化」を行った際にもこの設定が復元されます。\n実行しますか？"
+        """保存ボタン処理: JSON出力してフラグを立てる"""
+        msg = "現在の設定を保存し、次回起動時にも適用されるようにしますか？"
         if QMessageBox.question(self, "確認", msg) != QMessageBox.Yes:
             return
 
         if self.master_service.save_db_to_json():
-            QMessageBox.information(self, "完了", "JSONファイルへの出力が完了しました。\nバックアップファイルも作成されました。")
+            QMessageBox.information(self, "完了", "設定を保存しました。")
+            self.is_saved = True # ★フラグを立てる
+            self.accept()        # ウィンドウを閉じる
         else:
-            QMessageBox.critical(self, "エラー", "出力に失敗しました。ログを確認してください。")
+            QMessageBox.critical(self, "エラー", "保存に失敗しました。")
+    
+    def closeEvent(self, event: QCloseEvent):
+        """閉じるイベントの検知"""
+        if self.is_saved:
+            event.accept()
+            return
+
+        # 保存していない場合の確認ダイアログ
+        msg = "設定変更を保存して終了しますか？\n\n" \
+              "【Yes】   変更をJSONに保存して終了\n" \
+              "【No】    変更を破棄して元の状態に戻す\n" \
+              "【Cancel】編集を続ける"
+        
+        res = QMessageBox.question(self, "設定の保存", msg, 
+                                   QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+
+        if res == QMessageBox.Yes:
+            # 保存処理
+            if self.master_service.save_db_to_json():
+                self.is_saved = True
+                event.accept()
+            else:
+                QMessageBox.critical(self, "エラー", "保存に失敗しました。")
+                event.ignore()
+
+        elif res == QMessageBox.No:
+            # 破棄処理 (バックアップから復元)
+            self.master_service.restore_from_dict(self.backup_data)
+            print("Settings discarded. Reverted to backup.")
+            event.accept()
+
+        else:
+            # キャンセル
+            event.ignore()

@@ -121,3 +121,22 @@ class UserRepository(BaseRepository, IMasterDataRepository):
             if not self.import_data(data):
                 success = False
         return success
+    
+    def delete_not_in(self, active_ids: List[int]) -> None:
+        """JSONにないIDのユーザーを削除"""
+        try:
+            with self.transaction() as (conn, cursor):
+                if not active_ids:
+                    # JSONが空＝全削除
+                    cursor.execute("DELETE FROM users")
+                    print("[User] Deleted ALL users (JSON empty).")
+                else:
+                    # IDリストに含まれないものを削除
+                    placeholders = ','.join(['?'] * len(active_ids))
+                    sql = f"DELETE FROM users WHERE id NOT IN ({placeholders})"
+                    cursor.execute(sql, active_ids)
+                    
+                    if cursor.rowcount > 0:
+                        print(f"[User] Deleted {cursor.rowcount} users not in JSON.")
+        except Exception as e:
+            print(f"Error executing User delete_not_in: {e}")
