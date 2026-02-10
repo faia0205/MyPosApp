@@ -42,7 +42,7 @@
         },
         {
             "id": 12,
-            "name": "商品A",
+            "name": "商品",
             "price": 150,
             "category": "商品",
             "color": "#ffcc80",

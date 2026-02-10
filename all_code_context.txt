@@ -3775,38 +3775,71 @@ class MasterDataService:
         """整合性チェック: 存在しない商品を対象にしている割引ルールがないか確認"""
         print("Checking data integrity...")
         
-        # 1. 現在の全商品名を取得
-        product_repo = self.repositories[0]  # 配列順序に依存するのは少し危険ですが、今回は簡易的に
-        # または明示的に product_repo を探す処理を入れる
+        # 1. 比較用の正解データ（商品名セット、カテゴリ名セット）を作成
+        # リポジトリリストからProductRepositoryを探す（安全策）
+        product_repo = next((r for r in self.repositories if r.get_master_key() == 'products'), None)
         
-        products = product_repo.fetch_all_as_models()
-        valid_names = {p.name for p in products} # 存在する商品名のセット(Set)
+        if not product_repo:
+            print("Skipping integrity check: Product repository not found.")
+            return
 
-        # 2. 割引ルールをチェック
-        discount_repo = None
-        for r in self.repositories:
-            if r.get_master_key() == "discount_rules":
-                discount_repo = r
-                break
+        products = product_repo.fetch_all_as_models()
+        valid_product_names = {p.name for p in products}
+        # カテゴリはNoneや空文字を除外してセット化
+        valid_categories = {p.category for p in products if p.category}
+
+        # 2. 割引ルールリポジトリを取得してチェック開始
+        discount_repo = next((r for r in self.repositories if r.get_master_key() == 'discount_rules'), None)
         
         if discount_repo:
             rules = discount_repo.fetch_all_rules()
+            
             for rule in rules:
-                # 商品指定のルールの場合
-                if rule.apply_type == 'item':
-                    if rule.target_value not in valid_names:
-                        print(f"⚠️ 警告: 割引ルール「{rule.name}」の対象商品「{rule.target_value}」が見つかりません。")
+                # 無効なルールも一応チェックしますが、ノイズになるなら if not rule.is_active: continue を入れてもOK
                 
-                # カテゴリ指定の場合
+                # --- A. 商品指定 (Item) ---
+                if rule.apply_type == 'item':
+                    if rule.target_value not in valid_product_names:
+                        print(f"⚠️ [整合性警告] ルールID:{rule.id}「{rule.name}」の対象商品「{rule.target_value}」が存在しません。")
+                
+                # --- B. カテゴリ指定 (Category) ---
                 elif rule.apply_type == 'category':
-                    # カテゴリ名のチェックロジック（必要なら実装）
-                    pass
+                    if rule.target_value not in valid_categories:
+                        print(f"⚠️ [整合性警告] ルールID:{rule.id}「{rule.name}」の対象カテゴリ「{rule.target_value}」が存在しません(商品未登録のカテゴリの可能性あり)。")
 
-                # バンドル指定の場合
+                # --- C. バンドル指定 (Bundle) ---
                 elif rule.apply_type == 'bundle':
-                    # JSON文字列の中に商品名が含まれているかチェック（少し複雑）
-                    # 簡易的にチェックするなら target_value 内の文字列検索などで対応
-                    pass
+                    try:
+                        data = json.loads(rule.target_value)
+                        mode = data.get('mode')
+
+                        # C-1. 選択式 (Select Mode) -> "targets": ["商品A", "カテゴリB"]
+                        if mode == 'select':
+                            targets = data.get('targets', [])
+                            for t in targets:
+                                # selectモードは配列に商品名とカテゴリ名が混在して入っている仕様
+                                if t not in valid_product_names and t not in valid_categories:
+                                    print(f"⚠️ [整合性警告] ルールID:{rule.id}「{rule.name}」のバンドル対象「{t}」が見つかりません。")
+
+                        # C-2. 組み合わせ (Combo Mode) -> "conditions": [{"target": "...", "type": "item/category"}]
+                        elif mode == 'combo':
+                            conditions = data.get('conditions', [])
+                            for cond in conditions:
+                                target = cond.get('target')
+                                t_type = cond.get('type') # 'item' or 'category'
+                                
+                                if t_type == 'item':
+                                    if target not in valid_product_names:
+                                        print(f"⚠️ [整合性警告] ルールID:{rule.id}「{rule.name}」のバンドル条件(商品)「{target}」が存在しません。")
+                                elif t_type == 'category':
+                                    if target not in valid_categories:
+                                        print(f"⚠️ [整合性警告] ルールID:{rule.id}「{rule.name}」のバンドル条件(カテゴリ)「{target}」が存在しません。")
+                                        
+                    except json.JSONDecodeError:
+                        print(f"⚠️ [JSONエラー] ルールID:{rule.id}「{rule.name}」の定義が破損しています。")
+                    except Exception as e:
+                        print(f"⚠️ [不明なエラー] ルールID:{rule.id}「{rule.name}」のチェック中にエラー: {e}")
+
         print("Integrity check completed.")
 
 ==================================================
@@ -8225,16 +8258,6 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
 {
     "products": [
         {
-            "id": 1,
-            "name": "商品A",
-            "price": 150,
-            "category": "商品",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 1,
-            "is_active": true
-        },
-        {
             "id": 2,
             "name": "商品2",
             "price": 200,
@@ -8255,16 +8278,6 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "is_active": true
         },
         {
-            "id": 4,
-            "name": "割引カードA",
-            "price": 0,
-            "category": "割引",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 4,
-            "is_active": true
-        },
-        {
             "id": 6,
             "name": "たこ焼き",
             "price": 500,
@@ -8282,6 +8295,26 @@ File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\mas
             "color": "#ff0000",
             "note": "手動追加",
             "display_order": 6,
+            "is_active": true
+        },
+        {
+            "id": 12,
+            "name": "商品A",
+            "price": 150,
+            "category": "商品",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 7,
+            "is_active": true
+        },
+        {
+            "id": 13,
+            "name": "割引カードA",
+            "price": 0,
+            "category": "割引",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 8,
             "is_active": true
         }
     ],

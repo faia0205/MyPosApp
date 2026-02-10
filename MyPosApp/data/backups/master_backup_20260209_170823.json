@@ -1,6 +1,16 @@
 {
     "products": [
         {
+            "id": 1,
+            "name": "商品A",
+            "price": 150,
+            "category": "商品",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
             "id": 2,
             "name": "商品2",
             "price": 200,
@@ -21,6 +31,16 @@
             "is_active": true
         },
         {
+            "id": 4,
+            "name": "割引カードA",
+            "price": 0,
+            "category": "割引",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
             "id": 6,
             "name": "たこ焼き",
             "price": 500,
@@ -38,26 +58,6 @@
             "color": "#ff0000",
             "note": "手動追加",
             "display_order": 6,
-            "is_active": true
-        },
-        {
-            "id": 12,
-            "name": "商品A",
-            "price": 150,
-            "category": "商品",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 7,
-            "is_active": true
-        },
-        {
-            "id": 13,
-            "name": "割引カードA",
-            "price": 0,
-            "category": "割引",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 8,
             "is_active": true
         }
     ],
