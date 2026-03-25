@@ -148,6 +148,6 @@ class CustomerRepository(BaseRepository, IMasterDataRepository):
                     cursor.execute(sql, active_ids)
                     
                     if cursor.rowcount > 0:
-                        print(f("[Customer] Deleted {cursor.rowcount} presets not in JSON."))
+                        print(f"[Customer] Deleted {cursor.rowcount} presets not in JSON.")
         except Exception as e:
             print(f"Error executing Customer delete_not_in: {e}")

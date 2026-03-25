@@ -1595,7 +1595,7 @@ class CustomerRepository(BaseRepository, IMasterDataRepository):
                     cursor.execute(sql, active_ids)
                     
                     if cursor.rowcount > 0:
-                        print(f("[Customer] Deleted {cursor.rowcount} presets not in JSON."))
+                        print(f"[Customer] Deleted {cursor.rowcount} presets not in JSON.")
         except Exception as e:
             print(f"Error executing Customer delete_not_in: {e}")
 
@@ -1865,19 +1865,14 @@ from app.repositories.base_repo import BaseRepository
 
 class LogRepository(BaseRepository):
     def add_log(self, level: str, message: str):
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO operation_logs (level, message) VALUES (?, ?)", (level, message))
-        conn.commit()
-        conn.close()
+        with self.transaction() as (conn, cursor):
+            cursor.execute("INSERT INTO operation_logs (level, message) VALUES (?, ?)", (level, message))
 
     def fetch_logs(self) -> list[dict]:
         """すべてのログを取得"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT timestamp, level, message FROM operation_logs ORDER BY id DESC")
-        rows = cursor.fetchall()
-        conn.close()
+        with self.transaction() as (conn, cursor):
+            cursor.execute("SELECT timestamp, level, message FROM operation_logs ORDER BY id DESC")
+            rows = cursor.fetchall()
         return [{"time": r[0], "level": r[1], "msg": r[2]} for r in rows]
 
 ==================================================
@@ -2272,6 +2267,20 @@ class TransactionRepository(BaseRepository):
                 "items": items,
                 "payments": payments
             }
+    
+    def get_cash_payment_name(self) -> str:
+        """
+        現金決済の名称を取得（複数ある場合は先頭のものを返す）
+        """
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT name
+                FROM payment_methods 
+                WHERE is_cash = 1
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+            return row[0] if row else "現金"
     
     def get_all_export_data(self) -> dict:
         """
@@ -3360,6 +3369,7 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\csv_exporter.py
 ==================================================
 
 import csv
+import datetime
 from typing import Dict, Set
 from app.repositories.transaction_repo import TransactionRepository
 
@@ -3368,10 +3378,25 @@ class CsvTransactionExporter:
     
     def __init__(self, trans_repo: TransactionRepository):
         self.trans_repo = trans_repo
+        self.JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+    
+    def _to_jst_str(self, utc_str: str) -> str:
+        """UTCの文字列をJSTに変換"""
+        if not utc_str or utc_str == "None":
+            return "None"
+        try:
+            dt = datetime.datetime.strptime(utc_str, "%Y-%m-%d %H:%M:%S")
+            dt_jst = dt.replace(tzinfo=datetime.timezone.utc).astimezone(self.JST)
+            return dt_jst.strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return utc_str # 変換できない場合は元の文字列を返す
 
     def export_all_transactions(self, filepath: str) -> None:
         # DBから全データを一括取得（高速化）
         data = self.trans_repo.get_all_export_data()
+
+        # 現金決済のカラム名を取得（お釣り情報を加算するため）※固定カラムとして「お釣り」を追加するため、ここでは現金決済の名前だけ取得すればOK
+        cash_payment_name = self.trans_repo.get_cash_payment_name()
         
         tx_map: Dict[int, dict] = {}
         all_payments: Set[str] = set()
@@ -3383,7 +3408,7 @@ class CsvTransactionExporter:
             tx_id = row[0]
             tx_map[tx_id] = {
                 "id": tx_id,
-                "時間": row[1] if row[1] else "None",
+                "時間": self._to_jst_str(row[1]) if row[1] else "None",
                 "合計金額": row[2] if row[2] is not None else 0,
                 "お釣り": row[3] if row[3] is not None else 0,
                 "客層": row[4] if row[4] else "None",
@@ -3398,6 +3423,9 @@ class CsvTransactionExporter:
             tx_id, pay_method, amount = row[0], row[1], row[2]
             if tx_id in tx_map:
                 all_payments.add(pay_method)
+
+                if pay_method == cash_payment_name:
+                    amount += tx_map[tx_id]["お釣り"] # 現金決済はお釣りを加算して預かり金額にする
                 tx_map[tx_id]["payments"][pay_method] = amount
 
         # 3. 商品・割引情報のマッピング (unit_price < 0 を割引と判定)
