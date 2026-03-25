@@ -22,3 +22,14 @@ class CheckoutService:
         self.log_repo.add_log("info", f"会計完了: ID {new_id} ¥{transaction.total_amount}")
         
         return new_id
+    
+    def cancel_transaction(self, transaction_id: int) -> bool:
+        """
+        伝票を取消し、ログを記録する
+        Returns:
+            success (bool)
+        """
+        if self.trans_repo.delete_transaction(transaction_id):
+            self.log_repo.add_log("warning", f"伝票取消: ID {transaction_id}")
+            return True
+        return False

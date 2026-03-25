@@ -153,3 +153,18 @@ class TransactionRepository(BaseRepository):
                 "payments": payments,
                 "items": items
             }
+    
+    def delete_transaction(self, transaction_id: int) -> bool:
+        """取引の物理削除（管理者用）"""
+        try:
+            with self.transaction() as (conn, cursor):
+                # 1. 決済削除
+                cursor.execute("DELETE FROM transaction_payments WHERE transaction_id=?", (transaction_id,))
+                # 2. 明細削除
+                cursor.execute("DELETE FROM transaction_items WHERE transaction_id=?", (transaction_id,))
+                # 3. ヘッダー削除
+                cursor.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting transaction: {e}")
+            return False

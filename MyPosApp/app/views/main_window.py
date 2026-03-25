@@ -45,6 +45,7 @@ from app.views.components.customer_panel import CustomerPanel
 from app.views.dialogs.payment_dialog import PaymentDialog
 from app.views.admin_window import AdminWindow
 from app.views.dialogs.login_dialog import LoginDialog
+from app.views.dialogs.transaction_cancel_dialog import TransactionCancelDialog
 from app.views.settings_window import SettingsWindow
 from app.utils.style import StyleGenerator
 from app.utils.database import SQLiteProvider
@@ -172,6 +173,13 @@ class MainWindow(QMainWindow):
         btn_admin.setFocusPolicy(Qt.NoFocus)
         btn_admin.clicked.connect(self._open_admin_window)
         header_layout.addWidget(btn_admin)
+
+        btn_cancel_tx = QPushButton("伝票取消")
+        btn_cancel_tx.setFixedSize(80, 30)
+        btn_cancel_tx.setStyleSheet("background-color: #d32f2f; color: white; border: none; font-weight: bold;")
+        btn_cancel_tx.setFocusPolicy(Qt.NoFocus)
+        btn_cancel_tx.clicked.connect(self._open_transaction_cancel_dialog)
+        header_layout.addWidget(btn_cancel_tx)
 
         btn_settings = QPushButton("⚙ 設定")
         btn_settings.setFixedSize(80, 30)
@@ -322,3 +330,10 @@ class MainWindow(QMainWindow):
         self.cart_service.recalculate()
         self.product_list_widget.refresh_data()
         self.customer_panel.refresh_data()
+    
+    def _open_transaction_cancel_dialog(self):
+        dialog = TransactionCancelDialog(self.analytics_service, self.checkout_service, self)
+        dialog.exec()
+        # 伝票取消後はデータをリフレッシュ
+        self.cart_service._init_sales_data()
+        self.cart_service.recalculate()
