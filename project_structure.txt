@@ -45,6 +45,7 @@ Root: MyPosApp/
             analytics_service.py
             cart_service.py
             checkout_service.py
+            csv_exporter.py
             customer_service.py
             discount_service.py
             excel_exporter.py
@@ -102,6 +103,4 @@ Root: MyPosApp/
                 transaction_tab.py
     data/
         master_data.json
-        master_data_.json
         pos_system.db
-        pos_system_0208.db

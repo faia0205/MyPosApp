@@ -47,7 +47,7 @@ def merge_files(start_path):
                         outfile.write(f"{'='*50}\n\n")
                         outfile.write(content)
                         outfile.write("\n")
-                        print(f"Merged: {file}")
+                        #print(f"Merged: {file}")
                             
                     except Exception as e:
                         print(f"Skipped {file_path}: {e}")

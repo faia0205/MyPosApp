@@ -112,3 +112,44 @@ class TransactionRepository(BaseRepository):
                 "items": items,
                 "payments": payments
             }
+    
+    def get_cash_payment_name(self) -> str:
+        """
+        現金決済の名称を取得（複数ある場合は先頭のものを返す）
+        """
+        with self.transaction() as (conn, cursor):
+            cursor.execute("""
+                SELECT name
+                FROM payment_methods 
+                WHERE is_cash = 1
+                LIMIT 1
+            """)
+            row = cursor.fetchone()
+            return row[0] if row else "現金"
+    
+    def get_all_export_data(self) -> dict:
+        """
+        CSVエクスポート用に全期間の伝票ヘッダー・明細・決済を一括取得する（高速化対応）
+        """
+        with self.transaction() as (conn, cursor):
+            # 1. 全ヘッダーを取得
+            cursor.execute("""
+                SELECT id, timestamp as created_at, total_amount, change, customer_label, cashier_name 
+                FROM transactions 
+                ORDER BY id ASC
+            """)
+            headers = cursor.fetchall()
+
+            # 2. 全決済を取得
+            cursor.execute("SELECT transaction_id, payment_method, amount FROM transaction_payments")
+            payments = cursor.fetchall()
+
+            # 3. 全明細を取得
+            cursor.execute("SELECT transaction_id, product_name, unit_price, quantity FROM transaction_items")
+            items = cursor.fetchall()
+
+            return {
+                "headers": headers,
+                "payments": payments,
+                "items": items
+            }

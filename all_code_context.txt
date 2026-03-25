@@ -1,6 +1,6 @@
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\init_db.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\init_db.py
 ==================================================
 
 import sqlite3
@@ -245,7 +245,7 @@ if __name__ == "__main__":
     create_tables()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\main.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\main.py
 ==================================================
 
 import sys
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     sys.exit(app.exec())
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\config.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\config.py
 ==================================================
 
 import os
@@ -300,13 +300,13 @@ if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\calculator.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\calculator.py
 ==================================================
 
 from typing import Tuple
@@ -334,7 +334,7 @@ class PriceCalculator:
         return estimated_profit, is_red, msg
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\discount_manager.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\discount_manager.py
 ==================================================
 
 import math
@@ -427,7 +427,7 @@ class DiscountManager:
         return list(merged_map.values())
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\payment_session.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\payment_session.py
 ==================================================
 
 from typing import List, Dict
@@ -522,13 +522,13 @@ class PaymentSession:
             self._payments.pop(index)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\bundle_strategy.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\bundle_strategy.py
 ==================================================
 
 import json
@@ -691,7 +691,7 @@ class BundleDiscountStrategy(DiscountStrategy):
         return True, discount_amt
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\cart_strategy.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\cart_strategy.py
 ==================================================
 
 import math
@@ -736,7 +736,7 @@ class CartDiscountStrategy(DiscountStrategy):
         return []
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\category_strategy.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\category_strategy.py
 ==================================================
 
 import math
@@ -788,7 +788,7 @@ class CategoryDiscountStrategy(DiscountStrategy):
         return applied
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\discount_strategy.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\discount_strategy.py
 ==================================================
 
 from abc import ABC, abstractmethod
@@ -819,7 +819,7 @@ class DiscountStrategy(ABC):
         pass
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\item_strategy.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\item_strategy.py
 ==================================================
 
 import math
@@ -874,13 +874,13 @@ class ItemDiscountStrategy(DiscountStrategy):
         return applied
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\logic\strategies\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\cart_item.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\cart_item.py
 ==================================================
 
 from dataclasses import dataclass
@@ -902,7 +902,7 @@ class CartItem:
         return self.price * self.qty
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\customer.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\customer.py
 ==================================================
 
 from dataclasses import dataclass
@@ -955,7 +955,7 @@ class Customer:
         return c
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\discount.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\discount.py
 ==================================================
 
 from dataclasses import dataclass
@@ -1007,7 +1007,7 @@ class AppliedDiscount:
     qty: int # 適用セット数
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\expense.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\expense.py
 ==================================================
 
 from dataclasses import dataclass
@@ -1040,7 +1040,7 @@ class Expense:
         )
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\payment_method.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\payment_method.py
 ==================================================
 
 from dataclasses import dataclass
@@ -1071,7 +1071,7 @@ class PaymentMethod:
         )
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\product.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\product.py
 ==================================================
 
 from dataclasses import dataclass
@@ -1124,7 +1124,7 @@ class Product:
         return self.price < 0
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\transaction.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\transaction.py
 ==================================================
 
 from dataclasses import dataclass, field
@@ -1164,7 +1164,7 @@ class Transaction:
     payments: List[TransactionPayment] = field(default_factory=list)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\user.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\user.py
 ==================================================
 
 from dataclasses import dataclass
@@ -1198,13 +1198,13 @@ class User:
         )
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\models\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\analytics_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\analytics_repo.py
 ==================================================
 
 from typing import List, Dict, Any
@@ -1421,7 +1421,7 @@ class AnalyticsRepository(BaseRepository):
         return sorted(list(keys))
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\base_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\base_repo.py
 ==================================================
 
 from app.utils.database import IDatabaseProvider
@@ -1442,7 +1442,7 @@ class BaseRepository:
         return self.db.transaction()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\customer_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\customer_repo.py
 ==================================================
 
 from typing import List, Dict, Optional
@@ -1600,7 +1600,7 @@ class CustomerRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing Customer delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\discount_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\discount_repo.py
 ==================================================
 
 from typing import List, Optional, Dict
@@ -1745,7 +1745,7 @@ class DiscountRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing Discount delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\expense_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\expense_repo.py
 ==================================================
 
 from typing import List, Dict
@@ -1857,7 +1857,7 @@ class ExpenseRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing Expense delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\log_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\log_repo.py
 ==================================================
 
 # ログを読み書きするクラスです。
@@ -1881,7 +1881,7 @@ class LogRepository(BaseRepository):
         return [{"time": r[0], "level": r[1], "msg": r[2]} for r in rows]
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\payment_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\payment_repo.py
 ==================================================
 
 from typing import List, Optional, Dict
@@ -1980,7 +1980,7 @@ class PaymentRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing Payment delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\product_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\product_repo.py
 ==================================================
 
 from typing import List, Optional, Dict
@@ -2155,7 +2155,7 @@ class ProductRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\transaction_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\transaction_repo.py
 ==================================================
 
 from typing import List, Optional
@@ -2272,9 +2272,36 @@ class TransactionRepository(BaseRepository):
                 "items": items,
                 "payments": payments
             }
+    
+    def get_all_export_data(self) -> dict:
+        """
+        CSVエクスポート用に全期間の伝票ヘッダー・明細・決済を一括取得する（高速化対応）
+        """
+        with self.transaction() as (conn, cursor):
+            # 1. 全ヘッダーを取得
+            cursor.execute("""
+                SELECT id, timestamp as created_at, total_amount, change, customer_label, cashier_name 
+                FROM transactions 
+                ORDER BY id ASC
+            """)
+            headers = cursor.fetchall()
+
+            # 2. 全決済を取得
+            cursor.execute("SELECT transaction_id, payment_method, amount FROM transaction_payments")
+            payments = cursor.fetchall()
+
+            # 3. 全明細を取得
+            cursor.execute("SELECT transaction_id, product_name, unit_price, quantity FROM transaction_items")
+            items = cursor.fetchall()
+
+            return {
+                "headers": headers,
+                "payments": payments,
+                "items": items
+            }
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\user_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\user_repo.py
 ==================================================
 
 from typing import List, Optional, Dict
@@ -2421,13 +2448,13 @@ class UserRepository(BaseRepository, IMasterDataRepository):
             print(f"Error executing User delete_not_in: {e}")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\repositories\interfaces\master_data_repo.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\interfaces\master_data_repo.py
 ==================================================
 
 from abc import ABC, abstractmethod
@@ -2469,7 +2496,7 @@ class IMasterDataRepository(ABC):
         pass
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics_service.py
 ==================================================
 
 import pandas as pd
@@ -2481,12 +2508,13 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
-from app.repositories.product_repo import ProductRepository # ★追加
+from app.repositories.product_repo import ProductRepository
 
 from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
 from app.services.analytics.processor import DataProcessor
 from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
 from app.services.interfaces.report_exporter import IReportExporter
+from app.services.csv_exporter import CsvTransactionExporter
 
 class AnalyticsService:
     def __init__(
@@ -2858,9 +2886,27 @@ class AnalyticsService:
             ]
             
         return []
+    
+    def get_default_csv_filename(self) -> str:
+        now_jst = datetime.datetime.now(self.JST)
+        now_str = now_jst.strftime("%Y%m%d_%H%M")
+        return f"伝票データ_{now_str}.csv"
+    
+    def export_to_csv(self, file_path: str) -> Tuple[bool, str]:
+        """
+        全期間の伝票データをCSV出力する
+        """
+        try:
+            csv_exporter = CsvTransactionExporter(self.trans_repo)
+            csv_exporter.export_all_transactions(file_path)
+            return True, "CSVを出力が完了しました"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, f"CSV出力エラー: {str(e)}"
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\cart_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\cart_service.py
 ==================================================
 
 from typing import List, Tuple, Optional
@@ -3281,7 +3327,7 @@ class CartService(QObject):
         self._notify_message("次の会計をお願いします", "info")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\checkout_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\checkout_service.py
 ==================================================
 
 from app.repositories.transaction_repo import TransactionRepository
@@ -3310,7 +3356,105 @@ class CheckoutService:
         return new_id
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\customer_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\csv_exporter.py
+==================================================
+
+import csv
+from typing import Dict, Set
+from app.repositories.transaction_repo import TransactionRepository
+
+class CsvTransactionExporter:
+    """全期間の伝票データを動的カラム形式でCSVに出力するクラス"""
+    
+    def __init__(self, trans_repo: TransactionRepository):
+        self.trans_repo = trans_repo
+
+    def export_all_transactions(self, filepath: str) -> None:
+        # DBから全データを一括取得（高速化）
+        data = self.trans_repo.get_all_export_data()
+        
+        tx_map: Dict[int, dict] = {}
+        all_payments: Set[str] = set()
+        all_products: Set[str] = set()
+        all_discounts: Set[str] = set()
+
+        # 1. ヘッダー情報の初期化
+        for row in data["headers"]:
+            tx_id = row[0]
+            tx_map[tx_id] = {
+                "id": tx_id,
+                "時間": row[1] if row[1] else "None",
+                "合計金額": row[2] if row[2] is not None else 0,
+                "お釣り": row[3] if row[3] is not None else 0,
+                "客層": row[4] if row[4] else "None",
+                "担当": row[5] if row[5] else "None",
+                "payments": {},
+                "products": {},
+                "discounts": {}
+            }
+
+        # 2. 決済情報のマッピング
+        for row in data["payments"]:
+            tx_id, pay_method, amount = row[0], row[1], row[2]
+            if tx_id in tx_map:
+                all_payments.add(pay_method)
+                tx_map[tx_id]["payments"][pay_method] = amount
+
+        # 3. 商品・割引情報のマッピング (unit_price < 0 を割引と判定)
+        for row in data["items"]:
+            tx_id, prod_name, unit_price, quantity = row[0], row[1], row[2], row[3]
+            if tx_id in tx_map:
+                if unit_price < 0:
+                    all_discounts.add(prod_name)
+                    # 同じ割引が複数ある場合は合算
+                    tx_map[tx_id]["discounts"][prod_name] = tx_map[tx_id]["discounts"].get(prod_name, 0) + quantity
+                else:
+                    all_products.add(prod_name)
+                    # 同じ商品が複数ある場合は合算
+                    tx_map[tx_id]["products"][prod_name] = tx_map[tx_id]["products"].get(prod_name, 0) + quantity
+
+        # 動的カラムの列順をソートして固定
+        payment_headers = sorted(list(all_payments))
+        product_headers = sorted(list(all_products))
+        discount_headers = sorted(list(all_discounts))
+
+        headers_csv = ["id", "時間", "合計金額"] + payment_headers + ["お釣り"] + product_headers + discount_headers + ["客層", "担当"]
+
+        # 4. CSVへの書き込み
+        with open(filepath, mode='w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(headers_csv)
+
+            # ID順に書き出し
+            for tx_id in sorted(tx_map.keys()):
+                row_data = tx_map[tx_id]
+                csv_row = [
+                    row_data["id"],
+                    row_data["時間"],
+                    row_data["合計金額"]
+                ]
+                
+                # 各決済 (該当なしは0)
+                for ph in payment_headers:
+                    csv_row.append(row_data["payments"].get(ph, 0))
+                
+                csv_row.append(row_data["お釣り"])
+                
+                # 各商品 (該当なしは0)
+                for prh in product_headers:
+                    csv_row.append(row_data["products"].get(prh, 0))
+                    
+                # 各割引 (該当なしは0)
+                for dh in discount_headers:
+                    csv_row.append(row_data["discounts"].get(dh, 0))
+                    
+                # 客層、担当 (該当なしは "None")
+                csv_row.extend([row_data["客層"], row_data["担当"]])
+                
+                writer.writerow(csv_row)
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\customer_service.py
 ==================================================
 
 from typing import List, Dict
@@ -3362,7 +3506,7 @@ class CustomerService:
         return self.repo.update_display_order(order_map)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\discount_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\discount_service.py
 ==================================================
 
 from typing import List
@@ -3404,7 +3548,7 @@ class DiscountService:
         return False
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\excel_exporter.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\excel_exporter.py
 ==================================================
 
 import pandas as pd
@@ -3585,7 +3729,7 @@ class ExcelReportExporter(IReportExporter):
         return name[:31]
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\expense_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\expense_service.py
 ==================================================
 
 from typing import List
@@ -3620,7 +3764,7 @@ class ExpenseService:
         return False
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\master_data_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\master_data_service.py
 ==================================================
 
 import json
@@ -3843,7 +3987,7 @@ class MasterDataService:
         print("Integrity check completed.")
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\payment_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\payment_service.py
 ==================================================
 
 from typing import List
@@ -3885,7 +4029,7 @@ class PaymentService:
         return False
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\product_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\product_service.py
 ==================================================
 
 from typing import List, Dict
@@ -3935,7 +4079,7 @@ class ProductService:
         return self.repo.update_display_order(order_map)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\user_service.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\user_service.py
 ==================================================
 
 from typing import List
@@ -3978,13 +4122,13 @@ class UserService:
         return False
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\enums.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\enums.py
 ==================================================
 
 from enum import Enum, auto
@@ -4010,7 +4154,7 @@ class AnalysisMetric(Enum):
     TX_COUNT = "tx_count" # 客数（伝票数）
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\processor.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\processor.py
 ==================================================
 
 import pandas as pd
@@ -4080,7 +4224,7 @@ class DataProcessor:
         return df
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\strategies.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\strategies.py
 ==================================================
 
 import pandas as pd
@@ -4196,13 +4340,13 @@ class BasketAnalysisStrategy(IAnalysisStrategy):
         return result
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\analytics\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\services\interfaces\report_exporter.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\interfaces\report_exporter.py
 ==================================================
 
 from abc import ABC, abstractmethod
@@ -4221,7 +4365,7 @@ class IReportExporter(ABC):
         pass
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\database.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\database.py
 ==================================================
 
 from abc import ABC, abstractmethod
@@ -4267,7 +4411,7 @@ class SQLiteProvider(IDatabaseProvider):
             conn.close()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\style.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\style.py
 ==================================================
 
 class StyleGenerator:
@@ -4433,19 +4577,20 @@ class StyleGenerator:
         """
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\utils\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\admin_window.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\admin_window.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                                QPushButton, QTabWidget, QFileDialog, QMessageBox)
 from PySide6.QtGui import QFont
 from app.services.analytics_service import AnalyticsService
+from app.services.csv_exporter import CsvTransactionExporter
 
 # 分割したタブをインポート
 from app.views.tabs.dashboard_tab import DashboardTab
@@ -4497,11 +4642,17 @@ class AdminWindow(QDialog):
         btn_refresh.clicked.connect(self._load_data)
         toolbar.addWidget(btn_refresh)
 
-        btn_export = QPushButton("Excel出力")
-        btn_export.setFixedSize(120, 40)
-        btn_export.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
-        btn_export.clicked.connect(self._export_excel)
-        toolbar.addWidget(btn_export)
+        btn_export_excel = QPushButton("Excel出力")
+        btn_export_excel.setFixedSize(120, 40)
+        btn_export_excel.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
+        btn_export_excel.clicked.connect(self._export_excel)
+        toolbar.addWidget(btn_export_excel)
+
+        btn_export_csv = QPushButton("CSV出力")
+        btn_export_csv.setFixedSize(120, 40)
+        btn_export_csv.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
+        btn_export_csv.clicked.connect(self._export_csv)
+        toolbar.addWidget(btn_export_csv)
 
         layout.addLayout(toolbar)
 
@@ -4540,9 +4691,21 @@ class AdminWindow(QDialog):
                 QMessageBox.information(self, "完了", msg)
             else:
                 QMessageBox.warning(self, "エラー", msg)
+    
+    def _export_csv(self):
+        default = self.service.get_default_filename().replace('.xlsx', '.csv')
+        fname, _ = QFileDialog.getSaveFileName(self, "CSV出力", default, "CSV Files (*.csv)")
+        if fname:
+            if not fname.endswith('.csv'):
+                fname += '.csv'
+            ok, msg = self.service.export_to_csv(fname)
+            if ok:
+                QMessageBox.information(self, "完了", msg)
+            else:
+                QMessageBox.warning(self, "エラー", msg)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\main_window.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\main_window.py
 ==================================================
 
 from typing import Dict
@@ -4871,7 +5034,7 @@ class MainWindow(QMainWindow):
         self.customer_panel.refresh_data()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_window.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_window.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, 
@@ -5050,13 +5213,13 @@ class SettingsWindow(QDialog):
             event.ignore()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\cart_widget.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\cart_widget.py
 ==================================================
 
 import urllib.parse
@@ -5294,7 +5457,7 @@ class CartWidget(QWidget):
         dlg.exec()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\customer_panel.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\customer_panel.py
 ==================================================
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QGridLayout, QButtonGroup)
@@ -5366,7 +5529,7 @@ class CustomerPanel(QWidget):
         self.cust_group.setExclusive(True)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\custom_buttons.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\custom_buttons.py
 ==================================================
 
 from typing import Optional
@@ -5439,7 +5602,7 @@ class CustomerButton(StyledButton):
         self.customer: Customer = customer
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\product_list_widget.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\product_list_widget.py
 ==================================================
 
 from typing import List, Dict
@@ -5525,13 +5688,13 @@ class ProductListWidget(QWidget):
             self.tabs.addTab(scroll, cat)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\components\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\customer_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\customer_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
@@ -5759,7 +5922,7 @@ class CustomerEditDialog(QDialog):
         }
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\discount_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\discount_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, 
@@ -6114,7 +6277,7 @@ class DiscountEditDialog(QDialog):
         super().accept()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\expense_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\expense_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
@@ -6184,7 +6347,7 @@ class ExpenseEditDialog(QDialog):
         }
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\login_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\login_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QGridLayout
@@ -6269,7 +6432,7 @@ class LoginDialog(QDialog):
         self.accept()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\payment_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\payment_dialog.py
 ==================================================
 
 from typing import List, Tuple, Dict
@@ -6622,7 +6785,7 @@ class PaymentDialog(QDialog):
         return result_list, change
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\payment_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\payment_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
@@ -6679,7 +6842,7 @@ class PaymentEditDialog(QDialog):
         }
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\product_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\product_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
@@ -6807,7 +6970,7 @@ class ProductEditDialog(QDialog):
         self.cat_combo.setCurrentText(current)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\user_edit_dialog.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\user_edit_dialog.py
 ==================================================
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QLineEdit, 
@@ -6884,13 +7047,13 @@ class UserEditDialog(QDialog):
         }
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\dialogs\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\base_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\base_setting_tab.py
 ==================================================
 
 from typing import List, Optional
@@ -6996,7 +7159,7 @@ class BaseSettingTab(QWidget):
         pass
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\customer_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\customer_setting_tab.py
 ==================================================
 
 from PySide6.QtWidgets import QPushButton, QHeaderView, QMessageBox
@@ -7136,7 +7299,7 @@ class CustomerSettingTab(BaseSettingTab):
             self.table.selectRow(new_row)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\discount_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\discount_setting_tab.py
 ==================================================
 
 from dataclasses import asdict
@@ -7250,7 +7413,7 @@ class DiscountSettingTab(BaseSettingTab):
                 self.load_data()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\expense_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\expense_setting_tab.py
 ==================================================
 
 from PySide6.QtWidgets import QMessageBox, QHeaderView
@@ -7319,7 +7482,7 @@ class ExpenseSettingTab(BaseSettingTab):
                 self.load_data()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\payment_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\payment_setting_tab.py
 ==================================================
 
 from dataclasses import asdict
@@ -7392,7 +7555,7 @@ class PaymentSettingTab(BaseSettingTab):
                 self.load_data()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\product_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\product_setting_tab.py
 ==================================================
 
 from PySide6.QtWidgets import QMessageBox, QPushButton
@@ -7539,7 +7702,7 @@ class ProductSettingTab(BaseSettingTab): # ★継承
             self.table.selectRow(new_row)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\user_setting_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\user_setting_tab.py
 ==================================================
 
 from PySide6.QtWidgets import QMessageBox
@@ -7623,13 +7786,13 @@ class UserSettingTab(BaseSettingTab):
                 self.load_data()
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\settings_tabs\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
 ==================================================
 
 import datetime
@@ -7980,7 +8143,7 @@ class AnalysisTab(QWidget):
         pass
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\dashboard_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\dashboard_tab.py
 ==================================================
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
@@ -8068,7 +8231,7 @@ class DashboardTab(QWidget):
             self.table_expenses.setItem(i, 2, QTableWidgetItem(f"¥{ex['amount']:,}"))
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\log_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\log_tab.py
 ==================================================
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTableWidget, 
@@ -8109,7 +8272,7 @@ class LogTab(QWidget):
             self.table_logs.setItem(i, 2, QTableWidgetItem(log['msg']))
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\transaction_tab.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\transaction_tab.py
 ==================================================
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
@@ -8246,200 +8409,13 @@ class TransactionTab(QWidget):
         self.text_detail.setText(txt)
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\app\views\tabs\__init__.py
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\__init__.py
 ==================================================
 
 
 
 ==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\master_data.json
-==================================================
-
-{
-    "products": [
-        {
-            "id": 2,
-            "name": "商品2",
-            "price": 200,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 2,
-            "is_active": true
-        },
-        {
-            "id": 3,
-            "name": "商品C",
-            "price": 800,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 3,
-            "is_active": true
-        },
-        {
-            "id": 6,
-            "name": "たこ焼き",
-            "price": 500,
-            "category": "フード",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 5,
-            "is_active": true
-        },
-        {
-            "id": 7,
-            "name": "JSONテスト商品",
-            "price": 500,
-            "category": "テスト",
-            "color": "#ff0000",
-            "note": "手動追加",
-            "display_order": 6,
-            "is_active": true
-        },
-        {
-            "id": 12,
-            "name": "商品A",
-            "price": 150,
-            "category": "商品",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 7,
-            "is_active": true
-        },
-        {
-            "id": 13,
-            "name": "割引カードA",
-            "price": 0,
-            "category": "割引",
-            "color": "#ffcc80",
-            "note": "",
-            "display_order": 8,
-            "is_active": true
-        }
-    ],
-    "users": [
-        {
-            "id": 1,
-            "name": "ユーザーB",
-            "user_code": "001",
-            "role": "staff",
-            "is_active": true
-        },
-        {
-            "id": 2,
-            "name": "ユーザーC",
-            "user_code": "002",
-            "role": "staff",
-            "is_active": true
-        }
-    ],
-    "customers_presets": [
-        {
-            "id": 1,
-            "label": "客層B",
-            "attributes": {
-                "sex": "male"
-            },
-            "color": "#90caf9",
-            "display_order": 1,
-            "is_active": true
-        },
-        {
-            "id": 2,
-            "label": "客層C",
-            "attributes": {},
-            "color": "#90caf9",
-            "display_order": 2,
-            "is_active": true
-        }
-    ],
-    "payment_methods": [
-        {
-            "id": 1,
-            "name": "現金",
-            "is_cash": true,
-            "is_active": true
-        },
-        {
-            "id": 2,
-            "name": "PayPay",
-            "is_cash": false,
-            "is_active": true
-        },
-        {
-            "id": 3,
-            "name": "デビットカード",
-            "is_cash": false,
-            "is_active": true
-        }
-    ],
-    "initial_expenses": [
-        {
-            "id": 3,
-            "title": "テストA",
-            "amount": 1,
-            "timestamp": "2026-02-09 22:37:59"
-        },
-        {
-            "id": 2,
-            "title": "開店資金",
-            "amount": 20000,
-            "timestamp": "2026-02-09 09:00:00"
-        },
-        {
-            "id": 1,
-            "title": "仕入れ代",
-            "amount": 5000,
-            "timestamp": "2026-02-08 13:30:48"
-        }
-    ],
-    "discount_rules": [
-        {
-            "id": 1,
-            "name": "商品A2_50円引き",
-            "discount_type": "fixed",
-            "discount_value": 50,
-            "apply_type": "bundle",
-            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"商品2\", \"type\": \"item\", \"qty\": 1}]}",
-            "is_auto": true,
-            "is_active": true
-        },
-        {
-            "id": 3,
-            "name": "商品AC50%引き",
-            "discount_type": "percent",
-            "discount_value": 50,
-            "apply_type": "bundle",
-            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"商品C\", \"type\": \"item\", \"qty\": 1}]}",
-            "is_auto": true,
-            "is_active": true
-        },
-        {
-            "id": 4,
-            "name": "割引",
-            "discount_type": "percent",
-            "discount_value": 30,
-            "apply_type": "bundle",
-            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"商品A\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"割引カードA\", \"type\": \"item\", \"qty\": 1}]}",
-            "is_auto": true,
-            "is_active": true
-        },
-        {
-            "id": 5,
-            "name": "テスト",
-            "discount_type": "fixed",
-            "discount_value": 100,
-            "apply_type": "cart",
-            "target_value": "",
-            "is_auto": true,
-            "is_active": true
-        }
-    ]
-}
-
-==================================================
-File Path: C:\Users\faia2\OneDrive\デスクトップ\レジv5\MyPosApp\data\master_data_.json
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\data\master_data.json
 ==================================================
 
 {

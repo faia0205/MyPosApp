@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QPushButton, QTabWidget, QFileDialog, QMessageBox)
 from PySide6.QtGui import QFont
 from app.services.analytics_service import AnalyticsService
+from app.services.csv_exporter import CsvTransactionExporter
 
 # 分割したタブをインポート
 from app.views.tabs.dashboard_tab import DashboardTab
@@ -53,11 +54,17 @@ class AdminWindow(QDialog):
         btn_refresh.clicked.connect(self._load_data)
         toolbar.addWidget(btn_refresh)
 
-        btn_export = QPushButton("Excel出力")
-        btn_export.setFixedSize(120, 40)
-        btn_export.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
-        btn_export.clicked.connect(self._export_excel)
-        toolbar.addWidget(btn_export)
+        btn_export_excel = QPushButton("Excel出力")
+        btn_export_excel.setFixedSize(120, 40)
+        btn_export_excel.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
+        btn_export_excel.clicked.connect(self._export_excel)
+        toolbar.addWidget(btn_export_excel)
+
+        btn_export_csv = QPushButton("CSV出力")
+        btn_export_csv.setFixedSize(120, 40)
+        btn_export_csv.setStyleSheet("background-color: #1b5e20; color: white; font-weight: bold; border-radius: 4px;")
+        btn_export_csv.clicked.connect(self._export_csv)
+        toolbar.addWidget(btn_export_csv)
 
         layout.addLayout(toolbar)
 
@@ -92,6 +99,18 @@ class AdminWindow(QDialog):
             if not fname.endswith('.xlsx'):
                 fname += '.xlsx'
             ok, msg = self.service.export_to_excel(fname)
+            if ok:
+                QMessageBox.information(self, "完了", msg)
+            else:
+                QMessageBox.warning(self, "エラー", msg)
+    
+    def _export_csv(self):
+        default = self.service.get_default_filename().replace('.xlsx', '.csv')
+        fname, _ = QFileDialog.getSaveFileName(self, "CSV出力", default, "CSV Files (*.csv)")
+        if fname:
+            if not fname.endswith('.csv'):
+                fname += '.csv'
+            ok, msg = self.service.export_to_csv(fname)
             if ok:
                 QMessageBox.information(self, "完了", msg)
             else:

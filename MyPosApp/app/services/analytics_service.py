@@ -7,12 +7,13 @@ from app.repositories.analytics_repo import AnalyticsRepository
 from app.repositories.transaction_repo import TransactionRepository
 from app.repositories.expense_repo import ExpenseRepository
 from app.repositories.log_repo import LogRepository
-from app.repositories.product_repo import ProductRepository # ★追加
+from app.repositories.product_repo import ProductRepository
 
 from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
 from app.services.analytics.processor import DataProcessor
 from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
 from app.services.interfaces.report_exporter import IReportExporter
+from app.services.csv_exporter import CsvTransactionExporter
 
 class AnalyticsService:
     def __init__(
@@ -384,3 +385,21 @@ class AnalyticsService:
             ]
             
         return []
+    
+    def get_default_csv_filename(self) -> str:
+        now_jst = datetime.datetime.now(self.JST)
+        now_str = now_jst.strftime("%Y%m%d_%H%M")
+        return f"伝票データ_{now_str}.csv"
+    
+    def export_to_csv(self, file_path: str) -> Tuple[bool, str]:
+        """
+        全期間の伝票データをCSV出力する
+        """
+        try:
+            csv_exporter = CsvTransactionExporter(self.trans_repo)
+            csv_exporter.export_all_transactions(file_path)
+            return True, "CSVを出力が完了しました"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return False, f"CSV出力エラー: {str(e)}"
