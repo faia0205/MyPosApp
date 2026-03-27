@@ -310,16 +310,6 @@
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"たこ焼き\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
             "is_auto": true,
-            "is_active": false
-        },
-        {
-            "id": 8,
-            "name": "フードドリンクセット割り",
-            "discount_type": "fixed",
-            "discount_value": 100,
-            "apply_type": "bundle",
-            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"フード\", \"type\": \"category\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
-            "is_auto": true,
             "is_active": true
         }
     ]

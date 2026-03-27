@@ -85,6 +85,7 @@ Root: MyPosApp/
                 payment_dialog.py
                 payment_edit_dialog.py
                 product_edit_dialog.py
+                transaction_cancel_dialog.py
                 user_edit_dialog.py
             settings_tabs/
                 __init__.py

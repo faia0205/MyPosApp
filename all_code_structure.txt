@@ -1,0 +1,1747 @@
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\init_db.py
+==================================================
+
+import sqlite3
+import os
+import sys
+import json
+from app.config import DB_PATH, DATA_DIR
+
+def load_master_data():
+
+def create_tables():
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\main.py
+==================================================
+
+import sys
+import os
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QFont
+from app.config import DB_PATH
+from init_db import create_tables
+from app.views.main_window import MainWindow
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\config.py
+==================================================
+
+import os
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\calculator.py
+==================================================
+
+from typing import Tuple
+
+class PriceCalculator:
+    def calculate_profit_metrics(self, current_total, total_sales_today, current_expenses, avg_price_target):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\discount_manager.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.models.cart_item import CartItem
+from app.models.discount import DiscountRule, AppliedDiscount
+from app.logic.strategies.discount_strategy import DiscountStrategy
+
+class DiscountManager:
+    def __init__(self, strategies):
+    def calculate_discounts(self, cart_items, rules):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\payment_session.py
+==================================================
+
+from typing import List, Dict
+
+class PaymentSession:
+    def __init__(self, total_amount):
+    def total_amount(self):
+    def payments(self):
+    def get_total_paid(self):
+    def get_remaining(self):
+    def get_change(self):
+    def is_complete(self):
+    def add_payment(self, method_name, amount, is_cash):
+    def remove_payment(self, index):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\bundle_strategy.py
+==================================================
+
+import json
+import math
+from typing import List, Dict, Tuple
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class BundleDiscountStrategy(DiscountStrategy):
+    def phase(self):
+    def priority(self):
+    def create_target_json(mode, targets, qty, conditions):
+    def apply(self, inventory, rule, current_net_total):
+    def _try_apply_bundle(self, rule, inventory):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\cart_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class CartDiscountStrategy(DiscountStrategy):
+    def phase(self):
+    def priority(self):
+    def apply(self, inventory, rule, current_net_total):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\category_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class CategoryDiscountStrategy(DiscountStrategy):
+    def phase(self):
+    def priority(self):
+    def apply(self, inventory, rule, current_net_total):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\discount_strategy.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class DiscountStrategy(ABC):
+    def phase(self):
+    def priority(self):
+    def apply(self, inventory, rule, current_net_total):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\item_strategy.py
+==================================================
+
+import math
+from typing import List, Dict
+from app.logic.strategies.discount_strategy import DiscountStrategy
+from app.models.discount import DiscountRule, AppliedDiscount
+
+class ItemDiscountStrategy(DiscountStrategy):
+    def phase(self):
+    def priority(self):
+    def apply(self, inventory, rule, current_net_total):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\logic\strategies\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\cart_item.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional
+
+class CartItem:
+    def subtotal(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\customer.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+import json
+
+class Customer:
+    def attributes(self):
+    def set_attributes(self, data):
+    def to_dict(self):
+    def from_dict(data):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\discount.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+class DiscountRule:
+    def to_dict(self):
+    def from_dict(data):
+
+class AppliedDiscount:
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\expense.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Dict, Any
+
+class Expense:
+    def to_dict(self):
+    def from_dict(data):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\payment_method.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Dict, Any
+
+class PaymentMethod:
+    def to_dict(self):
+    def from_dict(data):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\product.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+class Product:
+    def display_price(self):
+    def to_dict(self):
+    def from_dict(data):
+    def is_discount(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\transaction.py
+==================================================
+
+from dataclasses import dataclass, field
+from typing import List, Optional
+
+class TransactionItem:
+
+class TransactionPayment:
+
+class Transaction:
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\user.py
+==================================================
+
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
+class User:
+    def to_dict(self):
+    def from_dict(data):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\models\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\analytics_repo.py
+==================================================
+
+from typing import List, Dict, Any
+from app.repositories.base_repo import BaseRepository
+
+class AnalyticsRepository(BaseRepository):
+    def get_dashboard_stats(self):
+    def get_transaction_list(self):
+    def get_transaction_details(self, transaction_id):
+    def get_payment_summary(self):
+    def get_cashier_payment_data(self):
+    def get_raw_data_for_analysis(self):
+    def get_comprehensive_raw_data(self, start_date, end_date):
+    def get_min_timestamp(self):
+    def get_customer_attribute_keys(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\base_repo.py
+==================================================
+
+from app.utils.database import IDatabaseProvider
+
+class BaseRepository:
+    def __init__(self, db_provider):
+    def get_connection(self):
+    def transaction(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\customer_repo.py
+==================================================
+
+from typing import List, Dict, Optional
+import json
+from app.repositories.base_repo import BaseRepository
+from app.models.customer import Customer
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class CustomerRepository(BaseRepository, IMasterDataRepository):
+    def fetch_all(self):
+    def fetch_active(self):
+    def add(self, customer):
+    def update(self, customer):
+    def update_display_order(self, order_map):
+    def _map_to_model(self, row):
+    def delete(self, customer_id):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\discount_repo.py
+==================================================
+
+from typing import List, Optional, Dict
+from app.repositories.base_repo import BaseRepository
+from app.models.discount import DiscountRule
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class DiscountRepository(BaseRepository, IMasterDataRepository):
+    def fetch_all_rules(self):
+    def fetch_active_rules(self):
+    def add(self, rule):
+    def update(self, rule):
+    def _map_to_model(self, row):
+    def delete(self, rule_id):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\expense_repo.py
+==================================================
+
+from typing import List, Dict
+import datetime
+from app.repositories.base_repo import BaseRepository
+from app.models.expense import Expense
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class ExpenseRepository(BaseRepository, IMasterDataRepository):
+    def fetch_all(self):
+    def get_total_expenses(self):
+    def add(self, title, amount):
+    def update(self, expense):
+    def delete(self, expense_id):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\log_repo.py
+==================================================
+
+from app.repositories.base_repo import BaseRepository
+
+class LogRepository(BaseRepository):
+    def add_log(self, level, message):
+    def fetch_logs(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\payment_repo.py
+==================================================
+
+from typing import List, Optional, Dict
+from app.repositories.base_repo import BaseRepository
+from app.models.payment_method import PaymentMethod
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class PaymentRepository(BaseRepository, IMasterDataRepository):
+    def fetch_all(self):
+    def fetch_active(self):
+    def add(self, method):
+    def update(self, method):
+    def delete(self, payment_id):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\product_repo.py
+==================================================
+
+from typing import List, Optional, Dict
+from app.repositories.base_repo import BaseRepository
+from app.models.product import Product
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class ProductRepository(BaseRepository, IMasterDataRepository):
+    def fetch_active_products(self):
+    def fetch_all_as_models(self):
+    def find_id_by_name(self, name):
+    def get_product_by_id(self, pid):
+    def add_product(self, product):
+    def update_product(self, product):
+    def delete_product(self, product_id):
+    def update_display_order(self, order_map):
+    def _map_to_model(self, row):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\transaction_repo.py
+==================================================
+
+from typing import List, Optional
+from app.repositories.base_repo import BaseRepository
+from app.models.transaction import Transaction, TransactionItem, TransactionPayment
+
+class TransactionRepository(BaseRepository):
+    def get_total_sales_today(self):
+    def save(self, tx):
+    def fetch_history(self, limit):
+    def get_transaction_details(self, transaction_id):
+    def get_cash_payment_name(self):
+    def get_all_export_data(self):
+    def delete_transaction(self, transaction_id):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\user_repo.py
+==================================================
+
+from typing import List, Optional, Dict
+from app.repositories.base_repo import BaseRepository
+from app.models.user import User
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class UserRepository(BaseRepository, IMasterDataRepository):
+    def fetch_active_users(self):
+    def fetch_all_users(self):
+    def upsert_user(self, user):
+    def add_user(self, user):
+    def update_user(self, user):
+    def delete_user(self, user_id):
+    def _map_to_model(self, row):
+    def import_data(self, data):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\interfaces\master_data_repo.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any
+
+class IMasterDataRepository(ABC):
+    def get_master_key(self):
+    def export_all_data(self):
+    def import_all_data(self, data_list):
+    def delete_not_in(self, active_ids):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics_service.py
+==================================================
+
+import pandas
+import datetime
+from dataclasses import asdict
+from typing import Tuple, Dict, Any, List
+from app.repositories.analytics_repo import AnalyticsRepository
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
+from app.repositories.product_repo import ProductRepository
+from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
+from app.services.analytics.processor import DataProcessor
+from app.services.analytics.strategies import CrossTabStrategy, BasketAnalysisStrategy
+from app.services.interfaces.report_exporter import IReportExporter
+from app.services.csv_exporter import CsvTransactionExporter
+
+class AnalyticsService:
+    def __init__(self, ana_repo, trans_repo, expense_repo, log_repo, prod_repo, exporter):
+    def _to_jst_str(self, utc_str):
+    def get_expense_list(self):
+    def get_dashboard_summary(self):
+    def get_transaction_list(self):
+    def get_transaction_details(self, tx_id):
+    def get_logs(self):
+    def get_pivot_data(self):
+    def get_default_filename(self):
+    def export_to_excel(self, file_path):
+    def analyze_dynamic(self, row_axis_key, col_axis_key, metric_key, start_date, end_date):
+    def _sort_by_product_master(self, df, axis):
+    def get_initial_date_range(self):
+    def get_axis_categories(self):
+    def get_axis_details(self, category):
+    def get_default_csv_filename(self):
+    def export_to_csv(self, file_path):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\cart_service.py
+==================================================
+
+from typing import List, Tuple, Optional
+import json
+import urllib.parse
+from PySide6.QtCore import QObject, Signal
+from app.models.product import Product
+from app.models.customer import Customer
+from app.models.cart_item import CartItem
+from app.models.transaction import Transaction, TransactionItem, TransactionPayment
+from app.models.discount import AppliedDiscount
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.product_repo import ProductRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.log_repo import LogRepository
+from app.logic.calculator import PriceCalculator
+from app.logic.discount_manager import DiscountManager
+from app.services.checkout_service import CheckoutService
+
+class CartService(QObject):
+    def __init__(self, prod_repo, disc_repo, discount_manager, checkout_service, user_repo, expense_repo, payment_repo, log_repo, trans_repo):
+    def _init_sales_data(self):
+    def _calculate_avg_price(self):
+    def get_applicable_rule_names(self, product):
+    def add_product(self, product):
+    def add_manual_item(self, price, name):
+    def remove_item(self, index):
+    def update_item_qty(self, index, qty):
+    def decrease_item_qty(self, index):
+    def _change_qty_delta(self, index, delta):
+    def update_item_price(self, index, new_price):
+    def refresh_prices(self, active_products):
+    def clear_cart(self):
+    def set_user(self, user_name, role):
+    def set_current_user(self, user_name):
+    def set_customer(self, customer):
+    def get_total_amount(self):
+    def finalize_checkout(self, payments, change):
+    def recalculate(self):
+    def is_discount_target(self, product_id):
+    def _notify_message(self, text, msg_type):
+    def reset_message(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\checkout_service.py
+==================================================
+
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.log_repo import LogRepository
+from app.models.transaction import Transaction
+
+class CheckoutService:
+    def __init__(self, trans_repo, log_repo):
+    def process_checkout(self, transaction):
+    def cancel_transaction(self, transaction_id):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\csv_exporter.py
+==================================================
+
+import csv
+import datetime
+from typing import Dict, Set
+from app.repositories.transaction_repo import TransactionRepository
+
+class CsvTransactionExporter:
+    def __init__(self, trans_repo):
+    def _to_jst_str(self, utc_str):
+    def export_all_transactions(self, filepath):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\customer_service.py
+==================================================
+
+from typing import List, Dict
+from app.repositories.customer_repo import CustomerRepository
+from app.repositories.log_repo import LogRepository
+from app.models.customer import Customer
+
+class CustomerService:
+    def __init__(self, repo, log_repo):
+    def get_all_customers(self):
+    def get_active_customers(self):
+    def add_customer(self, customer):
+    def update_customer(self, customer):
+    def delete_customer(self, customer):
+    def disable_customer(self, customer):
+    def update_display_order(self, order_map):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\discount_service.py
+==================================================
+
+from typing import List
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.log_repo import LogRepository
+from app.models.discount import DiscountRule
+
+class DiscountService:
+    def __init__(self, repo, log_repo):
+    def get_all_rules(self):
+    def add_rule(self, rule):
+    def update_rule(self, rule):
+    def delete_rule(self, rule):
+    def disable_rule(self, rule):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\excel_exporter.py
+==================================================
+
+import pandas
+import os
+from typing import List, Dict, Tuple, Optional
+from openpyxl import load_workbook
+from app.services.interfaces.report_exporter import IReportExporter
+from typing import TYPE_CHECKING
+
+class ExcelReportExporter(IReportExporter):
+    def __init__(self, analytics_service):
+    def export(self, file_path, tx_list, logs, pivots):
+    def export_analysis_result(self, df, sheet_name, file_path, include_raw_data):
+    def _get_raw_datasets(self):
+    def _process_transaction_list(self, tx_list):
+    def _process_logs(self, logs):
+    def _write_sheet(self, writer, df, sheet_name):
+    def _sanitize_sheet_name(self, name):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\expense_service.py
+==================================================
+
+from typing import List
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
+from app.models.expense import Expense
+
+class ExpenseService:
+    def __init__(self, repo, log_repo):
+    def get_all_expenses(self):
+    def add_expense(self, title, amount):
+    def update_expense(self, expense):
+    def delete_expense(self, expense):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\master_data_service.py
+==================================================
+
+import json
+import shutil
+import os
+import datetime
+from typing import Dict, List
+from app.config import DATA_DIR
+from app.models.product import Product
+from app.models.user import User
+from app.models.customer import Customer
+from app.models.payment_method import PaymentMethod
+from app.models.expense import Expense
+from app.models.discount import DiscountRule
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+
+class MasterDataService:
+    def __init__(self, repositories):
+    def save_db_to_json(self):
+    def _load_json_safe(self):
+    def sync_json_to_db(self):
+    def restore_from_dict(self, data):
+    def _apply_data_to_repositories(self, data):
+    def get_current_data_as_dict(self):
+    def check_integrity(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\payment_service.py
+==================================================
+
+from typing import List
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.log_repo import LogRepository
+from app.models.payment_method import PaymentMethod
+
+class PaymentService:
+    def __init__(self, repo, log_repo):
+    def get_all_methods(self):
+    def add_method(self, method):
+    def update_method(self, method):
+    def delete_method(self, method):
+    def disable_method(self, method):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\product_service.py
+==================================================
+
+from typing import List, Dict
+from app.repositories.product_repo import ProductRepository
+from app.repositories.log_repo import LogRepository
+from app.models.product import Product
+
+class ProductService:
+    def __init__(self, repo, log_repo):
+    def get_active_products(self):
+    def get_all_products(self):
+    def add_product(self, product):
+    def update_product(self, product):
+    def delete_product(self, product):
+    def disable_product(self, product):
+    def update_display_order(self, order_map):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\user_service.py
+==================================================
+
+from typing import List
+from app.repositories.user_repo import UserRepository
+from app.repositories.log_repo import LogRepository
+from app.models.user import User
+
+class UserService:
+    def __init__(self, repo, log_repo):
+    def get_all_users(self):
+    def add_user(self, user):
+    def update_user(self, user):
+    def delete_user(self, user):
+    def disable_user(self, user):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\enums.py
+==================================================
+
+from enum import Enum, auto
+
+class AnalysisAxis(Enum):
+
+class AnalysisMetric(Enum):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\processor.py
+==================================================
+
+import pandas
+import json
+from enums import AnalysisAxis
+
+class DataProcessor:
+    def process(raw_data):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\strategies.py
+==================================================
+
+import pandas
+from abc import ABC, abstractmethod
+from typing import Any
+from enums import AnalysisAxis, AnalysisMetric
+
+class IAnalysisStrategy(ABC):
+    def execute(self, df, row_axis, col_axis, metric):
+
+class CrossTabStrategy(IAnalysisStrategy):
+    def execute(self, df, row_axis, col_axis, metric):
+
+class BasketAnalysisStrategy(IAnalysisStrategy):
+    def execute(self, df, row_axis, col_axis, metric):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\analytics\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\interfaces\report_exporter.py
+==================================================
+
+from abc import ABC, abstractmethod
+from typing import List, Dict, Tuple
+import pandas
+
+class IReportExporter(ABC):
+    def export(self, file_path, tx_list, logs, pivots):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\database.py
+==================================================
+
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+import sqlite3
+from typing import Generator, Tuple
+
+class IDatabaseProvider(ABC):
+    def get_connection(self):
+    def transaction(self):
+
+class SQLiteProvider(IDatabaseProvider):
+    def __init__(self, db_path):
+    def get_connection(self):
+    def transaction(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\style.py
+==================================================
+
+
+class StyleGenerator:
+    def create_button_style(base_color):
+    def create_tab_style():
+    def _darken_color(hex_color, factor):
+    def _get_text_color(bg_color):
+    def get_checkbox_style():
+    def get_spinbox_style():
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\admin_window.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTabWidget, QFileDialog, QMessageBox
+from PySide6.QtGui import QFont
+from app.services.analytics_service import AnalyticsService
+from app.services.csv_exporter import CsvTransactionExporter
+from app.views.tabs.dashboard_tab import DashboardTab
+from app.views.tabs.analysis_tab import AnalysisTab
+from app.views.tabs.transaction_tab import TransactionTab
+from app.views.tabs.log_tab import LogTab
+
+class AdminWindow(QDialog):
+    def __init__(self, service, parent):
+    def _init_ui(self):
+    def _load_data(self):
+    def _export_excel(self):
+    def _export_csv(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\main_window.py
+==================================================
+
+from typing import Dict
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QPushButton, QMessageBox, QDialog, QLineEdit, QSpinBox, QDialogButtonBox
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
+from app.config import DB_PATH
+from app.repositories.transaction_repo import TransactionRepository
+from app.repositories.product_repo import ProductRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.log_repo import LogRepository
+from app.repositories.customer_repo import CustomerRepository
+from app.repositories.analytics_repo import AnalyticsRepository
+from app.repositories.interfaces.master_data_repo import IMasterDataRepository
+from app.services.user_service import UserService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
+from app.services.master_data_service import MasterDataService
+from app.services.cart_service import CartService
+from app.services.checkout_service import CheckoutService
+from app.services.product_service import ProductService
+from app.services.customer_service import CustomerService
+from app.services.analytics_service import AnalyticsService
+from app.services.excel_exporter import ExcelReportExporter
+from app.logic.discount_manager import DiscountManager
+from app.logic.strategies.item_strategy import ItemDiscountStrategy
+from app.logic.strategies.category_strategy import CategoryDiscountStrategy
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
+from app.logic.strategies.cart_strategy import CartDiscountStrategy
+from app.views.components.cart_widget import CartWidget
+from app.views.components.product_list_widget import ProductListWidget
+from app.views.components.customer_panel import CustomerPanel
+from app.views.dialogs.payment_dialog import PaymentDialog
+from app.views.admin_window import AdminWindow
+from app.views.dialogs.login_dialog import LoginDialog
+from app.views.dialogs.transaction_cancel_dialog import TransactionCancelDialog
+from app.views.settings_window import SettingsWindow
+from app.utils.style import StyleGenerator
+from app.utils.database import SQLiteProvider
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+    def _init_ui(self):
+    def _connect_signals(self):
+    def _check_checkout_button(self):
+    def _update_stats(self, sales, expenses, profit, msg, is_red):
+    def _open_payment_dialog(self):
+    def _on_checkout_completed(self, total_amount, change, customer_name):
+    def _open_manual_input(self):
+    def _open_admin_window(self):
+    def _show_login_dialog(self):
+    def _open_settings_window(self):
+    def _open_transaction_cancel_dialog(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_window.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QPushButton, QMessageBox, QLabel, QWidget
+from PySide6.QtGui import QCloseEvent
+from app.services.master_data_service import MasterDataService
+from app.services.product_service import ProductService
+from app.services.user_service import UserService
+from app.services.customer_service import CustomerService
+from app.services.payment_service import PaymentService
+from app.services.expense_service import ExpenseService
+from app.services.discount_service import DiscountService
+from app.views.settings_tabs.product_setting_tab import ProductSettingTab
+from app.views.settings_tabs.user_setting_tab import UserSettingTab
+from app.views.settings_tabs.customer_setting_tab import CustomerSettingTab
+from app.views.settings_tabs.payment_setting_tab import PaymentSettingTab
+from app.views.settings_tabs.expense_setting_tab import ExpenseSettingTab
+from app.views.settings_tabs.discount_setting_tab import DiscountSettingTab
+from app.repositories.product_repo import ProductRepository
+from app.repositories.user_repo import UserRepository
+from app.repositories.customer_repo import CustomerRepository
+from app.repositories.payment_repo import PaymentRepository
+from app.repositories.expense_repo import ExpenseRepository
+from app.repositories.discount_repo import DiscountRepository
+from app.repositories.log_repo import LogRepository
+
+class SettingsWindow(QDialog):
+    def __init__(self, product_service, user_service, customer_service, payment_service, expense_service, discount_service, master_service, parent):
+    def _init_ui(self):
+    def _export_to_json(self):
+    def closeEvent(self, event):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\cart_widget.py
+==================================================
+
+import urllib.parse
+from typing import List
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView, QLabel, QPushButton, QMessageBox, QDialog, QListWidget, QAbstractItemView
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont
+from app.services.cart_service import CartService
+
+class CartWidget(QWidget):
+    def __init__(self, cart_service, parent):
+    def _init_ui(self):
+    def _render_cart(self):
+    def _on_cell_changed(self, row, col):
+    def _update_message(self, text, msg_type):
+    def _on_link_activated(self, link):
+    def _show_discount_details(self, rules):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\customer_panel.py
+==================================================
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QButtonGroup
+from app.services.cart_service import CartService
+from app.services.customer_service import CustomerService
+from app.models.customer import Customer
+from app.views.components.custom_buttons import CustomerButton
+
+class CustomerPanel(QWidget):
+    def __init__(self, cart_service, customer_service, parent):
+    def _init_ui(self):
+    def refresh_data(self):
+    def _on_customer_selected(self, customer):
+    def _reset_selection(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\custom_buttons.py
+==================================================
+
+from typing import Optional
+from PySide6.QtWidgets import QPushButton, QWidget
+from PySide6.QtCore import Qt
+from app.utils.style import StyleGenerator
+from app.models.product import Product
+from app.models.customer import Customer
+
+class StyledButton(QPushButton):
+    def __init__(self, text, color, parent):
+    def apply_style(self, color):
+
+class ProductButton(StyledButton):
+    def __init__(self, product, parent):
+
+class CustomerButton(StyledButton):
+    def __init__(self, customer, parent):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\product_list_widget.py
+==================================================
+
+from typing import List, Dict
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTabWidget, QScrollArea, QGridLayout, QLabel
+from PySide6.QtCore import Qt
+from app.services.cart_service import CartService
+from app.services.product_service import ProductService
+from app.views.components.custom_buttons import ProductButton
+from app.utils.style import StyleGenerator
+from app.models.product import Product
+
+class ProductListWidget(QWidget):
+    def __init__(self, cart_service, product_service, parent):
+    def _init_ui(self):
+    def refresh_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\components\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\customer_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox, QCheckBox, QDialogButtonBox, QPushButton, QColorDialog, QListWidget, QMessageBox
+from PySide6.QtGui import QColor
+from app.utils.style import StyleGenerator
+
+class CustomerEditDialog(QDialog):
+    def __init__(self, data, all_presets, parent):
+    def _build_candidates(self, presets):
+    def _init_ui(self):
+    def _refresh_attr_list(self):
+    def _on_key_changed(self, key):
+    def _on_list_item_clicked(self, item):
+    def _add_attribute_to_list(self):
+    def _remove_attribute_from_list(self):
+    def _pick_color(self):
+    def _update_color(self):
+    def get_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\discount_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QComboBox, QCheckBox, QDialogButtonBox, QRadioButton, QButtonGroup, QWidget, QListWidget, QPushButton, QMessageBox
+import json
+from app.utils.style import StyleGenerator
+from app.services.product_service import ProductService
+from app.logic.strategies.bundle_strategy import BundleDiscountStrategy
+
+class DiscountEditDialog(QDialog):
+    def __init__(self, product_service, data, parent):
+    def _init_ui(self):
+    def _load_master_data(self):
+    def _on_apply_type_changed(self, index):
+    def _on_bundle_mode_changed(self, index):
+    def _add_select_target(self):
+    def _add_combo_condition(self):
+    def _refresh_combo_list(self):
+    def _load_data(self):
+    def get_data(self):
+    def _remove_selected_combo(self):
+    def accept(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\expense_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QSpinBox, QDialogButtonBox, QDateTimeEdit, QFormLayout
+from PySide6.QtCore import QDateTime, Qt
+from app.utils.style import StyleGenerator
+
+class ExpenseEditDialog(QDialog):
+    def __init__(self, data, parent):
+    def _init_ui(self):
+    def get_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\login_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QGridLayout
+from PySide6.QtCore import Qt
+from app.repositories.user_repo import UserRepository
+
+class LoginDialog(QDialog):
+    def __init__(self, user_repo, parent):
+    def _init_ui(self):
+    def _on_user_selected(self, name):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\payment_dialog.py
+==================================================
+
+from typing import List, Tuple, Dict
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QGridLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeyEvent
+from app.models.payment_method import PaymentMethod
+from app.logic.payment_session import PaymentSession
+
+class PaymentDialog(QDialog):
+    def __init__(self, total_amount, payment_methods, parent):
+    def _init_ui(self):
+    def keyPressEvent(self, event):
+    def _select_method(self, method):
+    def _set_buffer_to_remaining(self):
+    def _on_numpad(self, text):
+    def _clear_input(self):
+    def _update_input_display(self):
+    def _add_payment(self):
+    def _remove_selected_row(self):
+    def _update_ui(self):
+    def _update_method_buttons(self):
+    def get_result(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\payment_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QCheckBox, QDialogButtonBox
+from app.utils.style import StyleGenerator
+
+class PaymentEditDialog(QDialog):
+    def __init__(self, data, parent):
+    def _init_ui(self):
+    def get_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\product_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QCheckBox, QComboBox, QDialogButtonBox, QPushButton, QColorDialog
+from PySide6.QtCore import Qt
+from app.models.product import Product
+from app.utils.style import StyleGenerator
+
+class ProductEditDialog(QDialog):
+    def __init__(self, product, parent):
+    def _init_ui(self):
+    def _pick_color(self):
+    def _update_color_preview(self):
+    def get_data(self):
+    def set_category_list(self, categories):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\transaction_cancel_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QMessageBox
+from PySide6.QtCore import Qt
+from app.services.analytics_service import AnalyticsService
+from app.services.checkout_service import CheckoutService
+
+class TransactionCancelDialog(QDialog):
+    def __init__(self, analytics_service, checkout_service, parent):
+    def _init_ui(self):
+    def _load_data(self):
+    def _on_cancel_clicked(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\user_edit_dialog.py
+==================================================
+
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QComboBox, QCheckBox, QDialogButtonBox, QMessageBox
+from app.utils.style import StyleGenerator
+
+class UserEditDialog(QDialog):
+    def __init__(self, user_data, parent):
+    def _init_ui(self):
+    def _validate_and_accept(self):
+    def get_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\base_setting_tab.py
+==================================================
+
+from typing import List, Optional
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QPushButton, QHeaderView, QLabel, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+
+class BaseSettingTab(QWidget):
+    def __init__(self, title):
+    def _setup_buttons(self):
+    def _setup_table(self):
+    def set_columns(self, columns):
+    def create_item(self, text, text_color, bg_color, align):
+    def get_selected_row_data(self, data_list):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\customer_setting_tab.py
+==================================================
+
+from PySide6.QtWidgets import QPushButton, QHeaderView, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+from dataclasses import asdict
+from app.models.customer import Customer
+from app.services.customer_service import CustomerService
+from app.views.dialogs.customer_edit_dialog import CustomerEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class CustomerSettingTab(BaseSettingTab):
+    def __init__(self, service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+    def _move(self, direction):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\discount_setting_tab.py
+==================================================
+
+from dataclasses import asdict
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QMessageBox
+from app.models.discount import DiscountRule
+from app.services.discount_service import DiscountService
+from app.services.product_service import ProductService
+from app.views.dialogs.discount_edit_dialog import DiscountEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class DiscountSettingTab(BaseSettingTab):
+    def __init__(self, discount_service, product_service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\expense_setting_tab.py
+==================================================
+
+from PySide6.QtWidgets import QMessageBox, QHeaderView
+from dataclasses import asdict
+from app.models.expense import Expense
+from app.services.expense_service import ExpenseService
+from app.views.dialogs.expense_edit_dialog import ExpenseEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class ExpenseSettingTab(BaseSettingTab):
+    def __init__(self, service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\payment_setting_tab.py
+==================================================
+
+from dataclasses import asdict
+from PySide6.QtWidgets import QMessageBox
+from app.models.payment_method import PaymentMethod
+from app.services.payment_service import PaymentService
+from app.views.dialogs.payment_edit_dialog import PaymentEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class PaymentSettingTab(BaseSettingTab):
+    def __init__(self, service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\product_setting_tab.py
+==================================================
+
+from PySide6.QtWidgets import QMessageBox, QPushButton
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+from app.models.product import Product
+from app.services.product_service import ProductService
+from app.views.dialogs.product_edit_dialog import ProductEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class ProductSettingTab(BaseSettingTab):
+    def __init__(self, product_service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+    def _move_row(self, direction):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\user_setting_tab.py
+==================================================
+
+from PySide6.QtWidgets import QMessageBox
+from PySide6.QtCore import Qt
+from dataclasses import asdict
+from app.models.user import User
+from app.services.user_service import UserService
+from app.views.dialogs.user_edit_dialog import UserEditDialog
+from app.views.settings_tabs.base_setting_tab import BaseSettingTab
+
+class UserSettingTab(BaseSettingTab):
+    def __init__(self, user_service):
+    def load_data(self):
+    def on_add(self):
+    def on_edit_selected(self):
+    def on_delete_selected(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\analysis_tab.py
+==================================================
+
+import datetime
+import os
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QDateEdit, QFrame, QGridLayout, QMessageBox, QFileDialog
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtGui import QColor, QFont
+from app.services.analytics.enums import AnalysisAxis, AnalysisMetric
+from app.services.excel_exporter import ExcelReportExporter
+
+class AnalysisTab(QWidget):
+    def __init__(self, service):
+    def _init_ui(self):
+    def _update_detail_combo(self, cat_combo, det_combo):
+    def _set_initial_selection(self):
+    def run_analysis(self):
+    def export_excel(self):
+    def _populate_metric_combo(self, combo):
+    def _render_table(self, df, max_val, min_val):
+    def _get_contrasting_text_color(self, bg_color):
+    def _get_heatmap_color(self, ratio):
+    def update_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\dashboard_tab.py
+==================================================
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont
+
+class DashboardTab(QWidget):
+    def __init__(self, service):
+    def _init_ui(self):
+    def _create_card(self, title, color):
+    def update_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\log_tab.py
+==================================================
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QTableWidget, QTableWidgetItem, QHeaderView
+from PySide6.QtGui import QColor
+
+class LogTab(QWidget):
+    def __init__(self, service):
+    def _init_ui(self):
+    def update_data(self):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\transaction_tab.py
+==================================================
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QTextEdit
+from PySide6.QtCore import Qt
+
+class TransactionTab(QWidget):
+    def __init__(self, service):
+    def _init_ui(self):
+    def update_data(self):
+    def _on_tx_clicked(self, row, col):
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\tabs\__init__.py
+==================================================
+
+
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\data\master_data.json
+==================================================
+
+{
+    "products": [
+        {
+            "id": 1,
+            "name": "たこ焼き",
+            "price": 600,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "焼きそば",
+            "price": 500,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "大盛り対応可能",
+            "display_order": 2,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "唐揚げ",
+            "price": 400,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 3,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "フランクフルト",
+            "price": 300,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
+            "id": 13,
+            "name": "テストA",
+            "price": 9999,
+            "category": "フード",
+            "color": "#ffcc80",
+            "note": "",
+            "display_order": 5,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "生ビール",
+            "price": 600,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "年齢確認必須",
+            "display_order": 6,
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "name": "ハイボール",
+            "price": 400,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "年齢確認必須",
+            "display_order": 7,
+            "is_active": true
+        },
+        {
+            "id": 7,
+            "name": "ウーロン茶",
+            "price": 150,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "",
+            "display_order": 8,
+            "is_active": true
+        },
+        {
+            "id": 8,
+            "name": "コーラ",
+            "price": 150,
+            "category": "ドリンク",
+            "color": "#80d8ff",
+            "note": "",
+            "display_order": 9,
+            "is_active": false
+        },
+        {
+            "id": 9,
+            "name": "袋",
+            "price": 10,
+            "category": "その他",
+            "color": "#ffffff",
+            "note": "",
+            "display_order": 99,
+            "is_active": true
+        },
+        {
+            "id": 10,
+            "name": "セット割引",
+            "price": -50,
+            "category": "割引",
+            "color": "#ff8a80",
+            "note": "",
+            "display_order": 100,
+            "is_active": true
+        },
+        {
+            "id": 11,
+            "name": "ポイント割引",
+            "price": -100,
+            "category": "割引",
+            "color": "#ff8a80",
+            "note": "",
+            "display_order": 101,
+            "is_active": true
+        }
+    ],
+    "users": [
+        {
+            "id": 1,
+            "name": "店長",
+            "user_code": "9999",
+            "role": "admin",
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "name": "副店長",
+            "user_code": "8888",
+            "role": "admin",
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "スタッフA",
+            "user_code": "001",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "スタッフB",
+            "user_code": "002",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "name": "スタッフC",
+            "user_code": "003",
+            "role": "staff",
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "name": "スタッフD",
+            "user_code": "004",
+            "role": "staff",
+            "is_active": true
+        }
+    ],
+    "customers_presets": [
+        {
+            "id": 1,
+            "label": "男1",
+            "attributes": {
+                "sex": "male",
+                "count": 1
+            },
+            "color": "#bbdefb",
+            "display_order": 1,
+            "is_active": true
+        },
+        {
+            "id": 2,
+            "label": "女1",
+            "attributes": {
+                "sex": "female",
+                "count": 1
+            },
+            "color": "#f8bbd0",
+            "display_order": 2,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "label": "男複数",
+            "attributes": {
+                "sex": "male",
+                "count": "many"
+            },
+            "color": "#90caf9",
+            "display_order": 3,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "label": "女複数",
+            "attributes": {
+                "sex": "female",
+                "count": "many"
+            },
+            "color": "#f48fb1",
+            "display_order": 4,
+            "is_active": true
+        },
+        {
+            "id": 5,
+            "label": "家族連れ",
+            "attributes": {
+                "type": "family"
+            },
+            "color": "#a5d6a7",
+            "display_order": 5,
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "label": "男女グループ",
+            "attributes": {
+                "type": "group"
+            },
+            "color": "#a5d6a7",
+            "display_order": 6,
+            "is_active": true
+        }
+    ],
+    "payment_methods": [
+        {
+            "id": 1,
+            "name": "現金",
+            "is_cash": true,
+            "is_active": true
+        },
+        {
+            "id": 3,
+            "name": "クレジット",
+            "is_cash": false,
+            "is_active": true
+        },
+        {
+            "id": 4,
+            "name": "PayPay",
+            "is_cash": false,
+            "is_active": true
+        },
+        {
+            "id": 6,
+            "name": "交通系IC",
+            "is_cash": false,
+            "is_active": true
+        }
+    ],
+    "initial_expenses": [
+        {
+            "id": 2,
+            "title": "買い出し",
+            "amount": 500,
+            "timestamp": "2026-01-24 18:41:14"
+        },
+        {
+            "id": 3,
+            "title": "準備金",
+            "amount": 15000,
+            "timestamp": "2026-01-24 18:41:14"
+        }
+    ],
+    "discount_rules": [
+        {
+            "id": 1,
+            "name": "ランチタイム値引",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "cart",
+            "target_value": "",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 2,
+            "name": "ドリンク全品10%OFF",
+            "discount_type": "percent",
+            "discount_value": 10,
+            "apply_type": "category",
+            "target_value": "ドリンク",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 3,
+            "name": "フード2個で100円引",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"select\", \"qty\": 2, \"targets\": [\"たこ焼き\", \"焼きそば\", \"唐揚げ\"]}",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 5,
+            "name": "たこ焼きドリンクセット100円引き",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"たこ焼き\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 8,
+            "name": "フードドリンクセット割り",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"フード\", \"type\": \"category\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": true
+        }
+    ]
+}

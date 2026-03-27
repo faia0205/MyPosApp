@@ -2308,6 +2308,21 @@ class TransactionRepository(BaseRepository):
                 "payments": payments,
                 "items": items
             }
+    
+    def delete_transaction(self, transaction_id: int) -> bool:
+        """取引の物理削除（管理者用）"""
+        try:
+            with self.transaction() as (conn, cursor):
+                # 1. 決済削除
+                cursor.execute("DELETE FROM transaction_payments WHERE transaction_id=?", (transaction_id,))
+                # 2. 明細削除
+                cursor.execute("DELETE FROM transaction_items WHERE transaction_id=?", (transaction_id,))
+                # 3. ヘッダー削除
+                cursor.execute("DELETE FROM transactions WHERE id=?", (transaction_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting transaction: {e}")
+            return False
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\user_repo.py
@@ -3363,6 +3378,17 @@ class CheckoutService:
         self.log_repo.add_log("info", f"会計完了: ID {new_id} ¥{transaction.total_amount}")
         
         return new_id
+    
+    def cancel_transaction(self, transaction_id: int) -> bool:
+        """
+        伝票を取消し、ログを記録する
+        Returns:
+            success (bool)
+        """
+        if self.trans_repo.delete_transaction(transaction_id):
+            self.log_repo.add_log("warning", f"伝票取消: ID {transaction_id}")
+            return True
+        return False
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\csv_exporter.py
@@ -4783,6 +4809,7 @@ from app.views.components.customer_panel import CustomerPanel
 from app.views.dialogs.payment_dialog import PaymentDialog
 from app.views.admin_window import AdminWindow
 from app.views.dialogs.login_dialog import LoginDialog
+from app.views.dialogs.transaction_cancel_dialog import TransactionCancelDialog
 from app.views.settings_window import SettingsWindow
 from app.utils.style import StyleGenerator
 from app.utils.database import SQLiteProvider
@@ -4910,6 +4937,13 @@ class MainWindow(QMainWindow):
         btn_admin.setFocusPolicy(Qt.NoFocus)
         btn_admin.clicked.connect(self._open_admin_window)
         header_layout.addWidget(btn_admin)
+
+        btn_cancel_tx = QPushButton("伝票取消")
+        btn_cancel_tx.setFixedSize(80, 30)
+        btn_cancel_tx.setStyleSheet("background-color: #d32f2f; color: white; border: none; font-weight: bold;")
+        btn_cancel_tx.setFocusPolicy(Qt.NoFocus)
+        btn_cancel_tx.clicked.connect(self._open_transaction_cancel_dialog)
+        header_layout.addWidget(btn_cancel_tx)
 
         btn_settings = QPushButton("⚙ 設定")
         btn_settings.setFixedSize(80, 30)
@@ -5060,6 +5094,13 @@ class MainWindow(QMainWindow):
         self.cart_service.recalculate()
         self.product_list_widget.refresh_data()
         self.customer_panel.refresh_data()
+    
+    def _open_transaction_cancel_dialog(self):
+        dialog = TransactionCancelDialog(self.analytics_service, self.checkout_service, self)
+        dialog.exec()
+        # 伝票取消後はデータをリフレッシュ
+        self.cart_service._init_sales_data()
+        self.cart_service.recalculate()
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_window.py
@@ -6998,6 +7039,91 @@ class ProductEditDialog(QDialog):
         self.cat_combo.setCurrentText(current)
 
 ==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\transaction_cancel_dialog.py
+==================================================
+
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, 
+                               QTableWidgetItem, QPushButton, QHeaderView, QMessageBox)
+from PySide6.QtCore import Qt
+from app.services.analytics_service import AnalyticsService
+from app.services.checkout_service import CheckoutService
+
+class TransactionCancelDialog(QDialog):
+    def __init__(self, analytics_service: AnalyticsService, checkout_service: CheckoutService, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("伝票取消")
+        self.resize(800, 500)
+        self.analytics_service = analytics_service
+        self.checkout_service = checkout_service
+
+        self.setStyleSheet("""
+            QDialog { background-color: #2b2b2b; color: white; }
+            QTableWidget { background-color: #333; gridline-color: #555; color: white; }
+            QHeaderView::section { background-color: #444; color: white; padding: 4px; border: 1px solid #555; }
+            QTableWidget::item:selected { background-color: #d32f2f; }
+        """)
+
+        self._init_ui()
+        self._load_data()
+
+    def _init_ui(self):
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["伝票ID", "日時", "客層", "決済方法", "金額", "お釣り"])
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setSelectionMode(QTableWidget.SingleSelection)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(self.table)
+
+        btn_layout = QHBoxLayout()
+        
+        self.btn_cancel_tx = QPushButton("選択した伝票を取消")
+        self.btn_cancel_tx.setFixedSize(200, 40)
+        self.btn_cancel_tx.setStyleSheet("background-color: #c62828; color: white; font-weight: bold; border-radius: 4px;")
+        self.btn_cancel_tx.clicked.connect(self._on_cancel_clicked)
+        btn_layout.addWidget(self.btn_cancel_tx)
+
+        self.btn_close = QPushButton("閉じる")
+        self.btn_close.setFixedSize(120, 40)
+        self.btn_close.setStyleSheet("background-color: #555; color: white; border-radius: 4px;")
+        self.btn_close.clicked.connect(self.reject)
+        btn_layout.addWidget(self.btn_close)
+
+        layout.addLayout(btn_layout)
+
+    def _load_data(self):
+        self.transactions = self.analytics_service.get_transaction_list()
+        self.table.setRowCount(len(self.transactions))
+        for row, tx in enumerate(self.transactions):
+            self.table.setItem(row, 0, QTableWidgetItem(str(tx['id'])))
+            self.table.setItem(row, 1, QTableWidgetItem(str(tx['time'])))
+            self.table.setItem(row, 2, QTableWidgetItem(str(tx['customer'])))
+            self.table.setItem(row, 3, QTableWidgetItem(str(tx['payment'])))
+            self.table.setItem(row, 4, QTableWidgetItem(f"¥{tx['total']:,}"))
+            self.table.setItem(row, 5, QTableWidgetItem(f"¥{tx['change']:,}"))
+
+    def _on_cancel_clicked(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.warning(self, "エラー", "取り消す伝票を選択してください。")
+            return
+
+        row = selected_rows[0].row()
+        tx_id = self.transactions[row]['id']
+
+        msg = f"伝票ID: {tx_id} を本当に取り消しますか？\nこの操作は元に戻せません。"
+        if QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+            if self.checkout_service.cancel_transaction(tx_id):
+                QMessageBox.information(self, "成功", f"伝票ID: {tx_id} を取り消しました。")
+                self._load_data()
+            else:
+                QMessageBox.critical(self, "エラー", "伝票の取消に失敗しました。")
+
+==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\dialogs\user_edit_dialog.py
 ==================================================
 
@@ -8757,6 +8883,16 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\data\master_data.json
             "discount_value": 100,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"たこ焼き\", \"type\": \"item\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
+            "is_auto": true,
+            "is_active": false
+        },
+        {
+            "id": 8,
+            "name": "フードドリンクセット割り",
+            "discount_type": "fixed",
+            "discount_value": 100,
+            "apply_type": "bundle",
+            "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"フード\", \"type\": \"category\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
             "is_auto": true,
             "is_active": true
         }
