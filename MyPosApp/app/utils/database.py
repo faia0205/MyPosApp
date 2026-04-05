@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import sqlite3
+import logging
 from typing import Generator, Tuple
+
+logger = logging.getLogger("MyPosApp")
 
 class IDatabaseProvider(ABC):
     """データベース接続を提供する抽象インターフェース"""
@@ -36,6 +39,7 @@ class SQLiteProvider(IDatabaseProvider):
             conn.commit()
         except Exception as e:
             conn.rollback()
-            raise e
+            logger.error(f"Database transaction error: {e}", exc_info=True)
+            raise RuntimeError(f"データベース処理中にエラーが発生しました: {e}") from e
         finally:
             conn.close()

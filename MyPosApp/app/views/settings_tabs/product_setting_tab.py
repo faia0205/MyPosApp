@@ -37,37 +37,42 @@ class ProductSettingTab(BaseSettingTab): # ★継承
 
     def load_data(self):
         """DBから全データを読み込んで表示"""
-        products = self.service.get_all_products()
-        self.table.setRowCount(len(products))
-        self.current_products = products
+        try:
+            products = self.service.get_all_products()
+            self.table.setRowCount(len(products))
+            self.current_products = products
 
-        # カテゴリリスト更新（ダイアログ用）
-        self.existing_categories = sorted(list({p.category for p in products if p.category}))
-        for default_cat in ["ドリンク", "フード"]:
-            if default_cat not in self.existing_categories:
-                self.existing_categories.insert(0, default_cat)
+            # カテゴリリスト更新（ダイアログ用）
+            self.existing_categories = sorted(list({p.category for p in products if p.category}))
+            for default_cat in ["ドリンク", "フード"]:
+                if default_cat not in self.existing_categories:
+                    self.existing_categories.insert(0, default_cat)
 
-        for row, p in enumerate(products):
-            # ID
-            self.table.setItem(row, 0, self.create_item(p.id, align=Qt.AlignCenter))
-            # Name
-            self.table.setItem(row, 1, self.create_item(p.name))
-            # Price
-            self.table.setItem(row, 2, self.create_item(f"¥{p.price:,}", align=Qt.AlignRight))
-            # Category
-            self.table.setItem(row, 3, self.create_item(p.category))
-            # Color (背景色付き)
-            item_color = self.create_item(p.color, text_color="black", bg_color=p.color)
-            self.table.setItem(row, 4, item_color)
-            
-            # Status
-            status_text = "● 販売中" if p.is_active else "× 停止中"
-            s_fg = "#69f0ae" if p.is_active else "#bdbdbd"
-            s_bg = "#1b5e20" if p.is_active else "#424242"
-            self.table.setItem(row, 5, self.create_item(status_text, text_color=s_fg, bg_color=s_bg, align=Qt.AlignCenter))
-            
-            # Note
-            self.table.setItem(row, 6, self.create_item(p.note))
+            for row, p in enumerate(products):
+                # ID
+                self.table.setItem(row, 0, self.create_item(p.id, align=Qt.AlignCenter))
+                # Name
+                self.table.setItem(row, 1, self.create_item(p.name))
+                # Price
+                self.table.setItem(row, 2, self.create_item(f"¥{p.price:,}", align=Qt.AlignRight))
+                # Category
+                self.table.setItem(row, 3, self.create_item(p.category))
+                # Color (背景色付き)
+                item_color = self.create_item(p.color, text_color="black", bg_color=p.color)
+                self.table.setItem(row, 4, item_color)
+
+                # Status
+                status_text = "● 販売中" if p.is_active else "× 停止中"
+                s_fg = "#69f0ae" if p.is_active else "#bdbdbd"
+                s_bg = "#1b5e20" if p.is_active else "#424242"
+                self.table.setItem(row, 5, self.create_item(status_text, text_color=s_fg, bg_color=s_bg, align=Qt.AlignCenter))
+
+                # Note
+                self.table.setItem(row, 6, self.create_item(p.note))
+        except RuntimeError as e:
+            QMessageBox.critical(self, "データ読み込みエラー", str(e))
+            self.table.setRowCount(0)
+            self.current_products = []
 
     def on_add(self):
         dialog = ProductEditDialog(parent=self)
@@ -83,10 +88,13 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 note=data["note"],
                 is_active=data["is_active"]
             )
-            if self.service.add_product(new_product):
-                self.load_data()
-            else:
-                QMessageBox.warning(self, "エラー", "追加に失敗しました")
+            try:
+                if self.service.add_product(new_product):
+                    self.load_data()
+                else:
+                    QMessageBox.warning(self, "エラー", "追加に失敗しました")
+            except RuntimeError as e:
+                QMessageBox.critical(self, "エラー", str(e))
 
     def on_edit_selected(self):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -107,9 +115,11 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 is_active=data["is_active"],
                 display_order=target.display_order
             )
-            if self.service.update_product(updated_product):
-                self.load_data()
-                # 選択位置を維持したい場合はここで再選択処理
+            try:
+                if self.service.update_product(updated_product):
+                    self.load_data()
+            except RuntimeError as e:
+                QMessageBox.critical(self, "エラー", str(e))
 
     def on_delete_selected(self):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -118,13 +128,15 @@ class ProductSettingTab(BaseSettingTab): # ★継承
         msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 販売停止 (無効化)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
-        if res == QMessageBox.Yes:
-            if self.service.delete_product(target):
-                self.load_data()
-        elif res == QMessageBox.No:
-            target.is_active = False
-            if self.service.update_product(target):
-                self.load_data()
+        try:
+            if res == QMessageBox.Yes:
+                if self.service.delete_product(target):
+                    self.load_data()
+            elif res == QMessageBox.No:
+                if self.service.disable_product(target):
+                    self.load_data()
+        except RuntimeError as e:
+            QMessageBox.critical(self, "エラー", str(e))
 
     def _move_row(self, direction):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -137,6 +149,9 @@ class ProductSettingTab(BaseSettingTab): # ★継承
         item_b : Product = self.current_products[new_row]
         order_map = {target.id: item_b.display_order, item_b.id: target.display_order}
         
-        if self.service.update_display_order(order_map):
-            self.load_data()
-            self.table.selectRow(new_row)
+        try:
+            if self.service.update_display_order(order_map):
+                self.load_data()
+                self.table.selectRow(new_row)
+        except RuntimeError as e:
+            QMessageBox.critical(self, "エラー", str(e))
