@@ -11,4 +11,4 @@ class LogRepository(BaseRepository):
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT timestamp, level, message FROM operation_logs ORDER BY id DESC")
             rows = cursor.fetchall()
-        return [{"time": r[0], "level": r[1], "msg": r[2]} for r in rows]
+        return [{"timestamp": r[0], "time": r[0], "level": r[1], "msg": r[2]} for r in rows]

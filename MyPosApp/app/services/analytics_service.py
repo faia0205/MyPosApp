@@ -97,7 +97,8 @@ class AnalyticsService:
     def get_logs(self):
         logs = self.log_repo.fetch_logs()
         for log in logs:
-            log['time'] = self._to_jst_str(log['timestamp']) if 'timestamp' in log else ""
+            timestamp = log.get('timestamp') or log.get('time') or ""
+            log['time'] = self._to_jst_str(timestamp)
         return logs
 
     # --- Pivot Table (クロス集計) ---

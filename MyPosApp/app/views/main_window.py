@@ -1,10 +1,13 @@
 from typing import Dict
+import logging
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFrame, QLabel, QPushButton, QMessageBox,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from app.config import DB_PATH
+
+logger = logging.getLogger('MyPosApp')
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -310,6 +313,10 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
+            # ログに記録
+            log_msg = f"ユーザーログイン: {user_name}"
+            self.log_repo.add_log("info", log_msg)
+            logger.info(log_msg)
             self._check_checkout_button()
 
     def _open_settings_window(self):

@@ -39,6 +39,7 @@ sys.excepthook = global_exception_handler
 from app.views.main_window import MainWindow
 
 if __name__ == "__main__":
+    logger.info("Application startup")
     app = QApplication(sys.argv)
 
     if not os.path.exists(DB_PATH):

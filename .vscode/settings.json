@@ -4,5 +4,7 @@
         "GitHub.codespaces",
         "GitHub.vscode-pull-request-github",
         "Github.copilot"
-    ]
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+    "python.analysis.typeCheckingMode": "off"
 }

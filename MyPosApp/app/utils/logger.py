@@ -11,11 +11,11 @@ def setup_logger():
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.ERROR)
+    logger.setLevel(logging.INFO)
     
     # 単一ファイル・追記モード
     fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-    fh.setLevel(logging.ERROR)
+    fh.setLevel(logging.INFO)
     
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     fh.setFormatter(formatter)
