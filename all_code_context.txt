@@ -250,22 +250,50 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\main.py
 
 import sys
 import os
-from PySide6.QtWidgets import QApplication
+import traceback
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QFont
 
 # appパッケージのパスを通す
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.config import DB_PATH
-from init_db import create_tables # init_dbをインポート
+from init_db import create_tables
+from app.utils.logger import setup_logger
+
+logger = setup_logger()
+
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    """未捕捉の例外をキャッチするグローバルハンドラ"""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    # スタックトレースをフォーマットしてテキストログに出力
+    err_msg = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    logger.critical(f"Uncaught exception:\n{err_msg}")
+
+    # UIへの強制ポップアップ通知
+    msg_box = QMessageBox()
+    msg_box.setIcon(QMessageBox.Critical)
+    msg_box.setWindowTitle("重大なエラー")
+    msg_box.setText("予期せぬエラーが発生しました。アプリを終了します。")
+    msg_box.setDetailedText(err_msg)
+    msg_box.exec()
+
+    sys.exit(1)
+
+# グローバル例外ハンドラを登録
+sys.excepthook = global_exception_handler
 
 from app.views.main_window import MainWindow
 
 if __name__ == "__main__":
+    logger.info("Application startup")
     app = QApplication(sys.argv)
 
     if not os.path.exists(DB_PATH):
-        print("Database not found. Initializing...")
+        logger.info("Database not found. Initializing...")
         create_tables()
     
     # フォント設定
@@ -1873,7 +1901,7 @@ class LogRepository(BaseRepository):
         with self.transaction() as (conn, cursor):
             cursor.execute("SELECT timestamp, level, message FROM operation_logs ORDER BY id DESC")
             rows = cursor.fetchall()
-        return [{"time": r[0], "level": r[1], "msg": r[2]} for r in rows]
+        return [{"timestamp": r[0], "time": r[0], "level": r[1], "msg": r[2]} for r in rows]
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\repositories\payment_repo.py
@@ -2622,7 +2650,8 @@ class AnalyticsService:
     def get_logs(self):
         logs = self.log_repo.fetch_logs()
         for log in logs:
-            log['time'] = self._to_jst_str(log['timestamp']) if 'timestamp' in log else ""
+            timestamp = log.get('timestamp') or log.get('time') or ""
+            log['time'] = self._to_jst_str(timestamp)
         return logs
 
     # --- Pivot Table (クロス集計) ---
@@ -4086,10 +4115,13 @@ class PaymentService:
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\product_service.py
 ==================================================
 
+import logging
 from typing import List, Dict
 from app.repositories.product_repo import ProductRepository
 from app.repositories.log_repo import LogRepository
 from app.models.product import Product
+
+logger = logging.getLogger("MyPosApp")
 
 class ProductService:
     def __init__(self, repo: ProductRepository, log_repo: LogRepository):
@@ -4097,40 +4129,73 @@ class ProductService:
         self.log_repo = log_repo
 
     def get_active_products(self) -> List[Product]:
-        return self.repo.fetch_active_products()
+        try:
+            return self.repo.fetch_active_products()
+        except RuntimeError as e:
+            logger.error(f"Service Error (get_active_products): {e}")
+            raise
 
     def get_all_products(self) -> List[Product]:
-        return self.repo.fetch_all_as_models()
+        try:
+            return self.repo.fetch_all_as_models()
+        except RuntimeError as e:
+            logger.error(f"Service Error (get_all_products): {e}")
+            raise
 
     def add_product(self, product: Product) -> bool:
-        if self.repo.add_product(product):
-            self.log_repo.add_log("info", f"商品追加: {product.name}")
-            return True
-        return False
+        try:
+            if self.repo.add_product(product):
+                self.log_repo.add_log("info", f"商品追加: {product.name}")
+                return True
+            return False
+        except RuntimeError as e:
+            logger.error(f"Service Error (add_product): {e}")
+            self.log_repo.add_log("error", f"商品追加失敗: {product.name} ({e})")
+            raise
 
     def update_product(self, product: Product) -> bool:
-        if self.repo.update_product(product):
-            self.log_repo.add_log("info", f"商品変更: {product.name}")
-            return True
-        return False
+        try:
+            if self.repo.update_product(product):
+                self.log_repo.add_log("info", f"商品変更: {product.name}")
+                return True
+            return False
+        except RuntimeError as e:
+            logger.error(f"Service Error (update_product): {e}")
+            self.log_repo.add_log("error", f"商品変更失敗: {product.name} ({e})")
+            raise
 
     def delete_product(self, product: Product) -> bool:
         # 完全削除
-        if self.repo.delete_product(product.id):
-            self.log_repo.add_log("warning", f"商品完全削除: {product.name}")
-            return True
-        return False
+        try:
+            if self.repo.delete_product(product.id):
+                self.log_repo.add_log("warning", f"商品完全削除: {product.name}")
+                return True
+            return False
+        except RuntimeError as e:
+            logger.error(f"Sevice Error (delete_product): {e}")
+            self.log_repo.add_log("error", f"商品消去失敗: {product.name} ({e})")
+            raise
 
     def disable_product(self, product: Product) -> bool:
         # 無効化（論理削除的な扱い）
         product.is_active = False
-        if self.repo.update_product(product):
-            self.log_repo.add_log("info", f"商品無効化: {product.name}")
-            return True
-        return False
+        try:
+            if self.repo.update_product(product):
+                self.log_repo.add_log("info", f"商品無効化: {product.name}")
+                return True
+            return False
+        except RuntimeError as e:
+            logger.error(f"Service Error (disable_product): {e}")
+            self.log_repo.add_log("error", f"商品無効化失敗: {product.name} ({e})")
+            raise
 
     def update_display_order(self, order_map: Dict[int, int]) -> bool:
-        return self.repo.update_display_order(order_map)
+        try:
+            return self.repo.update_display_order(order_map)
+        except RuntimeError as e:
+            logger.error(f"Service Error (update_display_order): {e}")
+            self.log_repo.add_log("error", f"表示順更新失敗({e})")
+            raise
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\services\user_service.py
@@ -4425,7 +4490,10 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\database.py
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 import sqlite3
+import logging
 from typing import Generator, Tuple
+
+logger = logging.getLogger("MyPosApp")
 
 class IDatabaseProvider(ABC):
     """データベース接続を提供する抽象インターフェース"""
@@ -4460,9 +4528,39 @@ class SQLiteProvider(IDatabaseProvider):
             conn.commit()
         except Exception as e:
             conn.rollback()
-            raise e
+            logger.error(f"Database transaction error: {e}", exc_info=True)
+            raise RuntimeError(f"データベース処理中にエラーが発生しました: {e}") from e
         finally:
             conn.close()
+
+==================================================
+File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\logger.py
+==================================================
+
+import logging
+import os
+from app.config import DATA_DIR
+def setup_logger():
+    os.makedirs(DATA_DIR, exist_ok=True)
+    log_file = os.path.join(DATA_DIR, 'app.log')
+    
+    logger = logging.getLogger('MyPosApp')
+    
+    # 既にハンドラが登録されていればそのまま返す
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+    
+    # 単一ファイル・追記モード
+    fh = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    fh.setLevel(logging.INFO)
+    
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    
+    logger.addHandler(fh)
+    return logger
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\utils\style.py
@@ -4763,12 +4861,15 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\main_window.py
 ==================================================
 
 from typing import Dict
+import logging
 from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                                QFrame, QLabel, QPushButton, QMessageBox,
                                QDialog, QLineEdit, QSpinBox, QDialogButtonBox)
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from app.config import DB_PATH
+
+logger = logging.getLogger('MyPosApp')
 
 # Repositories
 from app.repositories.transaction_repo import TransactionRepository
@@ -5074,6 +5175,10 @@ class MainWindow(QMainWindow):
             self.cart_service.set_current_user(user_name)
             self.btn_cashier.setText(f"担当: {user_name}")
             self.btn_cashier.setStyleSheet("QPushButton { color: #e0f7fa; background-color: #006064; border: 1px solid #0097a7; border-radius: 4px; padding: 5px 10px; } QPushButton:hover { background-color: #00838f; }")
+            # ログに記録
+            log_msg = f"ユーザーログイン: {user_name}"
+            self.log_repo.add_log("info", log_msg)
+            logger.info(log_msg)
             self._check_checkout_button()
 
     def _open_settings_window(self):
@@ -7751,37 +7856,42 @@ class ProductSettingTab(BaseSettingTab): # ★継承
 
     def load_data(self):
         """DBから全データを読み込んで表示"""
-        products = self.service.get_all_products()
-        self.table.setRowCount(len(products))
-        self.current_products = products
+        try:
+            products = self.service.get_all_products()
+            self.table.setRowCount(len(products))
+            self.current_products = products
 
-        # カテゴリリスト更新（ダイアログ用）
-        self.existing_categories = sorted(list({p.category for p in products if p.category}))
-        for default_cat in ["ドリンク", "フード"]:
-            if default_cat not in self.existing_categories:
-                self.existing_categories.insert(0, default_cat)
+            # カテゴリリスト更新（ダイアログ用）
+            self.existing_categories = sorted(list({p.category for p in products if p.category}))
+            for default_cat in ["ドリンク", "フード"]:
+                if default_cat not in self.existing_categories:
+                    self.existing_categories.insert(0, default_cat)
 
-        for row, p in enumerate(products):
-            # ID
-            self.table.setItem(row, 0, self.create_item(p.id, align=Qt.AlignCenter))
-            # Name
-            self.table.setItem(row, 1, self.create_item(p.name))
-            # Price
-            self.table.setItem(row, 2, self.create_item(f"¥{p.price:,}", align=Qt.AlignRight))
-            # Category
-            self.table.setItem(row, 3, self.create_item(p.category))
-            # Color (背景色付き)
-            item_color = self.create_item(p.color, text_color="black", bg_color=p.color)
-            self.table.setItem(row, 4, item_color)
-            
-            # Status
-            status_text = "● 販売中" if p.is_active else "× 停止中"
-            s_fg = "#69f0ae" if p.is_active else "#bdbdbd"
-            s_bg = "#1b5e20" if p.is_active else "#424242"
-            self.table.setItem(row, 5, self.create_item(status_text, text_color=s_fg, bg_color=s_bg, align=Qt.AlignCenter))
-            
-            # Note
-            self.table.setItem(row, 6, self.create_item(p.note))
+            for row, p in enumerate(products):
+                # ID
+                self.table.setItem(row, 0, self.create_item(p.id, align=Qt.AlignCenter))
+                # Name
+                self.table.setItem(row, 1, self.create_item(p.name))
+                # Price
+                self.table.setItem(row, 2, self.create_item(f"¥{p.price:,}", align=Qt.AlignRight))
+                # Category
+                self.table.setItem(row, 3, self.create_item(p.category))
+                # Color (背景色付き)
+                item_color = self.create_item(p.color, text_color="black", bg_color=p.color)
+                self.table.setItem(row, 4, item_color)
+
+                # Status
+                status_text = "● 販売中" if p.is_active else "× 停止中"
+                s_fg = "#69f0ae" if p.is_active else "#bdbdbd"
+                s_bg = "#1b5e20" if p.is_active else "#424242"
+                self.table.setItem(row, 5, self.create_item(status_text, text_color=s_fg, bg_color=s_bg, align=Qt.AlignCenter))
+
+                # Note
+                self.table.setItem(row, 6, self.create_item(p.note))
+        except RuntimeError as e:
+            QMessageBox.critical(self, "データ読み込みエラー", str(e))
+            self.table.setRowCount(0)
+            self.current_products = []
 
     def on_add(self):
         dialog = ProductEditDialog(parent=self)
@@ -7797,10 +7907,13 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 note=data["note"],
                 is_active=data["is_active"]
             )
-            if self.service.add_product(new_product):
-                self.load_data()
-            else:
-                QMessageBox.warning(self, "エラー", "追加に失敗しました")
+            try:
+                if self.service.add_product(new_product):
+                    self.load_data()
+                else:
+                    QMessageBox.warning(self, "エラー", "追加に失敗しました")
+            except RuntimeError as e:
+                QMessageBox.critical(self, "エラー", str(e))
 
     def on_edit_selected(self):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -7821,9 +7934,11 @@ class ProductSettingTab(BaseSettingTab): # ★継承
                 is_active=data["is_active"],
                 display_order=target.display_order
             )
-            if self.service.update_product(updated_product):
-                self.load_data()
-                # 選択位置を維持したい場合はここで再選択処理
+            try:
+                if self.service.update_product(updated_product):
+                    self.load_data()
+            except RuntimeError as e:
+                QMessageBox.critical(self, "エラー", str(e))
 
     def on_delete_selected(self):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -7832,13 +7947,15 @@ class ProductSettingTab(BaseSettingTab): # ★継承
         msg = f"商品「{target.name}」を削除しますか？\n\n「Yes」= 完全に削除\n「No」= 販売停止 (無効化)\n「Cancel」= やめる"
         res = QMessageBox.question(self, "確認", msg, QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
 
-        if res == QMessageBox.Yes:
-            if self.service.delete_product(target):
-                self.load_data()
-        elif res == QMessageBox.No:
-            target.is_active = False
-            if self.service.update_product(target):
-                self.load_data()
+        try:
+            if res == QMessageBox.Yes:
+                if self.service.delete_product(target):
+                    self.load_data()
+            elif res == QMessageBox.No:
+                if self.service.disable_product(target):
+                    self.load_data()
+        except RuntimeError as e:
+            QMessageBox.critical(self, "エラー", str(e))
 
     def _move_row(self, direction):
         target : Product = self.get_selected_row_data(self.current_products)
@@ -7851,9 +7968,12 @@ class ProductSettingTab(BaseSettingTab): # ★継承
         item_b : Product = self.current_products[new_row]
         order_map = {target.id: item_b.display_order, item_b.id: target.display_order}
         
-        if self.service.update_display_order(order_map):
-            self.load_data()
-            self.table.selectRow(new_row)
+        try:
+            if self.service.update_display_order(order_map):
+                self.load_data()
+                self.table.selectRow(new_row)
+        except RuntimeError as e:
+            QMessageBox.critical(self, "エラー", str(e))
 
 ==================================================
 File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\app\views\settings_tabs\user_setting_tab.py
@@ -8662,7 +8782,7 @@ File Path: C:\Users\faia2\Desktop\レジv5\MyPosApp\data\master_data.json
             "color": "#80d8ff",
             "note": "",
             "display_order": 9,
-            "is_active": false
+            "is_active": true
         },
         {
             "id": 9,

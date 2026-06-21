@@ -315,8 +315,8 @@
         {
             "id": 8,
             "name": "フードドリンクセット割り",
-            "discount_type": "percent",
-            "discount_value": 50,
+            "discount_type": "fixed",
+            "discount_value": 100,
             "apply_type": "bundle",
             "target_value": "{\"mode\": \"combo\", \"conditions\": [{\"target\": \"フード\", \"type\": \"category\", \"qty\": 1}, {\"target\": \"ドリンク\", \"type\": \"category\", \"qty\": 1}]}",
             "is_auto": true,

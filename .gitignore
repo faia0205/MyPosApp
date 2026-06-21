@@ -1,0 +1,7 @@
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+MyPosApp/__pycache__/
+MyPosApp/app/__pycache__/
