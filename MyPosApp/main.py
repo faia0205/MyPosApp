@@ -2,7 +2,7 @@ import sys
 import os
 import traceback
 from PySide6.QtWidgets import QApplication, QMessageBox
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QPalette, QColor
 
 # appパッケージのパスを通す
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -12,6 +12,26 @@ from init_db import create_tables
 from app.utils.logger import setup_logger
 
 logger = setup_logger()
+
+
+def apply_dark_theme(app: QApplication) -> None:
+    """アプリ全体に固定のダークテーマを適用する。"""
+    app.setStyle("Fusion")
+
+    palette = QPalette()
+    palette.setColor(QPalette.Window, QColor(43, 43, 43))
+    palette.setColor(QPalette.WindowText, QColor(255, 255, 255))
+    palette.setColor(QPalette.Base, QColor(35, 35, 35))
+    palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
+    palette.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
+    palette.setColor(QPalette.Text, QColor(255, 255, 255))
+    palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    palette.setColor(QPalette.ButtonText, QColor(255, 255, 255))
+    palette.setColor(QPalette.BrightText, QColor(255, 80, 80))
+    palette.setColor(QPalette.Highlight, QColor(25, 118, 210))
+    palette.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
+    app.setPalette(palette)
 
 def global_exception_handler(exc_type, exc_value, exc_traceback):
     """未捕捉の例外をキャッチするグローバルハンドラ"""
@@ -41,6 +61,7 @@ from app.views.main_window import MainWindow
 if __name__ == "__main__":
     logger.info("Application startup")
     app = QApplication(sys.argv)
+    apply_dark_theme(app)
 
     if not os.path.exists(DB_PATH):
         logger.info("Database not found. Initializing...")
